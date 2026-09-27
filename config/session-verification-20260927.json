@@ -1,0 +1,68 @@
+{
+  "date": "2026-09-27",
+  "at": 1790538551.7037299,
+  "automated_tests_passed": 67,
+  "firmware_changed": false,
+  "arm": {
+    "home_observed": true,
+    "finite_step_observed": true,
+    "command_ms": 150,
+    "stop_latency_measured": false,
+    "joint_feedback_available": false,
+    "survey": "data/handeye-surveys/20260927-222535/result.json",
+    "base_servo_sign_corrected": true,
+    "diagnostic_gain_fit_deployed": false,
+    "full_workspace_calibrated": false
+  },
+  "voice": {
+    "local_asr": "whisper.cpp/base multilingual",
+    "local_tts": "Piper/ru_RU-irina-medium",
+    "acoustic_loop_test": "data/voice/acoustic-result.json",
+    "always_listening": false
+  },
+  "perception": {
+    "open_vocabulary": "IDEA-Research/grounding-dino-tiny",
+    "sock_detected": true,
+    "grasp_coordinates_verified": false
+  },
+  "learning": {
+    "framework": "LeRobot 0.6.1",
+    "policy": "ACT",
+    "synthetic_pipeline_test": true,
+    "real_successful_demos": 0,
+    "automatic_execution": false,
+    "compatibility_warnings": [
+      "Torch does not list Orin CC8.7 as officially supported; exercised ACT and GroundingDINO paths passed",
+      "pip check rejects manylinux2014_sbsa metadata on nvidia-cusparselt-cu13 0.8.0; library is ARM aarch64, actual exercised paths pass"
+    ],
+    "offline_backbone_cached": true
+  },
+  "deferred_by_user": [
+    "privileged automatic Jetson poweroff installation",
+    "physical MCU communication-loss stop test"
+  ],
+  "incomplete": [
+    "full find-navigate-grasp-verify execution",
+    "simultaneous base and arm execution",
+    "full workspace joint/tool/camera calibration",
+    "base scale and lidar extrinsics commissioning"
+  ],
+  "end_state": {
+    "base_stop_latched": true,
+    "last_arm_command": [
+      92,
+      125,
+      3,
+      0,
+      90,
+      30
+    ],
+    "battery_voltage_v": 11.925592422485352,
+    "automatic_shutdown_available": false,
+    "commanded_velocity": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  }
+}

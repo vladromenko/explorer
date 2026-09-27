@@ -24,6 +24,7 @@ class GamepadPanel:
                 buttons=[k for k,v in b.items() if v in self.keys],axes=self.axes.copy(),
                 last_event_age_s=time.monotonic()-self.last_event if self.last_event else None,
                 sequence=self.sequence,error=self.error,proposal=self.proposal,radio_link_verified=False,
+                bounded_steps_enabled=self.config.get('bounded_arm_steps_verified',False),
                 continuous_motion_enabled=False,precision_step_deg=self.config['arm_step_deg'])
 
     def heartbeat(self,enabled):
@@ -37,6 +38,7 @@ class GamepadPanel:
         if kind==1:
             if value==1:self.keys.add(code)
             elif value==0:self.keys.discard(code)
+            if value==0 and code==b['l1']:self.stop()
             if value==1 and code==b['a'] and b['l1'] not in self.keys:
                 self.mode='ARM' if self.mode!='ARM' and now<self.lease else 'DISARMED'
                 self.neutral=False
@@ -56,11 +58,14 @@ class GamepadPanel:
                         decision=(self.joint,self.config['arm_step_deg']*(-1 if offset>0 else 1))
         return decision
 
-    def perform(self,joint,delta):
-        # A wireless-off test and a servo cancellation mechanism are outstanding.
-        # Until then the stick selects a proposal; it cannot publish arm commands.
+    def perform(self,joint,delta,deadline=None):
         self.proposal=dict(joint=joint,delta=delta,at=time.time(),executed=False,
                            blocked_by='Radio loss and servo cancellation are not verified')
+        if self.config.get('bounded_arm_steps_verified',False) and deadline is not None:
+            try:
+                self.teaching.jog(joint,delta,True,deadline)
+                self.proposal.update(executed=True,blocked_by=None,attainment_measured=False)
+            except (OSError,ValueError) as exc:self.error=str(exc)
 
     def run(self):
         import select
@@ -72,6 +77,7 @@ class GamepadPanel:
                         raise ValueError('Подключён другой геймпад')
                     with self.lock:
                         self.connected=True;self.mode='DISARMED';self.keys.clear();self.neutral=False;self.error=None
+                    pending=None
                     while True:
                         ready,_,_=select.select([device.fd],[],[],.05)
                         now=time.monotonic()
@@ -80,14 +86,21 @@ class GamepadPanel:
                                 with self.lock:
                                     self.last_event=now;self.sequence+=1
                                     decision=self.decide(event.code,event.value,event.type,now)
-                                if decision and not self.teaching.lock.locked():
-                                    threading.Thread(target=self.perform,args=decision,daemon=True).start()
+                                    if decision:pending=decision
+                                    packet_done=event.type==0 and event.code==0
+                                    permit=self.mode=='ARM' and now<self.lease and self.config['buttons']['l1'] in self.keys
+                                if packet_done:
+                                    if pending and permit and not self.teaching.lock.locked():
+                                        threading.Thread(target=self.perform,args=(*pending,now+.1),daemon=True).start()
+                                    pending=None
                         with self.lock:
                             combo=all(self.config['buttons'][k] in self.keys for k in self.config['estop_buttons'])
                             self.combo_at=(self.combo_at or now) if combo else None
                             if self.combo_at and now-self.combo_at>=self.config['estop_hold_s']:
                                 self.stop();self.mode='DISARMED';self.lease=0;self.combo_at=now
-                            if now>=self.lease:self.mode='DISARMED';self.neutral=False
+                            if now>=self.lease:
+                                if self.mode=='ARM':self.stop()
+                                self.mode='DISARMED';self.neutral=False
             except (OSError,ValueError) as exc:
                 with self.lock:
                     self.connected=False;self.mode='DISARMED';self.keys.clear();self.neutral=False;self.error=str(exc)

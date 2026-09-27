@@ -1,0 +1,23 @@
+import unittest
+import numpy as np
+from object_finder import depth_position,english_label
+
+class ObjectFinderTests(unittest.TestCase):
+    def sample(self):return dict(depth=np.full((100,100),.5),k=np.array([[100.,0,50],[0,100,50],[0,0,1]]),d=np.zeros(5),frame='optical')
+    def test_depth_is_metric_camera_only_not_confirmed_object(self):
+        r=depth_position(self.sample(),[30,30,70,70])
+        self.assertEqual(r['z'],.5);self.assertEqual(r['x'],0)
+        self.assertFalse(r['depth_is_object_verified'])
+    def test_holes_and_edges_rejected(self):
+        s=self.sample();s['depth'][:]=0
+        self.assertIsNone(depth_position(s,[30,30,70,70]))
+        s=self.sample();s['depth'][50:]=1
+        self.assertIsNone(depth_position(s,[30,30,70,70]))
+    def test_nonfinite_box_rejected(self):
+        self.assertIsNone(depth_position(self.sample(),[0,0,float('nan'),50]))
+    def test_aliases_are_not_shell_or_model_code(self):
+        self.assertEqual(english_label('Носок'),'sock')
+        self.assertEqual(english_label('red bottle'),'red bottle')
+        with self.assertRaises(ValueError):english_label('$(poweroff)')
+
+if __name__=='__main__':unittest.main()

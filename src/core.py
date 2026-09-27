@@ -188,6 +188,14 @@ class Core(Node):
 
     def tick(self):
         now = time.monotonic()
+        arm_link_ok=all(now-self.seen.get(k,-1e9)<ttl for k,ttl in [('odom',.5),('battery',2.)])
+        if getattr(self,'arm_link_was_healthy',False) and not arm_link_ok:
+            try:
+                fault=ROOT/'data/arm-telemetry-fault.tmp'
+                fault.write_text(json.dumps(dict(at=time.time(),reason='MCU telemetry interrupted')))
+                fault.replace(ROOT/'data/arm-telemetry-fault.json')
+            except OSError:self.gate.stop()
+        self.arm_link_was_healthy=arm_link_ok
         self.power_state = self.power_policy.evaluate(now, active=now<self.arm_active_until or any(abs(v)>.001 for v in self.gate.output), charging=self.charging)
         if not self.power_state['motion_allowed']:
             self.gate.stop()

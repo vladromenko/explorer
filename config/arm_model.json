@@ -36,5 +36,7 @@
     "5": "wrist_rotation",
     "6": "gripper"
   },
-  "notes": "CAD zero and servo directions are reference data. Gripper linkage is reference-only; no servo-to-aperture calibration. No joint states may be fabricated from commands."
+  "notes": "CAD zero and servo directions are reference data. Gripper linkage is reference-only; no servo-to-aperture calibration. No joint states may be fabricated from commands.",
+  "servo_coordinate_convention": "q1 = radians(90-servo1); q2..q5 = radians(servo-90)",
+  "base_sign_evidence": "Vendor grasp.py uses joint1=180-IK_joint1; 20260927-222535 RGB-D survey and independent floor-plane check agree. Other axes remain nominal."
 }

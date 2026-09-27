@@ -18,6 +18,7 @@ os.environ['HF_HOME']=str(ROOT/'data/hf-learning-cache')
 os.environ['HF_DATASETS_CACHE']=str(ROOT/'data/hf-learning-cache/datasets')
 os.environ['TORCH_HOME']=str(ROOT/'data/torch-learning-cache')
 os.environ['HF_HUB_DISABLE_TELEMETRY']='1'
+os.environ['HF_HUB_OFFLINE']='1'
 sys.path.insert(0,str(ROOT/'src'))
 from lerobot_bridge import training_budget,write_json
 

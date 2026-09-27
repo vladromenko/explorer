@@ -24,3 +24,6 @@ radio_loss_verified: false
 continuous_motion_enabled: false
 arm_step_deg: 2
 notes: Physical Linux event mapping recorded with the operator. MODE produced no event. Repeated ROS Joy messages are not radio heartbeat evidence.
+
+bounded_arm_steps_verified: true
+bounded_steps_evidence: data/arm-short-step-validation.json

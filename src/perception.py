@@ -130,6 +130,16 @@ def run():
         if ok:
             temp=ROOT/'data/frame-raw.tmp';temp.write_bytes(raw_jpg.tobytes());temp.replace(ROOT/'data/frame-raw.jpg')
         detections=engine.infer(frame)
+        registered=(depth is not None and info is not None and abs(ts-depth[1])<.05
+                    and depth[0].shape==raw.shape[:2] and depth[2]==frame_id)
+        if registered:
+            # One atomic, synchronized snapshot for demand-loaded object grounding.
+            snapshot=ROOT/'data/rgbd-snapshot.tmp'
+            with snapshot.open('wb') as stream:
+                np.savez_compressed(stream,rgb=raw,depth=depth[0].astype(np.float32)*depth[3],
+                                    k=np.array(info.k).reshape(3,3),d=np.array(info.d),
+                                    stamp=ts,frame=frame_id)
+            snapshot.replace(ROOT/'data/rgbd-snapshot.npz')
         used=set()
         for d in detections:
             box=d['bbox']; center=np.array([(box[0]+box[2])/2,(box[1]+box[3])/2])

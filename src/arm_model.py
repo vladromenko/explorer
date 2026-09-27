@@ -11,6 +11,7 @@ from moveit.core.collision_detection import CollisionRequest,CollisionResult
 from moveit_msgs.msg import CollisionObject
 from shape_msgs.msg import SolidPrimitive
 from geometry_msgs.msg import Pose
+from servo_coordinates import to_radians,to_servo
 ROOT=Path('/home/vlad/Explorer')
 LOW=np.radians([-90]*5);HIGH=np.radians([90,90,90,90,180])
 
@@ -38,7 +39,7 @@ class ArmModel:
         return a
 
     def set_state(self,servo_deg,gripper_rad):
-        deg=self.vector(servo_deg,5);q=np.radians(deg-90.)
+        deg=self.vector(servo_deg,5);q=to_radians(deg)
         if np.any(q<LOW) or np.any(q>HIGH):raise ValueError('Servo reference range exceeded')
         if not math.isfinite(gripper_rad) or not -1.54<=gripper_rad<=0:raise ValueError('Invalid reference gripper linkage angle')
         self.state.set_to_default_values()
@@ -85,7 +86,7 @@ class ArmModel:
                               ftol=1e-8,xtol=1e-8,gtol=1e-8)
             err=residual(fit.x);poserr=float(np.linalg.norm(err[:3]));angerr=float(np.linalg.norm(err[3:])/.1) if rot is not None else None
             collided=self.collision()
-            return dict(solved=poserr<=.002 and (angerr is None or angerr<=.02),servo_deg=(np.degrees(expand(fit.x))+90).tolist(),
+            return dict(solved=poserr<=.002 and (angerr is None or angerr<=.02),servo_deg=to_servo(expand(fit.x)).tolist(),
                         position_error_m=poserr,orientation_error_rad=angerr,collision=collided,
                         reference_only=True,executed=False,execution_allowed=False)
 

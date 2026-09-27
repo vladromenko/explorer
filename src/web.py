@@ -43,6 +43,12 @@ from teaching import TeachingController
 from lerobot_bridge import LearningJobs
 teaching=TeachingController(ROOT)
 learning_jobs=LearningJobs(ROOT)
+from policy_preview import PolicyPreview
+policy_preview=PolicyPreview(ROOT,learning_jobs,teaching)
+from object_finder import ObjectFinder
+object_finder=ObjectFinder(ROOT)
+from voice import Voice
+voice=Voice(ROOT)
 
 def read_state(name,max_age=3):
     try:
@@ -57,7 +63,11 @@ def emit(op,**kwargs):
     return dict(queued=True,id=req['id'])
 
 from gamepad_panel import GamepadPanel
-gamepad_panel=GamepadPanel(ROOT,teaching,lambda:emit('stop'))
+def stop_all():
+    controller=globals().get('manual_arm')
+    if controller:controller.stop()
+    return emit('stop')
+gamepad_panel=GamepadPanel(ROOT,teaching,stop_all)
 
 @app.get('/api/teaching')
 def teaching_status():
@@ -80,6 +90,7 @@ class TrainingStart(BaseModel):
 
 class PanelLease(BaseModel):
     enabled:bool=False
+    observing:bool=False
 
 @app.post('/api/teaching/start')
 def start_teaching(c:TeachingStart):return map_operation(teaching.start,c.name,c.observing)
@@ -91,7 +102,32 @@ def step_teaching(c:TeachingStep):return map_operation(teaching.step,c.joint,c.d
 def finish_teaching(c:TeachingFinish):return map_operation(teaching.finish,c.outcome)
 
 @app.post('/api/learning/train')
-def train_policy(c:TrainingStart):return map_operation(learning_jobs.start,c.steps,c.task)
+def train_policy(c:TrainingStart):
+    if policy_preview.lock.locked():raise HTTPException(409,'Дождитесь проверки модели')
+    return map_operation(learning_jobs.start,c.steps,c.task)
+
+class PolicyTask(BaseModel):
+    task:str=Field(min_length=3,max_length=80)
+
+@app.post('/api/learning/preview')
+def preview_policy(c:PolicyTask):return map_operation(policy_preview.start,c.task)
+
+@app.get('/api/learning/preview')
+def preview_policy_status():return policy_preview.status()
+
+class ObjectQuery(BaseModel):
+    label:str=Field(min_length=2,max_length=60)
+
+@app.post('/api/objects/find')
+def find_object(c:ObjectQuery):return map_operation(object_finder.start,c.label)
+
+@app.get('/api/objects/find')
+def find_object_status():return object_finder.status()
+
+@app.get('/api/objects/find/image')
+def find_object_image():
+    if object_finder.state.get('phase')!='ready':raise HTTPException(409,'Поиск ещё не завершён')
+    return Response((object_finder.folder/'result.jpg').read_bytes(),media_type='image/jpeg',headers={'Cache-Control':'no-store'})
 
 @app.post('/api/learning/stop')
 def stop_training():return map_operation(learning_jobs.stop)
@@ -100,7 +136,20 @@ def stop_training():return map_operation(learning_jobs.stop)
 def training_log(ident:str):return {'text':map_operation(learning_jobs.log,ident)}
 
 @app.post('/api/gamepad/panel')
-def panel_lease(c:PanelLease):return gamepad_panel.heartbeat(c.enabled)
+def panel_lease(c:PanelLease):return gamepad_panel.heartbeat(c.enabled and c.observing)
+
+class VoiceRequest(BaseModel):
+    operation:str
+    text:str=Field(default='',max_length=1200)
+
+@app.get('/api/voice')
+def voice_status():return voice.status()
+
+@app.post('/api/voice')
+def voice_request(c:VoiceRequest):return map_operation(voice.start,c.operation,c.text)
+
+@app.post('/api/voice/stop')
+def voice_stop():return voice.stop()
 
 @app.get('/guide')
 def operator_guide():return HTMLResponse((ROOT/'docs/operator-guide.html').read_text())
@@ -148,7 +197,9 @@ class Command(BaseModel):
 
 @app.post('/api/control')
 def control(c:Command):
-    if c.op=='stop':return emit('stop')
+    if c.op=='stop':
+        manual_arm.stop()
+        return emit('stop')
     with command_lock:
         if c.sequence<=command_sequence.get(c.session,-1):raise HTTPException(409,'Out-of-order command')
         command_sequence[c.session]=c.sequence
@@ -234,6 +285,46 @@ def reference_arm():
             arm_model=ArmModel()
     return arm_model
 
+from manual_arm import ManualArm
+manual_arm=ManualArm(ROOT,node,reference_arm)
+teaching.move=manual_arm.move
+manual_arm.gamepad_permit=lambda:gamepad_panel.mode=='ARM' and time.monotonic()<gamepad_panel.lease and gamepad_panel.config['buttons']['l1'] in gamepad_panel.keys
+
+def warm_arm_model():
+    try:manual_arm.prepare_geometry()
+    except Exception as exc:manual_arm.error=str(exc)
+threading.Thread(target=warm_arm_model,daemon=True).start()
+
+@app.get('/api/arm/manual')
+def manual_status():return manual_arm.status()
+
+class ArmJog(BaseModel):
+    joint:int=Field(ge=1,le=6)
+    delta:int
+    observing:bool=False
+
+class ArmHome(BaseModel):
+    observing:bool=False
+    space_clear:bool=False
+
+@app.post('/api/arm/jog')
+def manual_jog(c:ArmJog):return map_operation(teaching.jog,c.joint,c.delta,c.observing)
+
+@app.post('/api/arm/prepare')
+def manual_prepare(c:ArmHome):
+    if not c.observing or not c.space_clear:raise HTTPException(409,'Подтвердите присутствие и свободное пространство для стартовой позы')
+    if teaching.active:raise HTTPException(409,'Сначала завершите запись показа')
+    if not teaching.lock.acquire(blocking=False):raise HTTPException(409,'Рука занята')
+    try:
+        manual_arm.prepare_geometry()
+        result=subprocess.run(['/bin/bash',str(ROOT/'bin/teach-step.sh'),'--observed-clear',
+                               '--pose','90','125','3','0','90','30','--runtime-ms','5000'],
+                              capture_output=True,text=True,timeout=25)
+        if result.returncode:raise ValueError('Подготовка не подтверждена: '+result.stderr[-500:])
+        return dict(manual_arm.status(),operator_observation_required=True)
+    except (ValueError,OSError,subprocess.TimeoutExpired) as exc:raise HTTPException(409,str(exc))
+    finally:teaching.lock.release()
+
 @app.post('/api/arm/preview')
 def arm_preview(p:ArmPreview):
     def calculate():
@@ -283,6 +374,8 @@ TOOLS=[{'type':'function','function':{'name':name,'description':desc,'parameters
     ('preview_path','Calculate a provisional map path without moving the robot. Coordinates must come from the user or a verified map observation, never guess.',{'type':'object','properties':{'x':{'type':'number'},'y':{'type':'number'}},'required':['x','y'],'additionalProperties':False}),
     ('save_map','Save the current map when the user requests it; name uses ASCII letters, digits, dash or underscore. Robot must be stopped.',{'type':'object','properties':{'name':{'type':'string'}},'required':['name'],'additionalProperties':False}),
     ('list_visible_objects','Read fresh detections from the local camera',{'type':'object','properties':{},'additionalProperties':False}),
+    ('find_object','Start one local open-vocabulary RGB-D search in the current view. No driving or grasping. Use a short English object name such as sock or bottle; model confidence is not proof of identity.',{'type':'object','properties':{'label':{'type':'string'}},'required':['label'],'additionalProperties':False}),
+    ('get_object_search','Read the latest on-demand object search, including capture timestamp. Positions are camera-relative and cannot authorize a grasp.',{'type':'object','properties':{},'additionalProperties':False}),
     ('locate_object','Recall observations; coordinates are camera-relative, not map locations',{'type':'object','properties':{'label':{'type':'string'}},'required':['label'],'additionalProperties':False}),
     ('inspect_scene','Inspect one fresh image for objects outside the fixed detector vocabulary, such as socks, or clarify uncertain detections. Slow; use only when needed.',{'type':'object','properties':{'question':{'type':'string'}},'required':['question'],'additionalProperties':False}),
     ('list_places','Read explicitly saved named places and whether they belong to the current map',{'type':'object','properties':{},'additionalProperties':False}),
@@ -293,6 +386,8 @@ TOOLS=[{'type':'function','function':{'name':name,'description':desc,'parameters
     ('stop_robot','Latch the deterministic base stop immediately',{'type':'object','properties':{},'additionalProperties':False})]]
 
 def tool(name,args):
+    if name=='find_object' and set(args)=={'label'} and isinstance(args['label'],str):return object_finder.start(args['label'])
+    if name=='get_object_search' and args=={}:return object_finder.status()
     if name=='list_places' and args=={}:return missions.places()
     if name=='return_home' and args=={}:return missions.go_place('home')
     if name=='get_exploration_targets' and args=={}:return missions.frontiers()

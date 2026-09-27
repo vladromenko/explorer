@@ -9,6 +9,7 @@ from moveit_msgs.msg import CollisionObject
 from shape_msgs.msg import SolidPrimitive
 from geometry_msgs.msg import Pose
 from arm_model import ArmModel, ROOT
+from servo_coordinates import to_radians,to_servo
 
 
 class ArmPlanner:
@@ -56,7 +57,7 @@ class ArmPlanner:
         self.guard.set_state(values, gripper)
         state = RobotState(self.robot.get_robot_model())
         state.set_to_default_values()
-        state.set_joint_group_positions('arm', np.radians(np.asarray(values)-90.))
+        state.set_joint_group_positions('arm', to_radians(values))
         state.joint_positions = {'rlink1_Joint': gripper}
         state.update()
         return state
@@ -94,7 +95,7 @@ class ArmPlanner:
             # returned edge at <=0.5 degrees, including other plausible jaw shapes.
             names = [f'arm{i}_Joint' for i in range(1, 6)]
             order = [list(trajectory.joint_names).index(n) for n in names]
-            points = [[float(math.degrees(p.positions[i])+90) for i in order]
+            points = [to_servo([p.positions[i] for i in order]).tolist()
                       for p in trajectory.points]
             if len(points) < 2:raise ValueError('Incomplete trajectory')
             if not np.allclose(points[0], start_deg, atol=.1) or not np.allclose(points[-1], goal_deg, atol=.1):

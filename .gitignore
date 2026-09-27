@@ -9,3 +9,5 @@ __pycache__/
 config/access_token
 /Log/
 /log.txt
+
+.venv-voice/

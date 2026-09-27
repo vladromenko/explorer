@@ -1,0 +1,16 @@
+[Unit]
+Description=Explorer local Whisper recognition on demand
+PartOf=explorer.target
+
+[Service]
+Type=exec
+WorkingDirectory=/home/vlad/Explorer
+Environment=LD_LIBRARY_PATH=/home/vlad/Explorer/vendor/whisper:/usr/local/cuda/lib64
+ExecStart=/home/vlad/Explorer/vendor/whisper/whisper-server -m /home/vlad/Explorer/models/voice/ggml-base.bin --host 127.0.0.1 --port 8082 -l ru -t 2 -sns --public /home/vlad/Explorer/vendor/whisper/public
+Restart=no
+Nice=10
+MemoryMax=1600M
+CPUWeight=20
+TimeoutStopSec=5
+UMask=0077
+OOMScoreAdjust=600

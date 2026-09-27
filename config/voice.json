@@ -1,0 +1,10 @@
+{
+  "capture_source": "alsa_input.usb-C-Media_Electronics_Inc._USB_Audio_Device-00.mono-fallback",
+  "playback_sink": "alsa_output.usb-C-Media_Electronics_Inc._USB_Audio_Device-00.analog-stereo",
+  "voice_model": "models/voice/ru_RU-irina-medium.onnx",
+  "language": "ru",
+  "record_seconds": 6,
+  "playback_volume": 0.45,
+  "continuous_listening": false,
+  "automatic_motion_from_speech": false
+}

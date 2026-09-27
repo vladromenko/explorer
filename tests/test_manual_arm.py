@@ -1,0 +1,70 @@
+import json
+from pathlib import Path
+import tempfile
+import time
+import unittest
+from unittest.mock import Mock,patch
+from manual_arm import ManualArm
+
+class ManualArmTests(unittest.TestCase):
+    def setUp(self):
+        self.directory=tempfile.TemporaryDirectory();self.root=Path(self.directory.name)
+        (self.root/'data').mkdir();self.node=Mock();self.pub=self.node.create_publisher.return_value
+        self.pub.get_subscription_count.return_value=1;self.pub.wait_for_all_acked.return_value=True
+        self.model=Mock();self.model.path.return_value={'valid':True}
+        self.arm=ManualArm(self.root,self.node,lambda:self.model);self.arm.ready=True
+        self.start=[90,125,3,0,90,30];self.goal=[92,125,3,0,90,30]
+        self.state=dict(at=time.time(),servo_deg=self.start,boot_id=self.arm.boot,phase='command_elapsed_observation_required')
+        self.save()
+        (self.root/'data/status.json').write_text('{}')
+        self.patch=patch('manual_arm.stationary_status');self.patch.start()
+
+    def tearDown(self):self.patch.stop();self.directory.cleanup()
+    def save(self):(self.root/'data/arm-state.json').write_text(json.dumps(self.state))
+
+    def test_rejects_large_step_before_publication(self):
+        with self.assertRaises(ValueError):self.arm.move(self.start,[100,125,3,0,90,30])
+        self.pub.publish.assert_not_called()
+
+    def test_expired_gamepad_decision_never_moves(self):
+        self.arm.gamepad_permit=lambda:True
+        with self.assertRaises(ValueError):self.arm.move(self.start,self.goal,time.monotonic()-1)
+        self.pub.publish.assert_not_called()
+
+    def test_release_during_collision_check_never_moves(self):
+        self.arm.gamepad_permit=lambda:False
+        with self.assertRaises(ValueError):self.arm.move(self.start,self.goal,time.monotonic()+1)
+        self.pub.publish.assert_not_called()
+
+    def test_stop_during_collision_check_never_moves(self):
+        def cancel(*args):self.arm.stop();return {'valid':True}
+        self.model.path.side_effect=cancel
+        with self.assertRaises(ValueError):self.arm.move(self.start,self.goal)
+        self.pub.publish.assert_not_called()
+
+    def test_prior_boot_never_moves(self):
+        self.state['boot_id']='old';self.save()
+        with self.assertRaises(ValueError):self.arm.move(self.start,self.goal)
+        self.pub.publish.assert_not_called()
+
+    def test_telemetry_fault_invalidates_reference(self):
+        (self.root/'data/arm-telemetry-fault.json').write_text(json.dumps({'at':time.time()+1}))
+        with self.assertRaises(ValueError):self.arm.move(self.start,self.goal)
+        self.pub.publish.assert_not_called()
+
+    def test_delivery_failure_prevents_next_step(self):
+        self.pub.wait_for_all_acked.return_value=False
+        with self.assertRaises(ValueError):self.arm.move(self.start,self.goal)
+        self.assertEqual(self.pub.publish.call_count,1)
+        state=json.loads((self.root/'data/arm-state.json').read_text())
+        self.assertEqual(state['phase'],'monitor_failed_state_unknown')
+        with self.assertRaises(ValueError):self.arm.move(self.goal,self.start)
+        self.assertEqual(self.pub.publish.call_count,1)
+
+    def test_single_finite_position_command_and_honest_state(self):
+        result=self.arm.move(self.start,self.goal)
+        self.pub.publish.assert_called_once()
+        self.assertEqual(self.pub.publish.call_args.args[0].time,150)
+        self.assertFalse(result['measured']);self.assertFalse(result['attained'])
+
+if __name__=='__main__':unittest.main()
