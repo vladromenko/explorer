@@ -35,6 +35,8 @@ class MapTools:
         self.save_client=node.create_client(SerializePoseGraph,'/slam_toolbox/serialize_map')
         self.load_client=node.create_client(DeserializePoseGraph,'/slam_toolbox/deserialize_map')
 
+    def epoch(self):return json.loads((ROOT/'data/map_session.json').read_text())['id']
+
     def receive(self,m):self.grid=(m,time.monotonic())
 
     def pose(self):
@@ -89,7 +91,7 @@ class MapTools:
             p=grid.info.origin.position;q=grid.info.origin.orientation
             yaw=math.atan2(2*(q.w*q.z+q.x*q.y),1-2*(q.y*q.y+q.z*q.z))
             (staging/'map.yaml').write_text(yaml.safe_dump(dict(image='map.pgm',mode='trinary',resolution=grid.info.resolution,origin=[p.x,p.y,yaw],negate=0,occupied_thresh=.65,free_thresh=.25)))
-            metadata=dict(name=name,saved_at=time.time(),pose=pose,provisional=True,width=w,height=h,resolution=grid.info.resolution)
+            metadata=dict(name=name,map_id=self.epoch(),saved_at=time.time(),pose=pose,provisional=True,width=w,height=h,resolution=grid.info.resolution)
             (staging/'metadata.json').write_text(json.dumps(metadata,indent=2));staging.rename(self.maps/name)
             return metadata
 
@@ -102,8 +104,10 @@ class MapTools:
             if not self.load_client.wait_for_service(timeout_sec=2):raise ValueError('Map deserialization unavailable')
             req=DeserializePoseGraph.Request();req.filename=str(directory/'graph')
             # Continue near the saved location; operator must localize if robot was moved.
-            pose=json.loads((directory/'metadata.json').read_text())['pose']
+            metadata=json.loads((directory/'metadata.json').read_text());pose=metadata['pose']
             req.match_type=DeserializePoseGraph.Request.START_AT_GIVEN_POSE
             req.initial_pose.x=pose['x'];req.initial_pose.y=pose['y'];req.initial_pose.theta=pose['yaw']
             wait(self.load_client.call_async(req),15)
-            return dict(name=name,loaded=True,localization_verified=False,motion_enabled=False)
+            epoch=metadata.get('map_id',f"legacy-{name}-{metadata['saved_at']}")
+            temp=ROOT/'data/map_session.tmp';temp.write_text(json.dumps(dict(id=epoch,at=time.time())));temp.replace(ROOT/'data/map_session.json')
+            return dict(name=name,load_request_completed=True,localization_verified=False,motion_enabled=False)

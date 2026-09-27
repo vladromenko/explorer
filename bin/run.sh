@@ -13,7 +13,9 @@ case "$1" in
  state) exec python3 src/state_estimation.py;;
  geometry) exec python3 src/lidar_geometry.py;;
  mapview) exec python3 src/map_view.py;;
- slam) exec ros2 launch slam_toolbox online_async_launch.py use_sim_time:=false slam_params_file:="$EXPLORER_ROOT/config/slam.yaml";;
+ slam) python3 -c 'import json,time,uuid,os; from pathlib import Path; p=Path(os.environ["EXPLORER_ROOT"])/"data/map_session.json"; t=p.with_suffix(".tmp"); t.write_text(json.dumps(dict(id=uuid.uuid4().hex,at=time.time()))); t.replace(p)'
+       exec ros2 launch slam_toolbox online_async_launch.py use_sim_time:=false slam_params_file:="$EXPLORER_ROOT/config/slam.yaml";;
+ navigation) exec ros2 launch "$EXPLORER_ROOT/src/navigation.launch.py";;
  planning) exec ros2 launch "$EXPLORER_ROOT/src/planning.launch.py";;
  ekf) exec ros2 run robot_localization ekf_node --ros-args -r __node:=explorer_ekf --params-file "$EXPLORER_ROOT/config/ekf.yaml";;
  gamepad) exec ros2 run joy game_controller_node --ros-args -p deadzone:=0.15 -p autorepeat_rate:=20.0 -p sticky_buttons:=false;;

@@ -18,4 +18,17 @@ class ProbeTests(unittest.TestCase):
         p.last_lease=1.49
         self.assertEqual(p.tick(1.50,.02,False,True,False)[0],[0,0,0])
 
+    def test_gap_does_not_disable_deadline_or_fault_stop(self):
+        for reason in ('deadline','lease','sensor','estop','collision'):
+            p=Pulse([.04,0.,0.],.6,1.,.8)
+            p.last_lease=1.65
+            self.assertIsNone(p.tick(1.65,.02,False,True,False)[0])
+            now=2.41 if reason=='deadline' else (1.81 if reason=='lease' else 1.67)
+            if reason=='deadline':p.last_lease=now
+            self.assertEqual(p.tick(now,.02,reason=='estop',reason!='sensor',reason=='collision')[0],[0,0,0])
+
+    def test_gap_velocity_and_duration_bounds(self):
+        for v,q in [([.05,0.,0.],.8),([0.,.04,0.],.8),([.04,0.,0.],.81)]:
+            with self.assertRaises(ValueError):Pulse(v,.6,1.,q)
+
 if __name__=='__main__':unittest.main()

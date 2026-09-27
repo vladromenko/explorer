@@ -229,10 +229,64 @@
   "external_observer": {
     "camera": "Logitech C920",
     "frames_received": true,
-    "required_for_runtime": false
+    "required_for_runtime": false,
+    "currently_available": false,
+    "blocked_by": "Mac locked; AVFoundation timed out at 04:11 MSK"
   },
   "physical_setup": {
-    "tethered_power": true,
-    "wheels_suspended": false
-  }
+    "tethered_power": false,
+    "wheels_suspended": false,
+    "source": "user confirmed unplugged; observed before Mac lock"
+  },
+  "mcu_command_timeout": {
+    "verified": false,
+    "passed": false,
+    "observed_command_gap_seconds": 0.8200125700004719,
+    "motion_persisted_during_gap": true,
+    "explicit_zero_stopped_base": true,
+    "link_loss_timeout_tested": false,
+    "log": "data/base-probe-forward-20260927-035800.json"
+  },
+  "navigation_servers": {
+    "controller": "active",
+    "navigator": "active",
+    "behaviors": "active",
+    "output": "/explorer/nav_cmd_vel",
+    "physical_navigation_verified": false,
+    "gate_check": {
+      "unauthorized_nav_commands_rejected": true,
+      "zero_output_samples": 52,
+      "at": 1790471991.1122885
+    }
+  },
+  "arm_model": {
+    "moveit_installed": true,
+    "fk_ik_reference_only": true,
+    "measured_joint_feedback": false,
+    "reference_gripper_contacts_unresolved": true,
+    "physical_execution": false
+  },
+  "ai_control_interference": {
+    "inference_seconds": 4.585110379999605,
+    "heartbeat_samples": 601,
+    "heartbeat_interval_max_seconds": 0.02255818399862619,
+    "heartbeat_interval_p99_seconds": 0.021149210310268243,
+    "receipt_interval_max_seconds": 0.025208783001289703,
+    "all_output_commands_zero": true
+  },
+  "frontier_selection": {
+    "implemented": true,
+    "live_candidates": 5,
+    "autonomous_exploration_tested": false
+  },
+  "image_delivery": {
+    "atomic_snapshot_response": true,
+    "complete_jpeg_responses_checked": 30
+  },
+  "updated_at": 1790472376.6238794,
+  "named_places": {
+    "save_list_verified": true,
+    "uncommissioned_travel_rejected": true
+  },
+  "software_tests_passed": 26
 }

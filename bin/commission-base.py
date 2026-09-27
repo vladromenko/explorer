@@ -22,9 +22,12 @@ from sensor_msgs.msg import Imu
 root=Path('/home/vlad/Explorer')
 parser=argparse.ArgumentParser()
 parser.add_argument('axis',choices=['forward','left','ccw'])
+parser.add_argument('--timeout-test',action='store_true')
 args=parser.parse_args()
+if args.timeout_test and args.axis!='forward':parser.error('Timeout test only permits forward')
 velocity={'forward':[.04,0.,0.],'left':[0.,.04,0.],'ccw':[0.,0.,.15]}[args.axis]
 duration=.6
+quiet_seconds=.8 if args.timeout_test else 0.
 rclpy.init();node=Node('explorer_commission_base');pub=node.create_publisher(String,'/explorer/request',10)
 samples=[];started=time.monotonic();command_started=None
 def odom(m):
@@ -70,15 +73,15 @@ try:
  fd=os.open(permit,os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600)
  with os.fdopen(fd,'w') as f:json.dump(dict(token=token,expires=time.monotonic()+2),f)
  command_started=time.monotonic()
- request('commission_pulse',token=token,velocity=velocity,duration=duration)
- while time.monotonic()-command_started<duration:
+ request('commission_pulse',token=token,velocity=velocity,duration=duration,quiet_seconds=quiet_seconds)
+ while time.monotonic()-command_started<duration+quiet_seconds:
   spin(.045)
   request('commission_lease',token=token)
  request('stop');spin(1.2)
  before=[s for s in samples if s['kind']=='odom' and s['t']<command_started-started][-1]
  after=[s for s in samples if s['kind']=='odom'][-1]
  commands=[s for s in samples if s['kind']=='command' and s['t']>=command_started-started]
- result=dict(axis=args.axis,requested=velocity,duration=duration,delta={k:after[k]-before[k] for k in ('x','y','yaw')},
+ result=dict(axis=args.axis,requested=velocity,duration=duration,quiet_seconds=quiet_seconds,delta={k:after[k]-before[k] for k in ('x','y','yaw')},
              peak={k:max(abs(s[k]) for s in commands) for k in ('vx','vy','wz')},
              final_velocity={k:after[k] for k in ('vx','vy','wz')},physical_direction_confirmed=False)
  print(json.dumps(result))

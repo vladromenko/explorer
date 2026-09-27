@@ -13,12 +13,14 @@ class SafetyGate:
         self.source = None
 
     def stop(self):
+        self.mode = "MANUAL"
         self.estop = True
         self.command_at = -1e9
         self.command = [0., 0., 0.]
         self.output = [0., 0., 0.]
 
     def submit(self, values, source, now):
+        if source not in ("manual","autonomy"):raise ValueError("Invalid command source")
         if len(values) != 3 or not all(math.isfinite(x) for x in values):
             raise ValueError("Three finite velocities required")
         if source == "autonomy" and self.mode != "AUTONOMOUS":

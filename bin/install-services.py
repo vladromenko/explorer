@@ -6,7 +6,7 @@ import subprocess
 root=Path('/home/vlad/Explorer')
 destination=Path.home()/'.config/systemd/user'
 destination.mkdir(parents=True,exist_ok=True)
-components=['mcu','watchdog','control','state','ekf','camera','perception','llm','web','oled','gamepad','geometry','slam','mapview','planning']
+components=['mcu','watchdog','control','state','ekf','camera','perception','llm','web','oled','gamepad','geometry','slam','mapview','planning','navigation']
 for name in components:
     limits=''
     if name=='llm':limits='Nice=10\nCPUWeight=20\nMemoryHigh=3000M\nMemoryMax=3400M\nOOMScoreAdjust=500\n'

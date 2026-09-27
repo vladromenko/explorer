@@ -35,6 +35,16 @@ class SafetyTests(unittest.TestCase):
         self.g.submit([.3,0,0], 'manual', 0)
         self.assertEqual(self.g.tick(0,.1,True)[0], [0,0,0])
 
+    def test_stop_revokes_autonomous_mode(self):
+        self.g.estop=False;self.g.mode='AUTONOMOUS'
+        self.g.submit([.2,0,0],'autonomy',1)
+        self.g.stop();self.g.estop=False
+        self.assertFalse(self.g.submit([.2,0,0],'autonomy',1.01))
+        self.assertEqual(self.g.tick(1.02,.02,True)[0],[0,0,0])
+
+    def test_unknown_source_is_rejected(self):
+        with self.assertRaises(ValueError):self.g.submit([.2,0,0],'untrusted',1)
+
     def test_sensor_loss_stops_immediately(self):
         self.g.estop=False
         self.g.submit([.3,0,0], 'manual', 0)

@@ -1,6 +1,6 @@
 [Unit]
 Description=Explorer local robot runtime
-Wants=explorer-mcu.service explorer-watchdog.service explorer-control.service explorer-state.service explorer-ekf.service explorer-camera.service explorer-perception.service explorer-llm.service explorer-web.service explorer-oled.service explorer-gamepad.service explorer-geometry.service explorer-slam.service explorer-mapview.service explorer-planning.service
+Wants=explorer-mcu.service explorer-watchdog.service explorer-control.service explorer-state.service explorer-ekf.service explorer-camera.service explorer-perception.service explorer-llm.service explorer-web.service explorer-oled.service explorer-gamepad.service explorer-geometry.service explorer-slam.service explorer-mapview.service explorer-planning.service explorer-navigation.service
 
 [Install]
 WantedBy=default.target

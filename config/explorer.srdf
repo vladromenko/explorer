@@ -1,0 +1,98 @@
+<?xml version='1.0' encoding='utf-8'?>
+<robot name="explorer">
+  <group name="arm">
+    <joint name="arm1_Joint" />
+    <joint name="arm2_Joint" />
+    <joint name="arm3_Joint" />
+    <joint name="arm4_Joint" />
+    <joint name="arm5_Joint" />
+  </group>
+  <group name="gripper">
+    <joint name="rlink1_Joint" />
+    <joint name="rlink2_Joint" />
+    <joint name="llink1_Joint" />
+    <joint name="llink2_Joint" />
+    <joint name="rlink3_Joint" />
+    <joint name="llink3_Joint" />
+  </group>
+  <disable_collisions link1="base_footprint" link2="base_link" reason="Adjacent" />
+  <disable_collisions link1="base_link" link2="arm1" reason="Adjacent" />
+  <disable_collisions link1="arm1" link2="arm2" reason="Adjacent" />
+  <disable_collisions link1="arm2" link2="arm3" reason="Adjacent" />
+  <disable_collisions link1="arm3" link2="arm4" reason="Adjacent" />
+  <disable_collisions link1="arm4" link2="arm5" reason="Adjacent" />
+  <disable_collisions link1="arm5" link2="rlink1" reason="Adjacent" />
+  <disable_collisions link1="rlink1" link2="rlink2" reason="Adjacent" />
+  <disable_collisions link1="arm5" link2="llink1" reason="Adjacent" />
+  <disable_collisions link1="llink1" link2="llink2" reason="Adjacent" />
+  <disable_collisions link1="arm5" link2="rlink3" reason="Adjacent" />
+  <disable_collisions link1="arm5" link2="llink3" reason="Adjacent" />
+  <disable_collisions link1="arm5" link2="Gripping" reason="Adjacent" />
+  <disable_collisions link1="arm4" link2="DCW2" reason="Adjacent" />
+  <disable_collisions link1="base_link" link2="Camera" reason="Adjacent" />
+  <disable_collisions link1="base_link" link2="imu_frame" reason="Adjacent" />
+  <disable_collisions link1="base_link" link2="laser0_frame" reason="Adjacent" />
+  <disable_collisions link1="base_link" link2="laser1_frame" reason="Adjacent" />
+  <disable_collisions link1="base_link" link2="lwheel1" reason="Adjacent" />
+  <disable_collisions link1="base_link" link2="lwheel2" reason="Adjacent" />
+  <disable_collisions link1="base_link" link2="rwheel1" reason="Adjacent" />
+  <disable_collisions link1="base_link" link2="rwheel2" reason="Adjacent" />
+  <disable_collisions link1="base_link" link2="arm_base_Link" reason="Adjacent" />
+  <disable_collisions link1="base_footprint" link2="base_link" reason="Rigid assembly" />
+  <disable_collisions link1="base_footprint" link2="Camera" reason="Rigid assembly" />
+  <disable_collisions link1="base_footprint" link2="imu_frame" reason="Rigid assembly" />
+  <disable_collisions link1="base_footprint" link2="laser0_frame" reason="Rigid assembly" />
+  <disable_collisions link1="base_footprint" link2="laser1_frame" reason="Rigid assembly" />
+  <disable_collisions link1="base_footprint" link2="lwheel1" reason="Rigid assembly" />
+  <disable_collisions link1="base_footprint" link2="lwheel2" reason="Rigid assembly" />
+  <disable_collisions link1="base_footprint" link2="rwheel1" reason="Rigid assembly" />
+  <disable_collisions link1="base_footprint" link2="rwheel2" reason="Rigid assembly" />
+  <disable_collisions link1="base_footprint" link2="arm_base_Link" reason="Rigid assembly" />
+  <disable_collisions link1="base_link" link2="Camera" reason="Rigid assembly" />
+  <disable_collisions link1="base_link" link2="imu_frame" reason="Rigid assembly" />
+  <disable_collisions link1="base_link" link2="laser0_frame" reason="Rigid assembly" />
+  <disable_collisions link1="base_link" link2="laser1_frame" reason="Rigid assembly" />
+  <disable_collisions link1="base_link" link2="lwheel1" reason="Rigid assembly" />
+  <disable_collisions link1="base_link" link2="lwheel2" reason="Rigid assembly" />
+  <disable_collisions link1="base_link" link2="rwheel1" reason="Rigid assembly" />
+  <disable_collisions link1="base_link" link2="rwheel2" reason="Rigid assembly" />
+  <disable_collisions link1="base_link" link2="arm_base_Link" reason="Rigid assembly" />
+  <disable_collisions link1="arm4" link2="DCW2" reason="Rigid assembly" />
+  <disable_collisions link1="arm5" link2="Gripping" reason="Rigid assembly" />
+  <disable_collisions link1="Camera" link2="imu_frame" reason="Rigid assembly" />
+  <disable_collisions link1="Camera" link2="laser0_frame" reason="Rigid assembly" />
+  <disable_collisions link1="Camera" link2="laser1_frame" reason="Rigid assembly" />
+  <disable_collisions link1="Camera" link2="lwheel1" reason="Rigid assembly" />
+  <disable_collisions link1="Camera" link2="lwheel2" reason="Rigid assembly" />
+  <disable_collisions link1="Camera" link2="rwheel1" reason="Rigid assembly" />
+  <disable_collisions link1="Camera" link2="rwheel2" reason="Rigid assembly" />
+  <disable_collisions link1="Camera" link2="arm_base_Link" reason="Rigid assembly" />
+  <disable_collisions link1="imu_frame" link2="laser0_frame" reason="Rigid assembly" />
+  <disable_collisions link1="imu_frame" link2="laser1_frame" reason="Rigid assembly" />
+  <disable_collisions link1="imu_frame" link2="lwheel1" reason="Rigid assembly" />
+  <disable_collisions link1="imu_frame" link2="lwheel2" reason="Rigid assembly" />
+  <disable_collisions link1="imu_frame" link2="rwheel1" reason="Rigid assembly" />
+  <disable_collisions link1="imu_frame" link2="rwheel2" reason="Rigid assembly" />
+  <disable_collisions link1="imu_frame" link2="arm_base_Link" reason="Rigid assembly" />
+  <disable_collisions link1="laser0_frame" link2="laser1_frame" reason="Rigid assembly" />
+  <disable_collisions link1="laser0_frame" link2="lwheel1" reason="Rigid assembly" />
+  <disable_collisions link1="laser0_frame" link2="lwheel2" reason="Rigid assembly" />
+  <disable_collisions link1="laser0_frame" link2="rwheel1" reason="Rigid assembly" />
+  <disable_collisions link1="laser0_frame" link2="rwheel2" reason="Rigid assembly" />
+  <disable_collisions link1="laser0_frame" link2="arm_base_Link" reason="Rigid assembly" />
+  <disable_collisions link1="laser1_frame" link2="lwheel1" reason="Rigid assembly" />
+  <disable_collisions link1="laser1_frame" link2="lwheel2" reason="Rigid assembly" />
+  <disable_collisions link1="laser1_frame" link2="rwheel1" reason="Rigid assembly" />
+  <disable_collisions link1="laser1_frame" link2="rwheel2" reason="Rigid assembly" />
+  <disable_collisions link1="laser1_frame" link2="arm_base_Link" reason="Rigid assembly" />
+  <disable_collisions link1="lwheel1" link2="lwheel2" reason="Rigid assembly" />
+  <disable_collisions link1="lwheel1" link2="rwheel1" reason="Rigid assembly" />
+  <disable_collisions link1="lwheel1" link2="rwheel2" reason="Rigid assembly" />
+  <disable_collisions link1="lwheel1" link2="arm_base_Link" reason="Rigid assembly" />
+  <disable_collisions link1="lwheel2" link2="rwheel1" reason="Rigid assembly" />
+  <disable_collisions link1="lwheel2" link2="rwheel2" reason="Rigid assembly" />
+  <disable_collisions link1="lwheel2" link2="arm_base_Link" reason="Rigid assembly" />
+  <disable_collisions link1="rwheel1" link2="rwheel2" reason="Rigid assembly" />
+  <disable_collisions link1="rwheel1" link2="arm_base_Link" reason="Rigid assembly" />
+  <disable_collisions link1="rwheel2" link2="arm_base_Link" reason="Rigid assembly" />
+</robot>

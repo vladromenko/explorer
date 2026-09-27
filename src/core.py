@@ -35,6 +35,7 @@ class Core(Node):
         self.last_result = {}
         self.probe = None
         self.probe_token = None
+        self.autonomy_lease = -1e9
         self.pub = self.create_publisher(Twist, '/cmd_vel', 1)
         self.arm_pub = self.create_publisher(ArmJoints, '/arm6_joints', 1)
         self.heartbeat = self.create_publisher(UInt64, '/explorer/control_heartbeat', 1)
@@ -45,6 +46,7 @@ class Core(Node):
             self.create_subscription(LaserScan, '/'+name, lambda m,n=name:self.scan_cb(n,m), qos_profile_sensor_data)
         self.create_subscription(ArmJoints, '/arm6_feedback', self.arm_cb, qos_profile_sensor_data)
         self.create_subscription(String, '/explorer/request', self.request, 1)
+        self.create_subscription(Twist, '/explorer/nav_cmd_vel', self.nav_cb, 1)
         self.joy_held = False
         self.create_subscription(Joy, '/joy', self.joy_cb, qos_profile_sensor_data)
         self.last_tick = time.monotonic()
@@ -89,6 +91,12 @@ class Core(Node):
             self.joy_held=False
             self.gate.submit([0.,0.,0.],'manual',time.monotonic())
 
+    def nav_cb(self,msg):
+        now=time.monotonic()
+        if self.gate.mode=='AUTONOMOUS' and not self.gate.estop and now-self.autonomy_lease<.25:
+            try:self.gate.submit([msg.linear.x,msg.linear.y,msg.angular.z],'autonomy',now)
+            except ValueError:self.gate.stop()
+
     def request(self, msg):
         req = {}
         try:
@@ -99,7 +107,7 @@ class Core(Node):
                 if self.probe:self.probe.finished=True
             else:
                 age = time.monotonic() - float(req['at'])
-                if age < 0 or age > .25:
+                if not math.isfinite(age) or age < 0 or age > .25:
                     raise ValueError('Expired request')
                 if op == 'clear_stop':
                     self.gate.command_at = -1e9
@@ -111,13 +119,17 @@ class Core(Node):
                         raise ValueError('No current local commissioning permit')
                     if self.gate.estop or self.probe:
                         raise ValueError('Stop is latched or a probe is active')
-                    self.probe=Pulse(req['velocity'],req['duration'],time.monotonic())
+                    self.probe=Pulse(req['velocity'],req['duration'],time.monotonic(),req.get('quiet_seconds',0.))
                     self.probe_token=req['token']
                     permit_path.unlink()
                 elif op == 'commission_lease':
                     if not self.probe or not secrets.compare_digest(req['token'],self.probe_token):
                         raise ValueError('No matching probe')
                     self.probe.last_lease=time.monotonic()
+                elif op == 'autonomy_lease':
+                    if self.gate.estop or self.gate.mode!='AUTONOMOUS' or not all(self.config.get(k,False) for k in ('base_commissioned','mcu_watchdog_verified','lidar_tf_validated','localization_verified')):
+                        raise ValueError('Autonomy prerequisites not met')
+                    self.autonomy_lease=time.monotonic()
                 elif op == 'mode':
                     if req['mode'] not in ('MANUAL','ASSISTED','AUTONOMOUS'):
                         raise ValueError('Invalid mode')
@@ -142,9 +154,10 @@ class Core(Node):
         healthy = healthy and self.battery is not None and self.battery > self.config['battery_stop_voltage']
         # Conservative all-direction guard until the measured scanner extrinsics are installed.
         collision = any(s['nearest'] is None or s['nearest'] < .30 for s in self.scans.values())
+        if self.gate.source=='autonomy' and now-self.autonomy_lease>.25:self.gate.command_at=-1e9
         if self.probe:
             velocity,self.reason=self.probe.tick(now,now-self.last_tick,self.gate.estop,healthy,collision)
-            self.gate.output=list(velocity)
+            if velocity is not None:self.gate.output=list(velocity)
             if self.probe.finished:
                 self.gate.stop()
                 self.probe=None
@@ -153,9 +166,10 @@ class Core(Node):
             healthy = healthy and self.config['lidar_tf_validated']
             velocity, self.reason = self.gate.tick(now, now-self.last_tick, healthy, collision)
         self.last_tick = now
-        msg = Twist()
-        msg.linear.x, msg.linear.y, msg.angular.z = velocity
-        self.pub.publish(msg)
+        if velocity is not None:
+            msg = Twist()
+            msg.linear.x, msg.linear.y, msg.angular.z = velocity
+            self.pub.publish(msg)
         self.heartbeat.publish(UInt64(data=time.monotonic_ns()))
 
     def write_status(self):
