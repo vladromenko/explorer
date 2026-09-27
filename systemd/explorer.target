@@ -1,0 +1,6 @@
+[Unit]
+Description=Explorer local robot runtime
+Wants=explorer-mcu.service explorer-watchdog.service explorer-control.service explorer-state.service explorer-ekf.service explorer-camera.service explorer-perception.service explorer-llm.service explorer-web.service explorer-oled.service
+
+[Install]
+WantedBy=default.target

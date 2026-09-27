@@ -1,0 +1,11 @@
+#!/bin/bash
+set -e
+case "${1:-status}" in
+ start) systemctl --user start explorer.target;;
+ stop) systemctl --user stop explorer.target;;
+ status) systemctl --user --no-pager --plain list-units 'explorer-*' ;;
+ logs) journalctl --user -f -u "explorer-${2:-control}";;
+ url) printf 'http://explorer.local:8080/#'; cat /home/vlad/Explorer/config/access_token; printf '\n';;
+ estop) source /home/vlad/Explorer/bin/env.sh; ros2 topic pub --once /explorer/request std_msgs/msg/String '{data: "{\"op\":\"stop\"}"}' ;;
+ *) echo 'Usage: explorer {start|stop|status|logs [component]|url|estop}' >&2; exit 2;;
+esac

@@ -1,0 +1,21 @@
+[Unit]
+Description=Explorer watchdog
+PartOf=explorer.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+After=explorer-mcu.service
+Before=explorer-control.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/vlad/Explorer
+ExecStart=/bin/bash /home/vlad/Explorer/bin/run.sh watchdog
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=8
+KillMode=control-group
+UMask=0077
+
+[Install]
+WantedBy=explorer.target

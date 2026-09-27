@@ -1,0 +1,23 @@
+[Unit]
+Description=Explorer llm
+PartOf=explorer.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+WorkingDirectory=/home/vlad/Explorer
+ExecStart=/bin/bash /home/vlad/Explorer/bin/run.sh llm
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=8
+KillMode=control-group
+UMask=0077
+Nice=10
+CPUWeight=20
+MemoryHigh=3000M
+MemoryMax=3400M
+OOMScoreAdjust=500
+
+[Install]
+WantedBy=explorer.target

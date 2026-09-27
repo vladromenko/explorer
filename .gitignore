@@ -1,0 +1,10 @@
+.venv/
+vendor/
+models/
+data/
+logs/
+__pycache__/
+*.pyc
+config/access_token
+/Log/
+/log.txt

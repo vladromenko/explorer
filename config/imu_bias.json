@@ -1,0 +1,7 @@
+{
+  "gyro_z_bias_rad_s": -0.0001443433091044426,
+  "gyro_z_std_rad_s": 0.004920344354341109,
+  "samples": 125,
+  "at": 1790467103.4392743,
+  "stationary_base_stop_latched": true
+}

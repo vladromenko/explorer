@@ -1,0 +1,11 @@
+{
+  "base_commissioned": false,
+  "arm_commissioned": false,
+  "lidar_tf_validated": false,
+  "camera_tf_validated": false,
+  "mcu_watchdog_verified": false,
+  "max_velocity": [0.15, 0.15, 0.4],
+  "max_acceleration": [0.3, 0.3, 0.7],
+  "battery_stop_voltage": 10.8,
+  "notes": "Velocity and battery thresholds are provisional commissioning limits. Physical calibration is required before autonomous motion."
+}
