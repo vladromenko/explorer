@@ -58,7 +58,7 @@ class ArmModel:
             t=self.state.get_global_link_transform('Gripping')
             return dict(frame='base_footprint',xyz=t[:3,3].tolist(),quaternion_xyzw=Rotation.from_matrix(t[:3,:3]).as_quat().tolist(),
                         collision=self.collision(),reference_only=True,measured_state=False,executed=False,
-                        warning='Reference CAD/servo calibration and internal gripper contacts are unresolved. Not an execution permission.')
+                        warning='Nominal CAD and servo convention, not measured joint state. Environment and hand-eye calibration still require validation. Not an execution permission.')
 
     def ik(self,xyz,seed_deg,gripper_rad,quaternion=None):
         target=self.vector(xyz,3)
@@ -70,18 +70,22 @@ class ArmModel:
             rot=Rotation.from_quat(quat)
         with self.lock:
             seed=self.set_state(seed_deg,gripper_rad);start=time.monotonic()
+            # Position-only IK must not exploit tiny CAD eccentricities by
+            # spinning the wrist through its range. Keep the requested roll.
+            def expand(q):return np.r_[q,seed[4]] if rot is None else q
             def residual(q):
                 if time.monotonic()-start>2:raise TimeoutError('IK time budget exceeded')
-                self.state.set_joint_group_positions('arm',q);self.state.update()
+                self.state.set_joint_group_positions('arm',expand(q));self.state.update()
                 t=self.state.get_global_link_transform('Gripping')
                 r=(t[:3,3]-target).tolist()
                 if rot is not None:r.extend((.1*(rot.inv()*Rotation.from_matrix(t[:3,:3])).as_rotvec()).tolist())
                 return r
-            fit=least_squares(residual,np.clip(seed,LOW+1e-8,HIGH-1e-8),bounds=(LOW,HIGH),max_nfev=100,
+            size=4 if rot is None else 5
+            fit=least_squares(residual,np.clip(seed[:size],LOW[:size]+1e-8,HIGH[:size]-1e-8),bounds=(LOW[:size],HIGH[:size]),max_nfev=100,
                               ftol=1e-8,xtol=1e-8,gtol=1e-8)
             err=residual(fit.x);poserr=float(np.linalg.norm(err[:3]));angerr=float(np.linalg.norm(err[3:])/.1) if rot is not None else None
             collided=self.collision()
-            return dict(solved=poserr<=.002 and (angerr is None or angerr<=.02),servo_deg=(np.degrees(fit.x)+90).tolist(),
+            return dict(solved=poserr<=.002 and (angerr is None or angerr<=.02),servo_deg=(np.degrees(expand(fit.x))+90).tolist(),
                         position_error_m=poserr,orientation_error_rad=angerr,collision=collided,
                         reference_only=True,executed=False,execution_allowed=False)
 

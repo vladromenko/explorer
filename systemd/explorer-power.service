@@ -1,0 +1,18 @@
+[Unit]
+Description=Explorer power
+PartOf=explorer.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+WorkingDirectory=/home/vlad/Explorer
+ExecStart=/bin/bash /home/vlad/Explorer/bin/run.sh power
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=8
+KillMode=control-group
+UMask=0077
+
+[Install]
+WantedBy=explorer.target

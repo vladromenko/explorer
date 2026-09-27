@@ -1,0 +1,26 @@
+device:
+  vendor_id: 121
+  product_id: 6172
+  path: /dev/input/by-id/usb-0079_Controller-event-joystick
+  driver: linux_evdev
+  calibration_source: data/gamepad-calibration-events.txt
+axes:
+  left_x: {code: 0, center: 128, minimum: 0, maximum: 255, inverted: true}
+  left_y: {code: 1, center: 128, minimum: 0, maximum: 255, inverted: true}
+  right_x: {code: 2, center: 128, minimum: 0, maximum: 255, inverted: true}
+  right_y: {code: 5, center: 128, minimum: 0, maximum: 255, inverted: true}
+buttons: {a: 304, b: 305, x: 308, y: 307, l1: 310, r1: 311, l2: 312, r2: 313, select: 314, start: 315, left_stick: 317, right_stick: 318}
+deadman_button: l1
+mode_button: a
+estop_buttons: [select, start]
+estop_hold_s: 0.6
+deadzone: 0.15
+watchdog_timeout: 0.25
+profiles:
+  precision: {linear: 0.04, angular: 0.1}
+  normal: {linear: 0.10, angular: 0.25}
+  fast: {linear: 0.15, angular: 0.4}
+radio_loss_verified: false
+continuous_motion_enabled: false
+arm_step_deg: 2
+notes: Physical Linux event mapping recorded with the operator. MODE produced no event. Repeated ROS Joy messages are not radio heartbeat evidence.

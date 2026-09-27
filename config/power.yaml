@@ -1,0 +1,43 @@
+# Conservative software limits, NOT battery/BMS electrical specifications.
+battery:
+  chemistry: null
+  series_cells: 3
+  series_cells_source: manufacturer_standard_pack_not_installed_label
+  capacity_ah: null
+  capacity_wh: null
+  bms_cutoff_v: null
+  max_discharge_a: null
+  max_charge_a: null
+  charger_rating: null
+  current_sensor: null
+  soc_method: unavailable
+  charging_detection: unavailable
+  manufacturer_full_voltage_v: 12.6
+policy:
+  warning_v: 11.4
+  low_v: 11.1
+  critical_v: 10.8
+  recovery_hysteresis_v: 0.25
+  low_delay_s: 3.0
+  critical_delay_s: 2.0
+  filter_tau_s: 2.0
+  sample_timeout_s: 3.0
+  idle_timeout_s: 60.0
+  low_speed_scale: 0.35
+  shutdown_delay_s: 12.0
+workloads:
+  llm_idle_timeout_s: 90.0
+  camera_fps: 15
+  perception_fps: 3
+  perception_idle_fps: 1
+  perception_low_fps: 0.5
+jetson:
+  verified_profiles: {15W: 0, 25W: 1, MAXN_SUPER: 2}
+  normal_profile: 15W
+  performance_profile: 25W
+  automatic_profile_switching: false
+  reason: privileged_install_and_transition_validation_required
+docking:
+  available: false
+  charger_contact_sensor: null
+  charging_interlock_validated: false

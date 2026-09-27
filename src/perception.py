@@ -7,6 +7,7 @@ from pathlib import Path
 import sqlite3
 import threading
 import time
+import yaml
 from collections import deque
 import cv2
 import numpy as np
@@ -106,6 +107,7 @@ def run():
     next_id=1
     previous=-1
     last_save=0
+    workload=yaml.safe_load((ROOT/'config/power.yaml').read_text())['workloads']
     while rclpy.ok():
         started=time.monotonic()
         with node.lock:rgbs,depths,info=list(node.rgb),list(node.depth),node.info
@@ -166,6 +168,9 @@ def run():
         ok,jpg=cv2.imencode('.jpg',frame,[cv2.IMWRITE_JPEG_QUALITY,78])
         if ok:
             tmp=ROOT/'data/frame.tmp';tmp.write_bytes(jpg.tobytes());tmp.replace(ROOT/'data/frame.jpg')
-        time.sleep(max(0,.10-(time.monotonic()-started)))
+        try:power=json.loads((ROOT/'data/power.json').read_text()).get('state','UNKNOWN')
+        except (OSError,ValueError):power='UNKNOWN'
+        fps=workload['perception_low_fps'] if power in ('LOW_POWER','UNKNOWN') else workload['perception_idle_fps'] if power=='IDLE' else workload['perception_fps']
+        time.sleep(max(0,1/max(.2,float(fps))-(time.monotonic()-started)))
 
 if __name__=='__main__':run()

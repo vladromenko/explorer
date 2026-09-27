@@ -95,4 +95,25 @@
   <disable_collisions link1="rwheel1" link2="rwheel2" reason="Rigid assembly" />
   <disable_collisions link1="rwheel1" link2="arm_base_Link" reason="Rigid assembly" />
   <disable_collisions link1="rwheel2" link2="arm_base_Link" reason="Rigid assembly" />
+  <disable_collisions link1="base_footprint" link2="arm1" reason="Adjacent rigid bodies at arm1_Joint" />
+  <disable_collisions link1="Camera" link2="arm1" reason="Adjacent rigid bodies at arm1_Joint" />
+  <disable_collisions link1="imu_frame" link2="arm1" reason="Adjacent rigid bodies at arm1_Joint" />
+  <disable_collisions link1="laser0_frame" link2="arm1" reason="Adjacent rigid bodies at arm1_Joint" />
+  <disable_collisions link1="laser1_frame" link2="arm1" reason="Adjacent rigid bodies at arm1_Joint" />
+  <disable_collisions link1="lwheel1" link2="arm1" reason="Adjacent rigid bodies at arm1_Joint" />
+  <disable_collisions link1="lwheel2" link2="arm1" reason="Adjacent rigid bodies at arm1_Joint" />
+  <disable_collisions link1="rwheel1" link2="arm1" reason="Adjacent rigid bodies at arm1_Joint" />
+  <disable_collisions link1="rwheel2" link2="arm1" reason="Adjacent rigid bodies at arm1_Joint" />
+  <disable_collisions link1="arm_base_Link" link2="arm1" reason="Adjacent rigid bodies at arm1_Joint" />
+  <disable_collisions link1="arm3" link2="DCW2" reason="Adjacent rigid bodies at arm4_Joint" />
+  <disable_collisions link1="arm4" link2="Gripping" reason="Adjacent rigid bodies at arm5_Joint" />
+  <disable_collisions link1="DCW2" link2="arm5" reason="Adjacent rigid bodies at arm5_Joint" />
+  <disable_collisions link1="DCW2" link2="Gripping" reason="Adjacent rigid bodies at arm5_Joint" />
+  <disable_collisions link1="Gripping" link2="rlink1" reason="Adjacent rigid bodies at rlink1_Joint" />
+  <disable_collisions link1="Gripping" link2="llink1" reason="Adjacent rigid bodies at llink1_Joint" />
+  <disable_collisions link1="Gripping" link2="rlink3" reason="Adjacent rigid bodies at rlink3_Joint" />
+  <disable_collisions link1="Gripping" link2="llink3" reason="Adjacent rigid bodies at llink3_Joint" />
+  <disable_collisions link1="rlink2" link2="rlink3" reason="Right four-bar closing pin" />
+  <disable_collisions link1="llink2" link2="llink3" reason="Left four-bar closing pin" />
+  <disable_collisions link1="rlink1" link2="llink1" reason="Designed meshing gear contact" />
 </robot>

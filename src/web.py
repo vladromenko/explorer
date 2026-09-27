@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import secrets
 import sqlite3
+import subprocess
 import threading
 import time
 import urllib.request
@@ -32,10 +33,16 @@ maps=MapTools(node)
 missions=Missions(node,maps)
 arm_model=None
 arm_model_lock=threading.Lock()
+arm_planner=None
+arm_planner_lock=threading.Lock()
 threading.Thread(target=rclpy.spin,args=(node,),daemon=True).start()
 agent_lock=threading.Lock()
 command_lock=threading.Lock()
 command_sequence={}
+from teaching import TeachingController
+from lerobot_bridge import LearningJobs
+teaching=TeachingController(ROOT)
+learning_jobs=LearningJobs(ROOT)
 
 def read_state(name,max_age=3):
     try:
@@ -49,9 +56,58 @@ def emit(op,**kwargs):
     pub.publish(String(data=json.dumps(req,allow_nan=False)))
     return dict(queued=True,id=req['id'])
 
+from gamepad_panel import GamepadPanel
+gamepad_panel=GamepadPanel(ROOT,teaching,lambda:emit('stop'))
+
+@app.get('/api/teaching')
+def teaching_status():
+    return dict(teaching=teaching.status(),learning=learning_jobs.status(),gamepad=gamepad_panel.status())
+
+class TeachingStart(BaseModel):
+    name:str=Field(min_length=3,max_length=80)
+    observing:bool=False
+
+class TeachingStep(BaseModel):
+    joint:int=Field(ge=1,le=6)
+    delta:int
+
+class TeachingFinish(BaseModel):
+    outcome:str
+
+class TrainingStart(BaseModel):
+    steps:int=1000
+    task:str=Field(min_length=3,max_length=80)
+
+class PanelLease(BaseModel):
+    enabled:bool=False
+
+@app.post('/api/teaching/start')
+def start_teaching(c:TeachingStart):return map_operation(teaching.start,c.name,c.observing)
+
+@app.post('/api/teaching/step')
+def step_teaching(c:TeachingStep):return map_operation(teaching.step,c.joint,c.delta)
+
+@app.post('/api/teaching/finish')
+def finish_teaching(c:TeachingFinish):return map_operation(teaching.finish,c.outcome)
+
+@app.post('/api/learning/train')
+def train_policy(c:TrainingStart):return map_operation(learning_jobs.start,c.steps,c.task)
+
+@app.post('/api/learning/stop')
+def stop_training():return map_operation(learning_jobs.stop)
+
+@app.get('/api/learning/log/{ident}')
+def training_log(ident:str):return {'text':map_operation(learning_jobs.log,ident)}
+
+@app.post('/api/gamepad/panel')
+def panel_lease(c:PanelLease):return gamepad_panel.heartbeat(c.enabled)
+
+@app.get('/guide')
+def operator_guide():return HTMLResponse((ROOT/'docs/operator-guide.html').read_text())
+
 @app.middleware('http')
 async def auth(request:Request,call_next):
-    if request.url.path != '/':
+    if request.url.path not in ('/','/guide'):
         supplied=request.headers.get('authorization','').removeprefix('Bearer ')
         if not secrets.compare_digest(supplied,TOKEN):
             from fastapi.responses import JSONResponse
@@ -73,6 +129,8 @@ def status():
     s['lidar_geometry']=read_state('lidar_geometry.json',2)
     s['missions']=missions.status()
     s['resources']={}
+    s['power_telemetry']=read_state('power.json')
+    s['learning']=read_state('learning-status.json',65)
     try:
         mem={line.split(':')[0]:int(line.split()[1]) for line in Path('/proc/meminfo').read_text().splitlines() if len(line.split())>=2}
         s['resources']['ram_available_mb']=round(mem['MemAvailable']/1024)
@@ -186,6 +244,31 @@ def arm_preview(p:ArmPreview):
         raise ValueError('Unknown arm preview operation')
     return map_operation(calculate)
 
+class ArmObstacle(BaseModel):
+    center:list[float]=Field(min_length=3,max_length=3)
+    size:list[float]=Field(min_length=3,max_length=3)
+
+class ArmPlan(BaseModel):
+    start_deg:list[float]=Field(min_length=5,max_length=5)
+    goal_deg:list[float]=Field(min_length=5,max_length=5)
+    gripper_linkage_rad:float
+    obstacles:list[ArmObstacle]=Field(default_factory=list,max_length=100)
+
+@app.post('/api/arm/plan')
+def arm_plan(p:ArmPlan):
+    def calculate():
+        global arm_planner
+        with arm_planner_lock:
+            if arm_planner is None:
+                from arm_planner import ArmPlanner
+                arm_planner=ArmPlanner()
+        return arm_planner.plan(p.start_deg,p.goal_deg,p.gripper_linkage_rad,
+                                [o.model_dump() for o in p.obstacles])
+    return map_operation(calculate)
+
+@app.get('/api/arm/learning')
+def arm_learning():return read_state('learning-status.json',65)
+
 @app.get('/api/memory')
 def memory(label:str=''):
     path=ROOT/'data/world.sqlite3'
@@ -223,7 +306,7 @@ def tool(name,args):
         gauge=s.get('battery_gauge',{})
         return dict(stale=s['stale'],battery_voltage_V=s.get('battery'),battery_charge_percent=None,
                     battery_estimate_percent=None if s['stale'] else gauge.get('percent'),
-                    explanation='Voltage is measured in volts. Estimate percent is an approximate usable-voltage gauge, not measured state of charge. Charging and time remaining are unknown. Sensor ages are seconds.',
+                    explanation='Voltage is measured in volts. SOC, current, charging and runtime are unknown: no validated pack curve or battery current sensor. Sensor ages are seconds.',
                     sensor_age_seconds=s.get('sensor_age'),mode=s.get('mode'),stop_latched=s.get('stop_latched'),
                     motion_state=s.get('reason'),raw_odometry_pose=s.get('raw_pose'),resources=s['resources'],missions=s.get('missions'),commissioning=s.get('commissioning'))
     if name=='list_visible_objects' and args=={}:
@@ -235,6 +318,7 @@ def tool(name,args):
     return {'error':'Unsupported tool or invalid arguments'}
 
 def inspect_scene(question):
+    ensure_llm()
     s=read_state('perception.json',2)
     if s['stale']:return {'error':'No fresh camera frame'}
     available=status()['resources'].get('ram_available_mb',0)
@@ -264,7 +348,24 @@ def inspect():
 
 class Prompt(BaseModel):text:str=Field(min_length=1,max_length=1500)
 
+def ensure_llm():
+    power=read_state('power.json')
+    if power['stale'] or power.get('state') in ('LOW_POWER','CRITICAL','CHARGING','UNKNOWN'):
+        raise ValueError('Local model deferred by power policy')
+    demand=ROOT/'data/llm-demand.tmp'
+    demand.write_text(json.dumps(dict(at=time.time(),monotonic=time.monotonic())))
+    demand.replace(ROOT/'data/llm-demand.json')
+    subprocess.run(['systemctl','--user','start','explorer-llm.service'],check=True,timeout=5)
+    deadline=time.monotonic()+45
+    ready=False
+    while not ready and time.monotonic()<deadline:
+        try:
+            with urllib.request.urlopen('http://127.0.0.1:8081/health',timeout=1) as response:ready=response.status==200
+        except OSError:time.sleep(.5)
+    if not ready:raise ValueError('Local model is still starting')
+
 def infer(messages):
+    ensure_llm()
     payload=dict(model='explorer',messages=messages,tools=TOOLS,parallel_tool_calls=False,tool_choice='required' if len(messages)==2 else 'auto',temperature=.1,max_tokens=240,
                  chat_template_kwargs={'enable_thinking':False})
     req=urllib.request.Request('http://127.0.0.1:8081/v1/chat/completions',data=json.dumps(payload).encode(),headers={'Content-Type':'application/json'})
@@ -279,12 +380,12 @@ def agent(prompt:Prompt):
         s=tool('get_status',{})
         ru=any('а'<=c.lower()<='я' for c in prompt.text)
         estimate=s.get('battery_estimate_percent')
-        if s['stale'] or s['battery_voltage_V'] is None or estimate is None:
+        if s['stale'] or s['battery_voltage_V'] is None:
             answer='Нет свежих данных батареи.' if ru else 'No fresh battery reading.'
         elif ru:
-            answer=f"Батарея: примерно {estimate}% по напряжению ({s['battery_voltage_V']:.2f} В). Это приблизительная оценка, а не измерение ёмкости; состояние зарядки неизвестно."
+            answer=f"Напряжение батареи: {s['battery_voltage_V']:.2f} В. Процент заряда и оставшееся время пока неизвестны: нужны характеристики батареи и проверенная оценка ёмкости. Состояние зарядки не измеряется."
         else:
-            answer=f"Battery: approximately {estimate}% from voltage ({s['battery_voltage_V']:.2f} V). This is an estimate, not a capacity measurement; charging state is unknown."
+            answer=f"Battery voltage: {s['battery_voltage_V']:.2f} V. SOC, runtime and charging are unknown; the pack is not characterized."
         return dict(answer=answer,tools=[dict(name='get_status',result=s)],deterministic=True)
     if not agent_lock.acquire(blocking=False):raise HTTPException(429,'Agent is busy')
     try:

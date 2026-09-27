@@ -171,7 +171,7 @@
     <origin xyz="0.00057305 0 0.074815" rpy="0 0 0" />
     <parent link="arm4" />
     <child link="arm5" />
-    <axis xyz="0 -1 0" />
+    <axis xyz="0 0 1" />
     <limit lower="-1.5708" upper="3.1416" effort="100" velocity="1" />
   </joint>
   <link name="rlink1">

@@ -20,8 +20,8 @@
     "vendor/m3_reference/meshes/rwheel1.STL": "7218e9bea1d0862cacd44b0a8a72e207085d367a022843bfd4e6be23f6786fff",
     "vendor/m3_reference/meshes/rwheel2.STL": "f8daf44a79b1b3d5bdec95ef3885e8151f3a39f21f93c2bf2e8fcbf09d57c323",
     "vendor/m3_reference/meshes/arm_base_Link.STL": "bbd67c0a59cdbb8fd02c567e8ddff62bde72d3cae753ee63da7681f98f29871c",
-    "config/explorer.urdf": "fb391e0744960c315cdafaf70ef04f02c81874edfdca9fad28442626029333f3",
-    "config/explorer.srdf": "bd80a9873109c2aacb02ee2516f93d5931ff8fd517e54f7766ce7608d4133000"
+    "config/explorer.urdf": "9ee94f15a2473ba04c84c552bae47f7dd2bd734b8b3700f3fe25d752c3eace4b",
+    "config/explorer.srdf": "dba83e73a95a6a85e936f0900d2aefadbb434b89302da92d680b56f983b023a7"
   },
   "reference_only": true,
   "calibration_verified": false,

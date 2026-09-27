@@ -6,6 +6,8 @@ case "$1" in
  mcu) exec "$EXPLORER_ROOT/vendor/ros/micro_ros_agent/lib/micro_ros_agent/micro_ros_agent" serial --dev /dev/explorer_mcu -b 2000000 -v3;;
  camera) exec ros2 launch orbbec_camera dabai_dcw2.launch.py enable_point_cloud:=false enable_ir:=false depth_registration:=true color_fps:=15 depth_fps:=15;;
  control) exec python3 src/core.py;;
+ power) exec python3 src/power_manager.py;;
+ learning) exec python3 src/learning_worker.py;;
  watchdog) exec python3 src/watchdog.py;;
  oled) exec python3 src/oled.py;;
  perception) exec python3 src/perception.py;;

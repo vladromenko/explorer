@@ -1,9 +1,15 @@
 import copy
 import unittest
-from arm_commissioning import HOME, validate_pose, stationary_status
+from arm_commissioning import HOME, validate_pose, validate_incremental, stationary_status
 
 
 class ArmCommissioningTests(unittest.TestCase):
+    def test_incremental_bounds_and_no_accidental_group_motion(self):
+        validate_incremental(HOME,[90,115,3,0,90,30],4000)
+        with self.assertRaises(ValueError):validate_incremental(HOME,[90,100,3,0,90,30],4000)
+        with self.assertRaises(ValueError):validate_incremental(HOME,[90,115,13,0,90,30],4000)
+        validate_incremental(HOME,[90,115,13,0,90,30],4000,coordinated=True)
+        with self.assertRaises(ValueError):validate_incremental(HOME,[90,115,13,0,90,30],500,coordinated=True)
     def test_rejects_unsafe_gripper_and_unobserved_region(self):
         for pose in ([90,125,3,0,90,0], [150,125,3,0,90,30], [90]*5,
                      [90,125,3,0,float('nan'),30]):
@@ -23,4 +29,3 @@ class ArmCommissioningTests(unittest.TestCase):
             changed[key] = value
             with self.assertRaises(ValueError):
                 stationary_status(changed,100.1)
-

@@ -5,6 +5,18 @@ HOME = [90, 125, 3, 0, 90, 30]
 HARD_LIMITS = [(0, 180)] * 4 + [(0, 270), (30, 180)]
 
 
+def validate_incremental(start, pose, runtime_ms, coordinated=False):
+    if len(start)!=6 or len(pose)!=6 or any(type(v) is not int for v in start+pose):
+        raise ValueError('Two complete integer poses required')
+    if type(runtime_ms) is not int or not 3000<=runtime_ms<=5000:
+        raise ValueError('Incremental observation requires 3000..5000 ms')
+    for a,b,(lo,hi) in zip(start,pose,HARD_LIMITS):
+        if not lo<=a<=hi or not lo<=b<=hi or abs(a-b)>10:
+            raise ValueError('Step exceeds hard limits or 10 degrees')
+    if not coordinated and sum(a!=b for a,b in zip(start,pose))!=1:
+        raise ValueError('Change exactly one joint per observed step')
+
+
 def validate_pose(pose, runtime_ms):
     if len(pose) != 6 or any(type(v) is not int for v in pose):
         raise ValueError('Six integer servo angles required')
@@ -25,6 +37,8 @@ def stationary_status(s, now):
         raise ValueError('Controller status is stale')
     if s['stop_latched'] is not True or len(velocity) != 3:
         raise ValueError('Base stop must remain latched')
+    if s.get('power',{}).get('state') in ('CRITICAL','CHARGING','UNKNOWN','LOW_POWER'):
+        raise ValueError('Power policy blocks arm commissioning')
     if any(not math.isfinite(v) or abs(v) > .001 for v in velocity):
         raise ValueError('Base command is not zero')
     if not isinstance(battery, (int, float)) or not math.isfinite(battery) or battery < 11:
@@ -33,4 +47,3 @@ def stationary_status(s, now):
            not 0 <= s['sensor_age'].get(k, math.inf) < limit
            for k, limit in [('odom', .5), ('battery', 2)]):
         raise ValueError('MCU telemetry is stale')
-

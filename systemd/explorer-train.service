@@ -1,0 +1,20 @@
+[Unit]
+Description=Explorer official LeRobot offline training
+PartOf=explorer.target
+
+[Service]
+Type=exec
+WorkingDirectory=/home/vlad/Explorer
+ExecStart=/home/vlad/Explorer/.venv-learning/bin/python /home/vlad/Explorer/bin/learning-run.py
+Environment=PYTHONPATH=/home/vlad/Explorer/src
+Environment=OMP_NUM_THREADS=2
+Environment=OPENBLAS_NUM_THREADS=1
+Restart=no
+Nice=15
+CPUWeight=10
+MemoryHigh=3500M
+MemoryMax=4500M
+OOMScoreAdjust=700
+TimeoutStopSec=8
+KillMode=control-group
+UMask=0077
