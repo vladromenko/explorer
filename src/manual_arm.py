@@ -1,6 +1,6 @@
 """Persistent publisher for finite, CAD-checked operator position steps.
 
-Servo state remains an estimate. No velocity stream, autonomous policy input or
+Servo state remains an estimate. No velocity stream or
 automatic boot homing. An accepted 150 ms servo command cannot be recalled.
 """
 import fcntl
@@ -53,7 +53,7 @@ class ManualArm:
                     hardware_emergency_stop=False)
 
     def move(self,start,goal,deadline=None,expected_stop_revision=None,execution_permit=None,source="operator"):
-        if source not in ('operator','supervised_policy'):raise ValueError('Неверный источник команды')
+        if source not in ('operator','supervised_policy','supervised_trajectory'):raise ValueError('Неверный источник команды')
         if not self.ready:raise ValueError('Сначала дождитесь подготовки геометрии руки')
         if len(start)!=6 or len(goal)!=6 or any(type(v) is not int for v in start+goal):raise ValueError('Нужны шесть целых углов')
         if not any(a!=b for a,b in zip(start,goal)):raise ValueError('Нулевой шаг')

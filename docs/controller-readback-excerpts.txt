@@ -1,0 +1,111 @@
+Saved image SHA256: e41e3cf0f8a406e354624cbf6ea15937e4da83d0ec0b9d04f76e16354b08b94c
+ 8000dd8:	b480      	push	{r7}
+ 8000dda:	af00      	add	r7, sp, #0
+ 8000ddc:	4b03      	ldr	r3, [pc, #12]	@ (0x8000dec)
+ 8000dde:	781b      	ldrb	r3, [r3, #0]
+ 8000de0:	4618      	mov	r0, r3
+ 8000de2:	46bd      	mov	sp, r7
+ 8000de4:	f85d 7b04 	ldr.w	r7, [sp], #4
+ 8000de8:	4770      	bx	lr
+ 8000dea:	bf00      	nop
+ 8000dec:	1a5c      	subs	r4, r3, r1
+ 8000dee:	2400      	movs	r4, #0
+ 800b65c:	b5b0      	push	{r4, r5, r7, lr}
+ 800b65e:	b088      	sub	sp, #32
+ 800b660:	af04      	add	r7, sp, #16
+ 800b662:	6078      	str	r0, [r7, #4]
+ 800b664:	687b      	ldr	r3, [r7, #4]
+ 800b666:	60fb      	str	r3, [r7, #12]
+ 800b668:	4b18      	ldr	r3, [pc, #96]	@ (0x800b6cc)
+ 800b66a:	681b      	ldr	r3, [r3, #0]
+ 800b66c:	2b00      	cmp	r3, #0
+ 800b66e:	d011      	beq.n	0x800b694
+ 800b670:	68fb      	ldr	r3, [r7, #12]
+ 800b672:	e9d3 4500 	ldrd	r4, r5, [r3]
+ 800b676:	68fb      	ldr	r3, [r7, #12]
+ 800b678:	e9d3 2302 	ldrd	r2, r3, [r3, #8]
+ 800b67c:	68f9      	ldr	r1, [r7, #12]
+ 800b67e:	e9d1 010a 	ldrd	r0, r1, [r1, #40]	@ 0x28
+ 800b682:	e9cd 0102 	strd	r0, r1, [sp, #8]
+ 800b686:	e9cd 2300 	strd	r2, r3, [sp]
+ 800b68a:	4622      	mov	r2, r4
+ 800b68c:	462b      	mov	r3, r5
+ 800b68e:	4810      	ldr	r0, [pc, #64]	@ (0x800b6d0)
+ 800b690:	f03b f938 	bl	0x8046904
+ 800b694:	68fb      	ldr	r3, [r7, #12]
+ 800b696:	ed93 7b00 	vldr	d7, [r3]
+ 800b69a:	eef7 6bc7 	vcvt.f32.f64	s13, d7
+ 800b69e:	68fb      	ldr	r3, [r7, #12]
+ 800b6a0:	ed93 7b02 	vldr	d7, [r3, #8]
+ 800b6a4:	eeb7 6bc7 	vcvt.f32.f64	s12, d7
+ 800b6a8:	68fb      	ldr	r3, [r7, #12]
+ 800b6aa:	ed93 7b0a 	vldr	d7, [r3, #40]	@ 0x28
+ 800b6ae:	eef7 7bc7 	vcvt.f32.f64	s15, d7
+ 800b6b2:	eeb0 1a67 	vmov.f32	s2, s15
+ 800b6b6:	eef0 0a46 	vmov.f32	s1, s12
+ 800b6ba:	eeb0 0a66 	vmov.f32	s0, s13
+ 800b6be:	f7f9 f99d 	bl	0x80049fc
+ 800b6c2:	bf00      	nop
+ 800b6c4:	3710      	adds	r7, #16
+ 800b6c6:	46bd      	mov	sp, r7
+ 800b6c8:	bdb0      	pop	{r4, r5, r7, pc}
+ 800b6ca:	bf00      	nop
+ 800b6cc:	bf88      	it	hi
+ 800b6ce:	2400      	movhi	r4, #0
+ 800b6d0:	cfc8      	ldmia	r7, {r3, r6, r7}
+ 800b6d2:	0804      	lsrs	r4, r0, #32
+ 800c3d2:	2201      	movs	r2, #1
+ 800c3d4:	f44f 4180 	mov.w	r1, #16384	@ 0x4000
+ 800c3d8:	4837      	ldr	r0, [pc, #220]	@ (0x800c4b8)
+ 800c3da:	f009 fed7 	bl	0x801618c
+ 800c3de:	e008      	b.n	0x800c3f2
+ 800c3e0:	a319      	add	r3, pc, #100	@ (adr r3, 0x800c448)
+ 800c3e2:	e9d3 2300 	ldrd	r2, r3, [r3]
+ 800c3e6:	481d      	ldr	r0, [pc, #116]	@ (0x800c45c)
+ 800c3e8:	f02c faaa 	bl	0x8038940
+ 800c3ec:	2001      	movs	r0, #1
+ 800c3ee:	f026 fe53 	bl	0x8033098
+ 800c3f2:	f7f4 fcf1 	bl	0x8000dd8
+ 800c3f6:	4603      	mov	r3, r0
+ 800c3f8:	2b00      	cmp	r3, #0
+ 800c3fa:	d003      	beq.n	0x800c404
+ 800c3fc:	4b15      	ldr	r3, [pc, #84]	@ (0x800c454)
+ 800c3fe:	681b      	ldr	r3, [r3, #0]
+ 800c400:	2b02      	cmp	r3, #2
+ 800c402:	dded      	ble.n	0x800c3e0
+ 800c404:	2200      	movs	r2, #0
+ 800c406:	f44f 4180 	mov.w	r1, #16384	@ 0x4000
+ 800c40a:	482b      	ldr	r0, [pc, #172]	@ (0x800c4b8)
+ 800c40c:	f009 febe 	bl	0x801618c
+ 800c410:	4b2a      	ldr	r3, [pc, #168]	@ (0x800c4bc)
+ 800c412:	2200      	movs	r2, #0
+ 800c414:	701a      	strb	r2, [r3, #0]
+ 800c416:	4b0f      	ldr	r3, [pc, #60]	@ (0x800c454)
+ 800c418:	2205      	movs	r2, #5
+ 800c41a:	601a      	str	r2, [r3, #0]
+ 800c41c:	2000      	movs	r0, #0
+ 800c41e:	f7f7 ffc7 	bl	0x80043b0
+ 800c422:	4827      	ldr	r0, [pc, #156]	@ (0x800c4c0)
+ 800c424:	f03a face 	bl	0x80469c4
+ 800c428:	200a      	movs	r0, #10
+ 800c42a:	f026 fe35 	bl	0x8033098
+ 800c42e:	2000      	movs	r0, #0
+ 800c430:	f026 fd3e 	bl	0x8032eb0
+ 800c434:	e002      	b.n	0x800c43c
+ 800c436:	bf00      	nop
+ 800c438:	e000      	b.n	0x800c43c
+ 800c43a:	bf00      	nop
+ 800c43c:	f507 779c 	add.w	r7, r7, #312	@ 0x138
+ 800c440:	46bd      	mov	sp, r7
+ 800c442:	bdb0      	pop	{r4, r5, r7, pc}
+ 800c444:	f3af 8000 	nop.w
+ 800c448:	f200 2a05 	addw	sl, r0, #517	@ 0x205
+ 800c44c:	0001      	movs	r1, r0
+ 800c44e:	0000      	movs	r0, r0
+ 800c450:	ce9c      	ldmia	r6!, {r2, r3, r4, r7}
+ 800c452:	0804      	lsrs	r4, r0, #32
+ 800c454:	b908      	cbnz	r0, 0x800c45a
+ 800c456:	2400      	movs	r4, #0
+ 800c458:	bdbc      	pop	{r2, r3, r4, r5, r7, pc}
+ 800c45a:	2400      	movs	r4, #0
+ 800c45c:	bec8      	bkpt	0x00c8

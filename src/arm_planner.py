@@ -97,6 +97,15 @@ class ArmPlanner:
             order = [list(trajectory.joint_names).index(n) for n in names]
             points = [to_servo([p.positions[i] for i in order]).tolist()
                       for p in trajectory.points]
+            # URDF limits use rounded radians (1.5708), while the servo API
+            # uses exact degrees. Accept only sub-millidegree numerical drift.
+            normalized=[]
+            for point in points:
+                a=np.asarray(point);upper=np.array([180.,180.,180.,180.,270.])
+                if not np.isfinite(a).all() or np.any(a < -.001) or np.any(a > upper+.001):
+                    raise ValueError('MoveIt path exceeds physical servo limits')
+                normalized.append(np.clip(a,0.,upper).tolist())
+            points=normalized
             if len(points) < 2:raise ValueError('Incomplete trajectory')
             if not np.allclose(points[0], start_deg, atol=.1) or not np.allclose(points[-1], goal_deg, atol=.1):
                 raise ValueError('Plan endpoints disagree with request')

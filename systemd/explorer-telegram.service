@@ -1,0 +1,22 @@
+[Unit]
+Description=Explorer Telegram task adapter
+After=explorer-web.service explorer-vpn.service
+Wants=explorer-vpn.service
+PartOf=explorer.target
+ConditionPathExists=/home/vlad/Explorer/config/telegram.json
+ConditionPathExists=/home/vlad/Explorer/config/telegram-token
+
+[Service]
+Type=simple
+WorkingDirectory=/home/vlad/Explorer
+ExecStart=/bin/bash -c 'source /home/vlad/Explorer/bin/env.sh; exec python3 /home/vlad/Explorer/src/telegram_bridge.py'
+Restart=on-failure
+RestartSec=10
+MemoryMax=160M
+CPUWeight=10
+Nice=15
+NoNewPrivileges=true
+UMask=0077
+
+[Install]
+WantedBy=explorer.target

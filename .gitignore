@@ -11,3 +11,7 @@ config/access_token
 /log.txt
 
 .venv-voice/
+
+config/telegram.json
+config/telegram-token
+config/vpn/

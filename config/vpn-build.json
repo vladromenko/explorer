@@ -1,0 +1,10 @@
+{
+  "project": "https://github.com/mishamosher/awgproxy",
+  "commit": "0a968b15efdf344c0b06a27db5cddc35c4bebb13",
+  "toolchain": "go1.26.8",
+  "binary_sha256": "54f374a1bee26fe0765a03b4fa5ca1b9450b5857830bbf375f4d2f94ada96ded",
+  "target": "linux/arm64",
+  "proxy": "127.0.0.1:18780",
+  "scope": "Telegram-only explicit HTTP proxy",
+  "system_routes_changed": false
+}

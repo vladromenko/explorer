@@ -1,0 +1,14 @@
+{
+  "readback_sha256": "e41e3cf0f8a406e354624cbf6ea15937e4da83d0ec0b9d04f76e16354b08b94c",
+  "original_sha256": "b0353d3d8256d0ca72cd42073b0afd6454c5a5d7a9b1591bfb6855c06a1097c7",
+  "changed_bytes": 28,
+  "firmware_changed_in_this_session": false,
+  "analysis": "Offline ARM Thumb disassembly of saved byte-verified readback; no new MCU read/write operation.",
+  "observations": {
+    "twist_callback": "0x0800b65c..0x0800b6ca converts Twist values and calls motion control 0x080049fc; no command-age update in this callback.",
+    "executor_loop": "0x0800c3e0..0x0800c402 spins executor with 5000000000 ns timeout, delays 1 tick, checks a run flag at 0x24001a5c and ros_error <= 2. Unlike generic Subscriber_twist sample, no ping-agent call in this loop.",
+    "error_exit": "0x0800c41c calls zeroing/stop routine 0x080043b0, then deletes task. This does not establish a bounded stop on command or transport loss.",
+    "configuration": "Available configuration script exposes motor PID, car type, arm settings, ROS domain/namespace/scales, reboot, firmware request. No documented stop timeout setting located."
+  },
+  "conclusion": "No supported runtime setting found to establish bounded MCU stopping. Physical tests showed motion during 1.046 s and 2.251 s agent stalls. Do not claim absence of all possible watchdogs from partial disassembly. Independent motor cutoff or a verified controller-side timeout is required before unattended drive."
+}

@@ -7,6 +7,7 @@ from nav2_msgs.action import NavigateToPose
 from rclpy.action import ActionClient
 from frontiers import candidates
 from map_tools import wait
+from survey import SurveyStore
 ROOT=Path('/home/vlad/Explorer')
 FLAGS=('base_commissioned','lidar_tf_validated','mcu_watchdog_verified','localization_verified')
 
@@ -18,7 +19,8 @@ def readiness(s,now):
     for flag in FLAGS:
         if not s.get('commissioning',{}).get(flag,False):reasons.append(flag)
     for sensor,ttl in [('imu',.5),('odom',.5),('scan0',.6),('scan1',.6),('battery',3)]:
-        if s.get('sensor_age',{}).get(sensor,1e9)>ttl:reasons.append(sensor+'_stale')
+        age=s.get('sensor_age',{}).get(sensor,math.inf)
+        if not isinstance(age,(int,float)) or not math.isfinite(age) or not 0<=age<ttl:reasons.append(sensor+'_stale')
     battery=s.get('battery');limit=s.get('commissioning',{}).get('battery_stop_voltage',10.8)
     if battery is None or not math.isfinite(battery) or battery<=limit:reasons.append('battery')
     if s.get('reason') in ('OBSTACLE','SENSOR OR BATTERY FAULT'):reasons.append(s['reason'])
@@ -26,6 +28,7 @@ def readiness(s,now):
 
 class Missions:
     def __init__(self,node,maps):
+        self.surveys=SurveyStore(ROOT);self.speak=None
         self.node=node;self.maps=maps;self.lock=threading.RLock();self.active=None;self.last=None
         self.client=ActionClient(node,NavigateToPose,'/navigate_to_pose')
         self.pub=node.create_publisher(String,'/explorer/request',1)
@@ -117,6 +120,51 @@ class Missions:
             self.record(self.active,'running',dict(x=x,y=y,yaw=yaw))
         threading.Thread(target=self.worker,args=(mid,kind,x,y,yaw),daemon=True).start()
         return dict(id=mid,accepted=True,completed=False)
+
+    def start_survey(self,names,narrate=False):
+        if not isinstance(names,list) or not 1<=len(names)<=12 or any(not isinstance(n,str) for n in names):
+            raise ValueError('Выберите от 1 до 12 сохранённых мест')
+        with self.lock:
+            self.require_ready()
+            if self.active:raise ValueError('Другая поездка уже выполняется')
+            places={p['name']:p for p in self.places()}
+            if any(n not in places or not places[n]['compatible_map'] for n in names):
+                raise ValueError('Место неизвестно или относится к другой карте')
+            mid=uuid.uuid4().hex
+            self.active=dict(id=mid,kind='survey',map_epoch=self.maps.epoch(),started=time.time(),
+                             deadline=time.time()+min(1200,120*len(names)),phase='planning',route=names,visited=0)
+            self.record(self.active,'running',dict(route=names,narrate=narrate))
+            route=[dict(places[n]) for n in names]
+        threading.Thread(target=self.survey_worker,args=(mid,route,narrate),daemon=True).start()
+        return dict(id=mid,accepted=True,completed=False)
+
+    def survey_permit(self,mid):
+        with self.lock:
+            if not self.active or self.active['id']!=mid:raise ValueError('Осмотр отменён')
+            self.require_ready()
+            if self.maps.epoch()!=self.active['map_epoch']:raise ValueError('Карта изменилась')
+
+    def survey_worker(self,mid,route,narrate):
+        observations=[]
+        try:
+            for target in route:
+                self.survey_permit(mid)
+                pose=self.go(mid,target['x'],target['y'],target['yaw'])
+                arrived=time.time()
+                with self.lock:
+                    self.survey_permit(mid);self.active['phase']='observing'
+                    epoch=self.active['map_epoch']
+                record=self.surveys.capture(mid,target['name'],pose,epoch,arrived,lambda:self.survey_permit(mid))
+                observations.append(record['id'])
+                with self.lock:
+                    self.survey_permit(mid);self.active['visited']=len(observations)
+                if narrate and self.speak:
+                    try:self.speak(record['summary'])
+                    except (OSError,ValueError):pass
+            self.finish(mid,'succeeded',dict(visited=len(observations),observations=observations,
+                                             complete_room_coverage_verified=False))
+        except (ValueError,OSError,TimeoutError,KeyError) as exc:
+            self.finish(mid,'failed',dict(reason=str(exc),observations=observations))
 
     def go(self,mid,x,y,yaw):
         self.maps.preview(x,y)

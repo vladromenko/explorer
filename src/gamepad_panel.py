@@ -1,17 +1,20 @@
-"""Linux input diagnostics and bounded operator decisions; never continuous motion.
+"""Linux input, bounded arm steps and gated holonomic drive requests.
 
 The USB receiver is NOT a radio-link detector. Every arm decision requires a
 new stick deflection after neutral, L1 held, and a live visible panel lease.
 """
+import json
+from holonomic_drive import velocity,blocked_by
 import threading
 import time
 import yaml
 from contextlib import closing
 
 class GamepadPanel:
-    def __init__(self,root,teaching,stop):
+    def __init__(self,root,teaching,stop,drive=None):
         self.config=yaml.safe_load((root/'config/gamepad.yaml').read_text())
-        self.teaching=teaching;self.stop=stop
+        self.teaching=teaching;self.stop=stop;self.root=root;self.drive=drive
+        self.drive_active=False;self.drive_reasons=[];self.drive_vector=[0.,0.,0.]
         self.lock=threading.Lock();self.connected=False;self.keys=set();self.axes={}
         self.mode='DISARMED';self.joint=1;self.lease=0.;self.neutral=False
         self.last_event=0.;self.error=None;self.sequence=0;self.combo_at=None;self.proposal=None
@@ -25,12 +28,15 @@ class GamepadPanel:
                 last_event_age_s=time.monotonic()-self.last_event if self.last_event else None,
                 sequence=self.sequence,error=self.error,proposal=self.proposal,radio_link_verified=False,
                 bounded_steps_enabled=self.config.get('bounded_arm_steps_verified',False),
-                continuous_motion_enabled=False,precision_step_deg=self.config['arm_step_deg'])
+                drive_blocked_by=self.drive_reasons,drive_velocity=self.drive_vector,
+                continuous_motion_enabled=bool(self.config.get('continuous_motion_enabled') and self.config.get('radio_loss_verified')),precision_step_deg=self.config['arm_step_deg'])
 
     def heartbeat(self,enabled):
         with self.lock:
             self.lease=time.monotonic()+.25 if enabled is True else 0.
-            if not enabled:self.mode='DISARMED';self.neutral=False
+            if not enabled:
+                if self.drive_active:self.stop();self.drive_active=False
+                self.mode='DISARMED';self.neutral=False
         return self.status()
 
     def decide(self,code,value,kind,now):
@@ -40,7 +46,12 @@ class GamepadPanel:
             elif value==0:self.keys.discard(code)
             if value==0 and code==b['l1']:self.stop()
             if value==1 and code==b['a'] and b['l1'] not in self.keys:
+                if self.mode=='DRIVE':self.stop();self.drive_active=False
                 self.mode='ARM' if self.mode!='ARM' and now<self.lease else 'DISARMED'
+                self.neutral=False
+            if value==1 and code==b['x'] and b['l1'] not in self.keys:
+                centered=not any(abs(v)>1e-6 for v in velocity(self.axes,self.config))
+                self.mode='DRIVE' if centered and now<self.lease else 'DISARMED'
                 self.neutral=False
             if value==1 and code==b['b']:
                 self.mode='DISARMED';self.lease=0;self.stop()
@@ -67,6 +78,21 @@ class GamepadPanel:
                 self.proposal.update(executed=True,blocked_by=None,attainment_measured=False)
             except (OSError,ValueError) as exc:self.error=str(exc)
 
+    def drive_tick(self,now):
+        """All requests still pass the independent core sensor/obstacle gate."""
+        held=self.config['buttons']['l1'] in self.keys
+        if self.mode=='DRIVE' and now<self.lease and held:
+            state=json.loads((self.root/'data/status.json').read_text())
+            self.drive_reasons=blocked_by(state,self.config,time.time())
+            self.drive_vector=velocity(self.axes,self.config)
+            if not self.drive_reasons and self.drive is not None:
+                self.drive(self.drive_vector);self.drive_active=True
+            elif self.drive_active:
+                self.stop();self.drive_active=False
+        else:
+            self.drive_vector=[0.,0.,0.]
+            if self.drive_active:self.stop();self.drive_active=False
+
     def run(self):
         import select
         from evdev import InputDevice
@@ -77,6 +103,7 @@ class GamepadPanel:
                         raise ValueError('Подключён другой геймпад')
                     with self.lock:
                         self.connected=True;self.mode='DISARMED';self.keys.clear();self.neutral=False;self.error=None
+                        self.axes={str(a['code']):device.absinfo(a['code']).value for a in self.config['axes'].values()}
                     pending=None
                     while True:
                         ready,_,_=select.select([device.fd],[],[],.05)
@@ -99,9 +126,10 @@ class GamepadPanel:
                             if self.combo_at and now-self.combo_at>=self.config['estop_hold_s']:
                                 self.stop();self.mode='DISARMED';self.lease=0;self.combo_at=now
                             if now>=self.lease:
-                                if self.mode=='ARM':self.stop()
+                                if self.mode in ('ARM','DRIVE'):self.stop()
                                 self.mode='DISARMED';self.neutral=False
-            except (OSError,ValueError) as exc:
+                            self.drive_tick(now)
+            except (OSError,ValueError,KeyError) as exc:
                 with self.lock:
                     self.connected=False;self.mode='DISARMED';self.keys.clear();self.neutral=False;self.error=str(exc)
                 self.stop();time.sleep(2)

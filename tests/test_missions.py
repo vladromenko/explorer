@@ -11,3 +11,7 @@ class MissionReadinessTest(unittest.TestCase):
             s=self.ready();s[key]=value;self.assertTrue(readiness(s,100))
     def test_stale_lidar_blocks(self):
         s=self.ready();s['sensor_age']['scan1']=.61;self.assertIn('scan1_stale',readiness(s,100))
+
+    def test_invalid_sensor_age_blocks(self):
+        for age in (-1,float('nan'),float('inf'),None):
+            s=self.ready();s['sensor_age']['scan0']=age;self.assertIn('scan0_stale',readiness(s,100))

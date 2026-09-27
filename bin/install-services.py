@@ -40,7 +40,7 @@ WantedBy=explorer.target
 target='[Unit]\nDescription=Explorer local robot runtime\nWants='+ ' '.join(f'explorer-{n}.service' for n in boot_components)+'\n\n[Install]\nWantedBy=default.target\n'
 (root/'systemd/explorer.target').write_text(target)
 (destination/'explorer.target').write_text(target)
-for optional in ('train','speech'):
+for optional in ('train','speech','vpn','telegram'):
     (destination/f'explorer-{optional}.service').write_text((root/f'systemd/explorer-{optional}.service').read_text())
 # Only replace old transient units; leave existing persistent services running.
 for name in components:

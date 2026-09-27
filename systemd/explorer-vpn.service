@@ -1,0 +1,20 @@
+[Unit]
+Description=Explorer private AmneziaWG proxy
+PartOf=explorer.target
+ConditionPathExists=/home/vlad/Explorer/config/vpn/amnezia.conf
+
+[Service]
+Type=simple
+ExecStart=/home/vlad/Explorer/vendor/bin/awgproxy -c /home/vlad/Explorer/config/vpn/amnezia.conf --silent
+Restart=on-failure
+RestartSec=10
+MemoryMax=160M
+CPUWeight=10
+Nice=15
+NoNewPrivileges=true
+UMask=0077
+StandardOutput=null
+StandardError=null
+
+[Install]
+WantedBy=explorer.target
