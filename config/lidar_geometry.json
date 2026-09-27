@@ -1,0 +1,10 @@
+{
+  "source": "https://github.com/dimwael/yahboom_m3pro_description",
+  "physically_calibrated": false,
+  "frames": {
+    "laser0_frame": [-0.11617, 0.09156, 0.1253],
+    "laser1_frame": [0.10766, -0.09078, 0.1253],
+    "imu_frame": [0.06, 0.0, 0.08]
+  },
+  "note": "Reference model translations, identity rotations; a static scan pair supports approximate alignment only. Do not use for precision manipulation or enable autonomy on this evidence alone."
+}

@@ -72,8 +72,137 @@
     "total_seconds": 0.9618291070000851
   },
   "cold_boot_tested": false,
-  "physical_motion_tested": false,
+  "physical_motion_tested": true,
   "arm_calibrated": false,
   "perception_depth_frame": "camera_color_optical_frame",
-  "vision_request_seconds": 4.167194085000119
+  "vision_request_seconds": 4.167194085000119,
+  "observed_base_directions": {
+    "forward": {
+      "log": "/home/vlad/Explorer/data/base-probe-forward-20260927-032601.json",
+      "result": {
+        "axis": "forward",
+        "requested": [
+          0.04,
+          0.0,
+          0.0
+        ],
+        "duration": 0.6,
+        "delta": {
+          "x": 0.010811029002070427,
+          "y": 0.0002625146880745888,
+          "yaw": -0.0017099887809938355
+        },
+        "peak": {
+          "vx": 0.04,
+          "vy": 0.0,
+          "wz": 0.0
+        },
+        "final_velocity": {
+          "vx": 0.0,
+          "vy": 0.0,
+          "wz": 0.0
+        },
+        "physical_direction_confirmed": true,
+        "observer": "user"
+      }
+    },
+    "left": {
+      "log": "/home/vlad/Explorer/data/base-probe-left-20260927-032736.json",
+      "result": {
+        "axis": "left",
+        "requested": [
+          0.0,
+          0.04,
+          0.0
+        ],
+        "duration": 0.6,
+        "delta": {
+          "x": 0.00022498518228530884,
+          "y": 0.0011038141092285514,
+          "yaw": 0.004900951492218818
+        },
+        "peak": {
+          "vx": 0.0,
+          "vy": 0.04,
+          "wz": 0.0
+        },
+        "final_velocity": {
+          "vx": 0.0,
+          "vy": 0.0,
+          "wz": 0.0
+        },
+        "physical_direction_confirmed": true,
+        "observer": "user"
+      }
+    },
+    "ccw": {
+      "log": "/home/vlad/Explorer/data/base-probe-ccw-20260927-032806.json",
+      "result": {
+        "axis": "ccw",
+        "requested": [
+          0.0,
+          0.0,
+          0.15
+        ],
+        "duration": 0.6,
+        "delta": {
+          "x": -0.0009067058563232422,
+          "y": 0.00035674613900482655,
+          "yaw": 0.005053628816009813
+        },
+        "peak": {
+          "vx": 0.0,
+          "vy": 0.0,
+          "wz": 0.15
+        },
+        "final_velocity": {
+          "vx": 0.0,
+          "vy": 0.0,
+          "wz": 0.0
+        },
+        "physical_direction_confirmed": true,
+        "observer": "user"
+      }
+    }
+  },
+  "base_distance_scale_calibrated": false,
+  "base_angle_scale_calibrated": false,
+  "lidar_reference_alignment": {
+    "reference_transform": [
+      0.22383,
+      -0.18234,
+      0.0
+    ],
+    "reference_metrics": {
+      "median": 0.041862259754607875,
+      "q75": 0.4893990633163365,
+      "inliers_3cm": 146,
+      "inliers_5cm": 241,
+      "n": 442
+    },
+    "fitted_transform": [
+      0.2420086617906458,
+      -0.16247200038037207,
+      0.02044408994846805
+    ],
+    "fitted_metrics": {
+      "median": 0.015208781723003509,
+      "q75": 0.5048838891870312,
+      "inliers_3cm": 238,
+      "inliers_5cm": 249,
+      "n": 442
+    },
+    "difference": [
+      0.01817866179064581,
+      0.01986799961962793,
+      0.02044408994846805
+    ],
+    "note": "Single static frame nearest-neighbor registration, not full physical extrinsic calibration"
+  },
+  "mapping": {
+    "live_verified": true,
+    "provisional_geometry": true,
+    "scanners": 2,
+    "autonomous_navigation_enabled": false
+  }
 }

@@ -15,6 +15,8 @@ from nav_msgs.msg import Odometry
 from std_msgs.msg import Float32, String, UInt64
 from arm_msgs.msg import ArmJoints
 from safety import SafetyGate
+from commissioning import Pulse
+import secrets
 
 ROOT = Path(os.environ.get('EXPLORER_ROOT', '/home/vlad/Explorer'))
 
@@ -31,6 +33,8 @@ class Core(Node):
         self.arm_feedback = None
         self.reason = 'STARTING'
         self.last_result = {}
+        self.probe = None
+        self.probe_token = None
         self.pub = self.create_publisher(Twist, '/cmd_vel', 1)
         self.arm_pub = self.create_publisher(ArmJoints, '/arm6_joints', 1)
         self.heartbeat = self.create_publisher(UInt64, '/explorer/control_heartbeat', 1)
@@ -77,6 +81,7 @@ class Core(Node):
             return
         # SDL game_controller_node standard mapping; ROS axes are positive left/forward.
         if msg.buttons[9]:
+            if self.probe:self.probe.finished=True
             self.joy_held=True
             limits=self.config['max_velocity']
             self.gate.submit([msg.axes[1]*limits[0],msg.axes[0]*limits[1],msg.axes[2]*limits[2]],'manual',time.monotonic())
@@ -91,6 +96,7 @@ class Core(Node):
             op = req['op']
             if op == 'stop':
                 self.gate.stop()
+                if self.probe:self.probe.finished=True
             else:
                 age = time.monotonic() - float(req['at'])
                 if age < 0 or age > .25:
@@ -98,12 +104,28 @@ class Core(Node):
                 if op == 'clear_stop':
                     self.gate.command_at = -1e9
                     self.gate.estop = False
+                elif op == 'commission_pulse':
+                    permit_path=ROOT/'data/commissioning-permit.json'
+                    permit=json.loads(permit_path.read_text())
+                    if time.monotonic()>permit['expires'] or not secrets.compare_digest(req['token'],permit['token']):
+                        raise ValueError('No current local commissioning permit')
+                    if self.gate.estop or self.probe:
+                        raise ValueError('Stop is latched or a probe is active')
+                    self.probe=Pulse(req['velocity'],req['duration'],time.monotonic())
+                    self.probe_token=req['token']
+                    permit_path.unlink()
+                elif op == 'commission_lease':
+                    if not self.probe or not secrets.compare_digest(req['token'],self.probe_token):
+                        raise ValueError('No matching probe')
+                    self.probe.last_lease=time.monotonic()
                 elif op == 'mode':
                     if req['mode'] not in ('MANUAL','ASSISTED','AUTONOMOUS'):
                         raise ValueError('Invalid mode')
                     self.gate.command_at = -1e9
+                    if self.probe:self.probe.finished=True
                     self.gate.mode = req['mode']
                 elif op == 'drive':
+                    if self.probe:self.probe.finished=True
                     if not self.gate.submit(req['velocity'], req.get('source','manual'), time.monotonic()):
                         raise ValueError('Autonomy not selected')
                 elif op == 'arm':
@@ -111,7 +133,7 @@ class Core(Node):
                 else:
                     raise ValueError('Unknown operation')
             self.last_result = dict(id=req.get('id'), ok=True, op=op)
-        except (ValueError, TypeError, KeyError) as exc:
+        except (ValueError, TypeError, KeyError, OSError) as exc:
             self.last_result = dict(id=req.get('id'), ok=False, error=str(exc))
 
     def tick(self):
@@ -120,8 +142,16 @@ class Core(Node):
         healthy = healthy and self.battery is not None and self.battery > self.config['battery_stop_voltage']
         # Conservative all-direction guard until the measured scanner extrinsics are installed.
         collision = any(s['nearest'] is None or s['nearest'] < .30 for s in self.scans.values())
-        healthy = healthy and self.config['lidar_tf_validated']
-        velocity, self.reason = self.gate.tick(now, now-self.last_tick, healthy, collision)
+        if self.probe:
+            velocity,self.reason=self.probe.tick(now,now-self.last_tick,self.gate.estop,healthy,collision)
+            self.gate.output=list(velocity)
+            if self.probe.finished:
+                self.gate.stop()
+                self.probe=None
+                self.probe_token=None
+        else:
+            healthy = healthy and self.config['lidar_tf_validated']
+            velocity, self.reason = self.gate.tick(now, now-self.last_tick, healthy, collision)
         self.last_tick = now
         msg = Twist()
         msg.linear.x, msg.linear.y, msg.angular.z = velocity

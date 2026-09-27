@@ -10,6 +10,7 @@
     "micro_ros_agent": "7c932329ad5591ef23942ef1962534258c16b000",
     "orbbec": "0ea4ab68f5b8ddf22998b7c45d251dc58ea2779e",
     "llama_cpp": "335b21fcbda972777e4e9e69decad1f719cafeb3",
-    "qwen_gguf": "f6d5376be1edb4d416d56da11e5397a961aca8ae"
+    "qwen_gguf": "f6d5376be1edb4d416d56da11e5397a961aca8ae",
+    "m3_geometry_reference": "bdac682e57a8eeaf7b18eece44bfbfc54de98e8a"
   }
 }

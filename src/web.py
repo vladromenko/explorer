@@ -63,6 +63,8 @@ def index():return HTMLResponse((ROOT/'src/index.html').read_text())
 def status():
     s=read_state('status.json')
     s['perception']=read_state('perception.json',2)
+    s['mapping']=read_state('map.json',15)
+    s['lidar_geometry']=read_state('lidar_geometry.json',2)
     s['resources']={}
     try:
         mem={line.split(':')[0]:int(line.split()[1]) for line in Path('/proc/meminfo').read_text().splitlines() if len(line.split())>=2}
@@ -94,6 +96,11 @@ def control(c:Command):
 def frame():
     if read_state('perception.json',2)['stale']:raise HTTPException(503,'No fresh camera frame')
     return FileResponse(ROOT/'data/frame.jpg',media_type='image/jpeg',headers={'Cache-Control':'no-store'})
+
+@app.get('/api/map')
+def map_image():
+    if read_state('map.json',15)['stale']:raise HTTPException(503,'No fresh map')
+    return FileResponse(ROOT/'data/map.png',media_type='image/png',headers={'Cache-Control':'no-store'})
 
 @app.get('/api/memory')
 def memory(label:str=''):
