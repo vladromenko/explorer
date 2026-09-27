@@ -12,5 +12,10 @@
     "llama_cpp": "335b21fcbda972777e4e9e69decad1f719cafeb3",
     "qwen_gguf": "f6d5376be1edb4d416d56da11e5397a961aca8ae",
     "m3_geometry_reference": "bdac682e57a8eeaf7b18eece44bfbfc54de98e8a"
+  },
+  "firmware_baseline": {
+    "M3PRO_FINAL_READBACK.bin": "e41e3cf0f8a406e354624cbf6ea15937e4da83d0ec0b9d04f76e16354b08b94c",
+    "M3PRO_ORIGINAL.bin": "b0353d3d8256d0ca72cd42073b0afd6454c5a5d7a9b1591bfb6855c06a1097c7",
+    "M3PRO_CONTROLLER_FINAL.bin": "e41e3cf0f8a406e354624cbf6ea15937e4da83d0ec0b9d04f76e16354b08b94c"
   }
 }

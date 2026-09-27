@@ -11,6 +11,7 @@ import time
 import numpy as np
 import rclpy
 from rclpy.node import Node
+from rclpy.executors import ExternalShutdownException
 from rclpy.qos import qos_profile_sensor_data
 from rclpy.time import Time
 from rclpy.duration import Duration
@@ -79,6 +80,7 @@ class Geometry(Node):
 def main():
     rclpy.init();node=Geometry()
     try:rclpy.spin(node)
-    finally:node.destroy_node();rclpy.shutdown()
+    except (KeyboardInterrupt,ExternalShutdownException):pass
+    finally:node.destroy_node();rclpy.try_shutdown()
 
 if __name__=='__main__':main()

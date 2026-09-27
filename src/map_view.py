@@ -6,6 +6,7 @@ import numpy as np
 from PIL import Image
 import rclpy
 from rclpy.node import Node
+from rclpy.executors import ExternalShutdownException
 from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
 from nav_msgs.msg import OccupancyGrid
 
@@ -29,4 +30,5 @@ class MapView(Node):
 
 rclpy.init();node=MapView()
 try:rclpy.spin(node)
-finally:node.destroy_node();rclpy.shutdown()
+except (KeyboardInterrupt,ExternalShutdownException):pass
+finally:node.destroy_node();rclpy.try_shutdown()

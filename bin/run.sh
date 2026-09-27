@@ -14,6 +14,7 @@ case "$1" in
  geometry) exec python3 src/lidar_geometry.py;;
  mapview) exec python3 src/map_view.py;;
  slam) exec ros2 launch slam_toolbox online_async_launch.py use_sim_time:=false slam_params_file:="$EXPLORER_ROOT/config/slam.yaml";;
+ planning) exec ros2 launch "$EXPLORER_ROOT/src/planning.launch.py";;
  ekf) exec ros2 run robot_localization ekf_node --ros-args -r __node:=explorer_ekf --params-file "$EXPLORER_ROOT/config/ekf.yaml";;
  gamepad) exec ros2 run joy game_controller_node --ros-args -p deadzone:=0.15 -p autorepeat_rate:=20.0 -p sticky_buttons:=false;;
  llm) export LD_LIBRARY_PATH="$EXPLORER_ROOT/vendor/llama:$LD_LIBRARY_PATH"

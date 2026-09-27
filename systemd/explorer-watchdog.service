@@ -3,7 +3,6 @@ Description=Explorer watchdog
 PartOf=explorer.target
 StartLimitIntervalSec=60
 StartLimitBurst=3
-
 After=explorer-mcu.service
 Before=explorer-control.service
 

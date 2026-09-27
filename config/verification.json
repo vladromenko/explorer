@@ -204,5 +204,35 @@
     "provisional_geometry": true,
     "scanners": 2,
     "autonomous_navigation_enabled": false
+  },
+  "stationary_gyro": {
+    "imu_samples": 176,
+    "filtered_samples": 197,
+    "corrected_rate_max": 0.0,
+    "yaw_span": 0.0
+  },
+  "planning": {
+    "live_preview_verified": true,
+    "cmd_vel_publishers": [
+      "explorer_control",
+      "explorer_watchdog"
+    ],
+    "unknown_space_goal_rejected": true,
+    "path_point_count": 13,
+    "executed": false
+  },
+  "map_storage": {
+    "save_verified": true,
+    "deserialize_call_verified": true,
+    "relocalization_after_moving_verified": false
+  },
+  "external_observer": {
+    "camera": "Logitech C920",
+    "frames_received": true,
+    "required_for_runtime": false
+  },
+  "physical_setup": {
+    "tethered_power": true,
+    "wheels_suspended": false
   }
 }

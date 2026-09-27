@@ -1,14 +1,13 @@
 [Unit]
-Description=Explorer mcu
+Description=Explorer planning
 PartOf=explorer.target
 StartLimitIntervalSec=60
 StartLimitBurst=3
-Before=explorer-control.service explorer-watchdog.service
 
 [Service]
 Type=simple
 WorkingDirectory=/home/vlad/Explorer
-ExecStart=/bin/bash /home/vlad/Explorer/bin/run.sh mcu
+ExecStart=/bin/bash /home/vlad/Explorer/bin/run.sh planning
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=8
