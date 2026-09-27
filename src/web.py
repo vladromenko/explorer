@@ -220,8 +220,10 @@ def tool(name,args):
     if name=='save_map' and set(args)=={'name'} and isinstance(args['name'],str):return maps.save(args['name'])
     if name=='get_status' and args=={}:
         s=status()
+        gauge=s.get('battery_gauge',{})
         return dict(stale=s['stale'],battery_voltage_V=s.get('battery'),battery_charge_percent=None,
-                    explanation='Battery voltage is measured in volts. Charge percentage is not measured. Sensor ages are seconds.',
+                    battery_estimate_percent=None if s['stale'] else gauge.get('percent'),
+                    explanation='Voltage is measured in volts. Estimate percent is an approximate usable-voltage gauge, not measured state of charge. Charging and time remaining are unknown. Sensor ages are seconds.',
                     sensor_age_seconds=s.get('sensor_age'),mode=s.get('mode'),stop_latched=s.get('stop_latched'),
                     motion_state=s.get('reason'),raw_odometry_pose=s.get('raw_pose'),resources=s['resources'],missions=s.get('missions'),commissioning=s.get('commissioning'))
     if name=='list_visible_objects' and args=={}:
@@ -276,7 +278,13 @@ def agent(prompt:Prompt):
     if any(word in prompt.text.lower() for word in ('батар','заряд','battery')):
         s=tool('get_status',{})
         ru=any('а'<=c.lower()<='я' for c in prompt.text)
-        answer=('Нет свежих данных батареи.' if ru else 'No fresh battery reading.') if s['stale'] or s['battery_voltage_V'] is None else ((f"Напряжение батареи {s['battery_voltage_V']:.2f} В. Процент заряда не измеряется.") if ru else f"Battery voltage is {s['battery_voltage_V']:.2f} V. Charge percentage is not measured.")
+        estimate=s.get('battery_estimate_percent')
+        if s['stale'] or s['battery_voltage_V'] is None or estimate is None:
+            answer='Нет свежих данных батареи.' if ru else 'No fresh battery reading.'
+        elif ru:
+            answer=f"Батарея: примерно {estimate}% по напряжению ({s['battery_voltage_V']:.2f} В). Это приблизительная оценка, а не измерение ёмкости; состояние зарядки неизвестно."
+        else:
+            answer=f"Battery: approximately {estimate}% from voltage ({s['battery_voltage_V']:.2f} V). This is an estimate, not a capacity measurement; charging state is unknown."
         return dict(answer=answer,tools=[dict(name='get_status',result=s)],deterministic=True)
     if not agent_lock.acquire(blocking=False):raise HTTPException(429,'Agent is busy')
     try:

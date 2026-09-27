@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 from smbus2 import SMBus, i2c_msg
+from battery_gauge import battery_summary
 
 ROOT=Path('/home/vlad/Explorer')
 bus=SMBus(7)
@@ -24,8 +25,10 @@ while True:
         im=Image.new('1',(128,32))
         draw=ImageDraw.Draw(im)
         fresh=time.time()-s['at']<2
+        gauge=battery_summary(s.get('battery'),age.get('battery',float('inf')) if fresh else float('inf'))
+        percent='--' if gauge['percent'] is None else '~'+str(gauge['percent'])
         lines=['EXPLORER '+('STALE' if not fresh else 'STOP' if s['stop_latched'] else s['mode']),
-               f"{s['battery'] or 0:.2f}V MCU {'OK' if fresh and age.get('odom',99)<1 else '--'}",
+               f"BAT {percent}% {s['battery'] or 0:.2f}V",
                addr]
         for i,line in enumerate(lines): draw.text((0,i*11-2),line[:21],font=font,fill=1)
         # Explicit page addressing avoids relying on retained controller state.

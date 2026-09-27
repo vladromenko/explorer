@@ -16,6 +16,7 @@ from std_msgs.msg import Float32, String, UInt64, ColorRGBA
 from arm_msgs.msg import ArmJoints
 from safety import SafetyGate
 from commissioning import Pulse
+from battery_gauge import battery_summary
 import secrets
 
 ROOT = Path(os.environ.get('EXPLORER_ROOT', '/home/vlad/Explorer'))
@@ -53,9 +54,15 @@ class Core(Node):
         self.last_tick = time.monotonic()
         self.create_timer(.02, self.tick)
         self.create_timer(.5, self.write_status)
-        # Vendor ColorRGBA.a selects an effect (101 = changing colours), not opacity.
-        # Refresh also restores illumination after an MCU reconnect.
-        self.create_timer(10., lambda:self.rgb_pub.publish(ColorRGBA(a=101.0)))
+        # Vendor ColorRGBA.a selects an effect: 100 = off, 101 = changing colours.
+        self.create_timer(10., self.refresh_lights)
+
+    def refresh_lights(self):
+        try:
+            effect=json.loads((ROOT/'config/appearance.json').read_text())['rgb_effect']
+            if type(effect) is not int or not 100<=effect<=107:effect=100
+        except (OSError,ValueError,KeyError,TypeError):effect=100
+        self.rgb_pub.publish(ColorRGBA(a=float(effect)))
 
     def touch(self, key):
         self.seen[key] = time.monotonic()
@@ -182,6 +189,7 @@ class Core(Node):
         now = time.monotonic()
         status = dict(at=time.time(), mode=self.gate.mode, stop_latched=self.gate.estop,
                       reason=self.reason, battery=self.battery, raw_pose=self.pose,
+                      battery_gauge=battery_summary(self.battery,now-self.seen.get('battery',-1e9)),
                       velocity=self.gate.output, sensor_age={k:round(now-v,3) for k,v in self.seen.items()},
                       lidar=self.scans, arm_feedback=self.arm_feedback, commissioning=self.config,
                       last_request=self.last_result)
