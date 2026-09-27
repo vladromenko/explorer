@@ -1,0 +1,36 @@
+"""Supervised near-home probes, not general manipulation or measured feedback."""
+import math
+
+HOME = [90, 125, 3, 0, 90, 30]
+HARD_LIMITS = [(0, 180)] * 4 + [(0, 270), (30, 180)]
+
+
+def validate_pose(pose, runtime_ms):
+    if len(pose) != 6 or any(type(v) is not int for v in pose):
+        raise ValueError('Six integer servo angles required')
+    if type(runtime_ms) is not int or not 1000 <= runtime_ms <= 5000:
+        raise ValueError('Commissioning runtime must be 1000..5000 ms')
+    for v, h, (lo, hi) in zip(pose, HOME, HARD_LIMITS):
+        if not lo <= v <= hi:
+            raise ValueError('Hardware angle range exceeded')
+        if abs(v-h) > 10:
+            raise ValueError('Outside supervised near-home commissioning region')
+
+
+def stationary_status(s, now):
+    age = now - s['at']
+    velocity = s['velocity']
+    battery = s['battery']
+    if not math.isfinite(age) or not 0 <= age < 1:
+        raise ValueError('Controller status is stale')
+    if s['stop_latched'] is not True or len(velocity) != 3:
+        raise ValueError('Base stop must remain latched')
+    if any(not math.isfinite(v) or abs(v) > .001 for v in velocity):
+        raise ValueError('Base command is not zero')
+    if not isinstance(battery, (int, float)) or not math.isfinite(battery) or battery < 11:
+        raise ValueError('Battery below commissioning threshold')
+    if any(not math.isfinite(s['sensor_age'].get(k, math.inf)) or
+           not 0 <= s['sensor_age'].get(k, math.inf) < limit
+           for k, limit in [('odom', .5), ('battery', 2)]):
+        raise ValueError('MCU telemetry is stale')
+

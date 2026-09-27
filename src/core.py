@@ -12,7 +12,7 @@ from rclpy.signals import SignalHandlerOptions
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import Imu, LaserScan, Joy
 from nav_msgs.msg import Odometry
-from std_msgs.msg import Float32, String, UInt64
+from std_msgs.msg import Float32, String, UInt64, ColorRGBA
 from arm_msgs.msg import ArmJoints
 from safety import SafetyGate
 from commissioning import Pulse
@@ -38,6 +38,7 @@ class Core(Node):
         self.autonomy_lease = -1e9
         self.pub = self.create_publisher(Twist, '/cmd_vel', 1)
         self.arm_pub = self.create_publisher(ArmJoints, '/arm6_joints', 1)
+        self.rgb_pub = self.create_publisher(ColorRGBA, '/rgb', 1)
         self.heartbeat = self.create_publisher(UInt64, '/explorer/control_heartbeat', 1)
         self.create_subscription(Float32, '/battery', self.battery_cb, qos_profile_sensor_data)
         self.create_subscription(Imu, '/imu/data_raw', lambda m:self.touch('imu'), qos_profile_sensor_data)
@@ -52,6 +53,9 @@ class Core(Node):
         self.last_tick = time.monotonic()
         self.create_timer(.02, self.tick)
         self.create_timer(.5, self.write_status)
+        # Vendor ColorRGBA.a selects an effect (101 = changing colours), not opacity.
+        # Refresh also restores illumination after an MCU reconnect.
+        self.create_timer(10., lambda:self.rgb_pub.publish(ColorRGBA(a=101.0)))
 
     def touch(self, key):
         self.seen[key] = time.monotonic()
@@ -143,7 +147,7 @@ class Core(Node):
                     if not self.gate.submit(req['velocity'], req.get('source','manual'), time.monotonic()):
                         raise ValueError('Autonomy not selected')
                 elif op == 'arm':
-                    raise ValueError('Arm motion unavailable until feedback, calibrated geometry and collision checking are verified')
+                    raise ValueError('General arm execution is not commissioned. Supervised near-home probes use bin/commission-arm.py; servo feedback is unavailable.')
                 else:
                     raise ValueError('Unknown operation')
             self.last_result = dict(id=req.get('id'), ok=True, op=op)
