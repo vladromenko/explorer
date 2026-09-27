@@ -1,0 +1,15 @@
+{
+  "recorded_at": 1790468099.4317772,
+  "models": {
+    "models/yolo26n.onnx": "2e947b787d9e787b93a16772a5f55b1d4d8c4d86f53146149c5d6a642442d6f7",
+    "models/yolo26n.engine": "75bff2d242d3089154568af3539cc3d6ad3d8575bcbac0aa0919e5349022ad35",
+    "models/Qwen3.5-2B-Q4_K_M.gguf": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+    "models/Qwen3.5-2B-mmproj-F16.gguf": "7035e9cb8d7c6a9681d07eef9a364783e86ea4cd73faab2eabb4f43a101830c7"
+  },
+  "sources": {
+    "micro_ros_agent": "7c932329ad5591ef23942ef1962534258c16b000",
+    "orbbec": "0ea4ab68f5b8ddf22998b7c45d251dc58ea2779e",
+    "llama_cpp": "335b21fcbda972777e4e9e69decad1f719cafeb3",
+    "qwen_gguf": "f6d5376be1edb4d416d56da11e5397a961aca8ae"
+  }
+}
