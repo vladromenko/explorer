@@ -100,7 +100,9 @@ class Core(Node):
     def request(self, msg):
         req = {}
         try:
-            req = json.loads(msg.data)
+            parsed = json.loads(msg.data)
+            if not isinstance(parsed,dict):raise ValueError('Request must be an object')
+            req = parsed
             op = req['op']
             if op == 'stop':
                 self.gate.stop()
