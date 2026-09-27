@@ -241,7 +241,7 @@ class Core(Node):
             self.critical_saved=True
         status = dict(at=time.time(), mode=self.gate.mode, stop_latched=self.gate.estop,
                       reason=self.reason, battery=self.battery, raw_pose=self.pose,
-                      battery_gauge=battery_summary(self.battery,now-self.seen.get('battery',-1e9)),
+                      battery_gauge=battery_summary(self.power_policy.filtered,now-self.seen.get('battery',-1e9)),
                       power=self.power_state,
                       velocity=self.gate.output, sensor_age={k:round(now-v,3) for k,v in self.seen.items()},
                       lidar=self.scans, arm_feedback=self.arm_feedback, commissioning=self.config,

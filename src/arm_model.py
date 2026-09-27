@@ -61,7 +61,7 @@ class ArmModel:
                         collision=self.collision(),reference_only=True,measured_state=False,executed=False,
                         warning='Nominal CAD and servo convention, not measured joint state. Environment and hand-eye calibration still require validation. Not an execution permission.')
 
-    def ik(self,xyz,seed_deg,gripper_rad,quaternion=None):
+    def ik(self,xyz,seed_deg,gripper_rad,quaternion=None,max_step_deg=None):
         target=self.vector(xyz,3)
         if np.linalg.norm(target)>1:raise ValueError('Target outside reference workspace')
         rot=None
@@ -82,7 +82,12 @@ class ArmModel:
                 if rot is not None:r.extend((.1*(rot.inv()*Rotation.from_matrix(t[:3,:3])).as_rotvec()).tolist())
                 return r
             size=4 if rot is None else 5
-            fit=least_squares(residual,np.clip(seed[:size],LOW[:size]+1e-8,HIGH[:size]-1e-8),bounds=(LOW[:size],HIGH[:size]),max_nfev=100,
+            low=LOW[:size].copy();high=HIGH[:size].copy()
+            if max_step_deg is not None:
+                if not math.isfinite(max_step_deg) or not 0<max_step_deg<=2:raise ValueError('Invalid local IK bound')
+                low=np.maximum(low,seed[:size]-np.radians(max_step_deg))
+                high=np.minimum(high,seed[:size]+np.radians(max_step_deg))
+            fit=least_squares(residual,np.clip(seed[:size],low+1e-8,high-1e-8),bounds=(low,high),max_nfev=100,
                               ftol=1e-8,xtol=1e-8,gtol=1e-8)
             err=residual(fit.x);poserr=float(np.linalg.norm(err[:3]));angerr=float(np.linalg.norm(err[3:])/.1) if rot is not None else None
             collided=self.collision()

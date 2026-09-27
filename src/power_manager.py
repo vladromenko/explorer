@@ -17,7 +17,7 @@ from sensor_msgs.msg import BatteryState
 from std_msgs.msg import String
 
 ROOT = Path(os.environ.get('EXPLORER_ROOT', '/home/vlad/Explorer'))
-OPTIONAL = ('llm', 'learning', 'train', 'speech', 'preview-*', 'grounding-*', 'perception', 'camera', 'planning', 'navigation')
+OPTIONAL = ('llm', 'learning', 'train', 'speech', 'preview-*', 'grounding-*', 'policy-*', 'perception', 'camera', 'planning', 'navigation')
 
 
 def read_json(path):
@@ -120,7 +120,7 @@ class PowerManager(Node):
             self.get_logger().info(f'Power state {self.previous_state} -> {state}')
             self.previous_state = state
             if state in ('LOW_POWER', 'CHARGING', 'UNKNOWN'):
-                self.optional_stop(('llm','train','speech','preview-*','grounding-*'))
+                self.optional_stop(('llm','train','speech','preview-*','grounding-*','policy-*'))
             if state == 'CRITICAL':
                 self.critical_at = now
                 self.optional_stop(OPTIONAL)

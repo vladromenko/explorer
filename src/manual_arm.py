@@ -18,6 +18,7 @@ class ManualArm:
         self.lock=threading.Lock();self.cancelled=threading.Event();self.ready=False;self.error=None
         self.boot=Path('/proc/sys/kernel/random/boot_id').read_text().strip()
         self.gamepad_permit=lambda:False
+        self.stop_revision=0
 
     def reference(self):
         stationary_status(json.loads((self.root/'data/status.json').read_text()),time.time())
@@ -46,11 +47,13 @@ class ManualArm:
         tmp.write_text(json.dumps(dict(record,phase=phase,updated_at=time.time())));tmp.replace(path)
 
     def stop(self):
+        self.stop_revision+=1
         self.cancelled.set()
         return dict(no_further_steps=True,commanded_step_duration_ms=150,physical_stop_latency_verified=False,
                     hardware_emergency_stop=False)
 
-    def move(self,start,goal,deadline=None):
+    def move(self,start,goal,deadline=None,expected_stop_revision=None,execution_permit=None,source="operator"):
+        if source not in ('operator','supervised_policy'):raise ValueError('Неверный источник команды')
         if not self.ready:raise ValueError('Сначала дождитесь подготовки геометрии руки')
         if len(start)!=6 or len(goal)!=6 or any(type(v) is not int for v in start+goal):raise ValueError('Нужны шесть целых углов')
         if not any(a!=b for a,b in zip(start,goal)):raise ValueError('Нулевой шаг')
@@ -59,6 +62,8 @@ class ManualArm:
         if not self.lock.acquire(blocking=False):raise ValueError('Предыдущий шаг ещё выполняется')
         sent=False;record=None
         try:
+            if expected_stop_revision is not None and expected_stop_revision!=self.stop_revision:
+                raise ValueError('Команда отменена во время планирования')
             self.cancelled.clear()
             with (self.root/'data/arm-commissioning.lock').open('w') as lock:
                 fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
@@ -67,14 +72,15 @@ class ManualArm:
                 for shape in (0.,-.2,-.4,-.6,-.8):
                     if not self.model().path(start[:5],goal[:5],shape)['valid']:raise ValueError('MoveIt: столкновение с роботом или полом')
                 self.reference()
-                if self.cancelled.is_set() or deadline is not None and time.monotonic()>deadline:
+                if self.cancelled.is_set() or (expected_stop_revision is not None and expected_stop_revision!=self.stop_revision) or deadline is not None and time.monotonic()>deadline:
                     raise ValueError('Команда отменена или истекла до отправки')
                 if deadline is not None and not self.gamepad_permit():
                     raise ValueError('Кнопка разрешения отпущена или панель отключена')
+                if execution_permit is not None:execution_permit()
                 if not self.pub.get_subscription_count():raise ValueError('Контроллер руки не подключён')
                 record=dict(at=time.time(),servo_deg=goal,runtime_ms=150,boot_id=self.boot,
                             ends_monotonic=time.monotonic()+.15,source='commanded_only',measured=False,
-                            attained=False,observed_clear=True,publish_count=1,operator_step=True)
+                            attained=False,observed_clear=True,publish_count=1,operator_step=source=="operator",command_source=source)
                 msg=ArmJoints(time=150)
                 for i,value in enumerate(goal,1):setattr(msg,'joint'+str(i),value)
                 self.write(record,'command_in_progress');self.pub.publish(msg);sent=True

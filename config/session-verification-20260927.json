@@ -1,7 +1,7 @@
 {
   "date": "2026-09-27",
-  "at": 1790538551.7037299,
-  "automated_tests_passed": 67,
+  "at": 1790540994.0419805,
+  "automated_tests_passed": 78,
   "firmware_changed": false,
   "arm": {
     "home_observed": true,
@@ -12,7 +12,10 @@
     "survey": "data/handeye-surveys/20260927-222535/result.json",
     "base_servo_sign_corrected": true,
     "diagnostic_gain_fit_deployed": false,
-    "full_workspace_calibrated": false
+    "full_workspace_calibrated": false,
+    "cartesian_finite_step_executed": true,
+    "cartesian_precision_physically_verified": false,
+    "extended_survey": "data/handeye-surveys/20260927-231123/result.json"
   },
   "voice": {
     "local_asr": "whisper.cpp/base multilingual",
@@ -35,11 +38,14 @@
       "Torch does not list Orin CC8.7 as officially supported; exercised ACT and GroundingDINO paths passed",
       "pip check rejects manylinux2014_sbsa metadata on nvidia-cusparselt-cu13 0.8.0; library is ARM aarch64, actual exercised paths pass"
     ],
-    "offline_backbone_cached": true
+    "offline_backbone_cached": true,
+    "supervised_execution_implemented": true,
+    "supervised_execution_real_skill_verified": false,
+    "worker_inference_latency_s": 0.8617,
+    "worker_fixture_synthetic": true
   },
   "deferred_by_user": [
-    "privileged automatic Jetson poweroff installation",
-    "physical MCU communication-loss stop test"
+    "privileged automatic Jetson poweroff installation"
   ],
   "incomplete": [
     "full find-navigate-grasp-verify execution",
@@ -50,19 +56,32 @@
   "end_state": {
     "base_stop_latched": true,
     "last_arm_command": [
-      92,
+      90,
       125,
       3,
       0,
       90,
       30
     ],
-    "battery_voltage_v": 11.925592422485352,
+    "battery_voltage_v": 11.542468070983887,
     "automatic_shutdown_available": false,
     "commanded_velocity": [
       0.0,
       0.0,
       0.0
+    ]
+  },
+  "base_link_loss": {
+    "tested": true,
+    "safe_stop_verified": false,
+    "report": "config/mcu-link-loss-report.json"
+  },
+  "display": {
+    "voltage_reserve_percent": 40,
+    "soc_measured": false,
+    "range_v": [
+      10.8,
+      12.6
     ]
   }
 }

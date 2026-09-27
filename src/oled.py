@@ -25,10 +25,10 @@ while True:
         im=Image.new('1',(128,32))
         draw=ImageDraw.Draw(im)
         fresh=time.time()-s['at']<2
-        gauge=battery_summary(s.get('battery'),age.get('battery',float('inf')) if fresh else float('inf'))
-        percent='--' if gauge['percent'] is None else '~'+str(gauge['percent'])
+        gauge=s.get('battery_gauge',{}) if fresh else {}
+        percent='--' if gauge.get('percent') is None else '~'+str(gauge.get('percent'))
         lines=['EXPLORER '+('STALE' if not fresh else 'STOP' if s['stop_latched'] else s['mode']),
-               f"BAT {percent}% {s['battery'] or 0:.2f}V",
+               f"V {percent}% {s['battery'] or 0:.2f}V",
                addr]
         for i,line in enumerate(lines): draw.text((0,i*11-2),line[:21],font=font,fill=1)
         # Explicit page addressing avoids relying on retained controller state.

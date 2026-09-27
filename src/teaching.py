@@ -41,7 +41,7 @@ class TeachingController:
     def __init__(self, root=ROOT):
         self.root=Path(root);self.store=Demonstrations(self.root/'data/demonstrations')
         self.lock=threading.Lock();self.active=None;self.error=None
-        self.move=None
+        self.move=None;self.stop_revision=lambda:0
         # A restart never resumes recording or motion.
         for episode in self.store.episodes():
             if episode.get('state')=='recording':
@@ -99,6 +99,19 @@ class TeachingController:
             if self.move is None:raise ValueError('Постоянный контроллер руки не готов')
             pose,_=self.observation();goal=list(pose);goal[joint-1]+=delta
             return self.move(pose,goal,deadline)
+        finally:self.lock.release()
+
+    def cartesian(self,model,axis,direction,observing):
+        if observing is not True:raise ValueError('Подтвердите присутствие рядом с роботом')
+        if not self.lock.acquire(blocking=False):raise ValueError('Предыдущий шаг ещё выполняется')
+        try:
+            if self.active:raise ValueError('Для записи показа используйте шаги суставов; сначала завершите запись')
+            if self.move is None:raise ValueError('Контроллер руки не готов')
+            from cartesian_jog import propose
+            revision=self.stop_revision()
+            pose,_=self.observation();proposal=propose(model,pose,axis,direction)
+            result=self.move(pose,proposal['goal_deg'],expected_stop_revision=revision)
+            return dict(proposal,executed=True,command=result,attainment_verified=False)
         finally:self.lock.release()
 
     def step(self,joint,delta,deadline=None):

@@ -35,4 +35,4 @@ class PowerTests(unittest.TestCase):
         for i in range(30,50):self.p.sample(11.5,i)
         self.assertEqual(self.p.evaluate(49)['state'],'NORMAL')
         self.assertFalse(self.p.evaluate(49,charging=True)['motion_allowed'])
-        self.assertIsNone(battery_summary(12.5,0)['percent'])
+        self.assertIsNone(battery_summary(12.5,0)['state_of_charge_percent'])

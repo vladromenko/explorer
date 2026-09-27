@@ -7,22 +7,31 @@ from arm_commissioning import stationary_status
 from arm_model import ArmModel
 from handeye import fit
 ROOT=Path('/home/vlad/Explorer')
-args=argparse.ArgumentParser();args.add_argument('--execute-observed',action='store_true');opts=args.parse_args()
+args=argparse.ArgumentParser();args.add_argument('--execute-observed',action='store_true');args.add_argument('--extended',action='store_true');opts=args.parse_args()
 if not opts.execute_observed:raise SystemExit('Requires explicit observer and clear near-home envelope')
 key=(ROOT/'config/access_token').read_text().strip()
 def api(path,body):
     req=urllib.request.Request('http://127.0.0.1:8080/api/'+path,data=json.dumps(body).encode(),headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'})
     with urllib.request.urlopen(req,timeout=15) as r:return json.load(r)
 start=json.loads((ROOT/'data/arm-state.json').read_text())['servo_deg']
-if start!=[92,125,3,0,90,30]:raise ValueError('This bounded survey requires its exact observed starting command')
+if start!=([90,125,3,0,90,30] if opts.extended else [92,125,3,0,90,30]):raise ValueError('This bounded survey requires its exact observed starting command')
 poses=[[92,125,3,0],[102,125,3,0],[82,125,3,0],[92,115,3,0],[102,115,3,0],[82,115,3,0],
        [92,125,13,0],[102,125,13,0],[82,125,13,0],[92,125,3,10],[102,115,13,10],[82,119,9,6],[96,117,7,8]]
+if opts.extended:
+    poses=[[90,125,3,0],[90,115,9,10],[80,115,9,10],[100,115,9,10],
+           [90,105,13,20],[80,105,13,20],[100,105,13,20],
+           [90,95,23,30],[90,85,33,40],[80,85,33,40],[100,85,33,40],
+           [90,75,43,50],[90,65,53,60],[80,65,53,60],[100,65,53,60],
+           [90,75,43,50],[90,85,33,40],[90,95,23,30],[90,105,13,20],[90,115,9,10]]
 poses=[p+[90,30] for p in poses]
 model=ArmModel();previous=start
-for pose in poses+[start]:
-    for shape in (0.,-.2,-.4,-.6,-.8):
-        if not model.path(previous[:5],pose[:5],shape)['valid']:raise ValueError('Survey path collides')
-    previous=pose
+for goal in poses+[start]:
+    # Validate the actual per-joint route, not a simultaneous shortcut.
+    for joint in range(4):
+        pose=list(previous);pose[joint]=goal[joint]
+        for shape in (0.,-.2,-.4,-.6,-.8):
+            if not model.path(previous[:5],pose[:5],shape)['valid']:raise ValueError('Survey path collides')
+        previous=pose
 folder=ROOT/'data/handeye-surveys'/time.strftime('%Y%m%d-%H%M%S');folder.mkdir(parents=True)
 paths=[];pose=list(start)
 def capture(index):

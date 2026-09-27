@@ -51,7 +51,7 @@ class PolicyPreview:
             job=candidates[-1]
             if not job.get('validation',{}).get('improves_hold_baseline'):
                 raise ValueError('Последняя модель не лучше простого удержания позы; добавьте качественные показы')
-            if self.teaching.active:raise ValueError('Завершите запись показа перед проверкой модели')
+            if self.teaching.active or self.teaching.lock.locked():raise ValueError('Завершите запись показа перед проверкой модели')
             pose,image=self.teaching.observation()
             folder=self.root/'data/policy-previews'/uuid.uuid4().hex;folder.mkdir(parents=True)
             cv2.imwrite(str(folder/'image.jpg'),image)

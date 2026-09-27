@@ -10,6 +10,8 @@ class BatteryGaugeTests(unittest.TestCase):
             self.assertIsNone(battery_summary(12.6, age)['percent'])
 
     def test_operating_endpoints_and_no_charger_inference(self):
-        for voltage in (10.8, 11.7, 12.6):self.assertIsNone(battery_percent(voltage))
-        self.assertFalse(battery_summary(12.6, .1)['approximate'])
+        for voltage, expected in ((10.8,0),(11.7,50),(12.6,100),(10.,0),(12.8,100)):
+            self.assertEqual(battery_percent(voltage),expected)
+        self.assertTrue(battery_summary(12.6, .1)['approximate'])
+        self.assertIsNone(battery_summary(12.6,.1)['state_of_charge_percent'])
         self.assertIsNone(battery_summary(12.6, .1)['charging'])

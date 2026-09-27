@@ -1,0 +1,26 @@
+{
+  "at": 1790539993.8426993,
+  "test": "user-observed micro-ROS agent SIGSTOP transport stall",
+  "pause_s": 1.045865099,
+  "odom_displacement_m": 0.0646579057,
+  "first_resumed_odom_vx_m_s": 0.0484446,
+  "final_velocity": [
+    0,
+    0,
+    0
+  ],
+  "safe_stop_verified": false,
+  "firmware_changed": false,
+  "evidence": "data/link-loss-probe-forward-20260927-230413.json",
+  "video": "data/link-loss-20260927.mp4",
+  "notes": "Explicit zero commands after restoring transport stopped the base. This was a transport stall, not a physical cable removal. Autonomous base execution remains disabled.",
+  "extended_test": {
+    "pause_s": 2.250596476,
+    "requested_vx": -0.025,
+    "odom_displacement_m": -0.07665084675,
+    "safe_stop_verified": false,
+    "evidence": "data/link-loss-probe-reverse-extended-20260927-232300.json",
+    "video": "data/link-loss-extended-20260927.mp4",
+    "notes": "Continued displacement over longer agent stall; explicit zeros restored stopping. Firmware sample timeout does not establish installed binary behavior."
+  }
+}

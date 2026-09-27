@@ -66,6 +66,8 @@ from gamepad_panel import GamepadPanel
 def stop_all():
     controller=globals().get('manual_arm')
     if controller:controller.stop()
+    player=globals().get('policy_execution')
+    if player and player.lock.locked():player.stop()
     return emit('stop')
 gamepad_panel=GamepadPanel(ROOT,teaching,stop_all)
 
@@ -103,7 +105,7 @@ def finish_teaching(c:TeachingFinish):return map_operation(teaching.finish,c.out
 
 @app.post('/api/learning/train')
 def train_policy(c:TrainingStart):
-    if policy_preview.lock.locked():raise HTTPException(409,'Дождитесь проверки модели')
+    if policy_preview.lock.locked() or policy_execution.lock.locked():raise HTTPException(409,'Дождитесь завершения работы модели')
     return map_operation(learning_jobs.start,c.steps,c.task)
 
 class PolicyTask(BaseModel):
@@ -198,8 +200,7 @@ class Command(BaseModel):
 @app.post('/api/control')
 def control(c:Command):
     if c.op=='stop':
-        manual_arm.stop()
-        return emit('stop')
+        return stop_all()
     with command_lock:
         if c.sequence<=command_sequence.get(c.session,-1):raise HTTPException(409,'Out-of-order command')
         command_sequence[c.session]=c.sequence
@@ -288,6 +289,30 @@ def reference_arm():
 from manual_arm import ManualArm
 manual_arm=ManualArm(ROOT,node,reference_arm)
 teaching.move=manual_arm.move
+teaching.stop_revision=lambda:manual_arm.stop_revision
+from policy_execution import PolicyExecution
+policy_execution=PolicyExecution(ROOT,learning_jobs,teaching,manual_arm,policy_preview)
+
+class PolicyExecutionRequest(BaseModel):
+    task:str=Field(min_length=3,max_length=80)
+    observing:bool=False
+
+class PolicyExecutionLease(BaseModel):
+    session:str=Field(min_length=32,max_length=32)
+    held:bool=False
+
+@app.get('/api/learning/execute')
+def policy_execution_status():return policy_execution.status()
+
+@app.post('/api/learning/execute')
+def policy_execution_start(c:PolicyExecutionRequest):return map_operation(policy_execution.start,c.task,c.observing)
+
+@app.post('/api/learning/execute/lease')
+def policy_execution_lease(c:PolicyExecutionLease):return map_operation(policy_execution.heartbeat,c.session,c.held)
+
+@app.post('/api/learning/execute/stop')
+def policy_execution_stop():return policy_execution.stop()
+
 manual_arm.gamepad_permit=lambda:gamepad_panel.mode=='ARM' and time.monotonic()<gamepad_panel.lease and gamepad_panel.config['buttons']['l1'] in gamepad_panel.keys
 
 def warm_arm_model():
@@ -309,6 +334,15 @@ class ArmHome(BaseModel):
 
 @app.post('/api/arm/jog')
 def manual_jog(c:ArmJog):return map_operation(teaching.jog,c.joint,c.delta,c.observing)
+
+class CartesianJog(BaseModel):
+    axis:str
+    direction:int
+    observing:bool=False
+
+@app.post('/api/arm/cartesian')
+def cartesian_jog(c:CartesianJog):
+    return map_operation(teaching.cartesian,reference_arm(),c.axis,c.direction,c.observing)
 
 @app.post('/api/arm/prepare')
 def manual_prepare(c:ArmHome):
@@ -400,8 +434,8 @@ def tool(name,args):
         s=status()
         gauge=s.get('battery_gauge',{})
         return dict(stale=s['stale'],battery_voltage_V=s.get('battery'),battery_charge_percent=None,
-                    battery_estimate_percent=None if s['stale'] else gauge.get('percent'),
-                    explanation='Voltage is measured in volts. SOC, current, charging and runtime are unknown: no validated pack curve or battery current sensor. Sensor ages are seconds.',
+                    battery_voltage_reserve_percent=None if s['stale'] else gauge.get('percent'),
+                    explanation='Voltage reserve is only a linear voltage scale from 10.8 to 12.6 V, not SOC. Voltage is measured in volts. SOC, current, charging and runtime are unknown: no validated pack curve or battery current sensor. Sensor ages are seconds.',
                     sensor_age_seconds=s.get('sensor_age'),mode=s.get('mode'),stop_latched=s.get('stop_latched'),
                     motion_state=s.get('reason'),raw_odometry_pose=s.get('raw_pose'),resources=s['resources'],missions=s.get('missions'),commissioning=s.get('commissioning'))
     if name=='list_visible_objects' and args=={}:
@@ -409,7 +443,9 @@ def tool(name,args):
         return {'error':'Camera detections stale'} if state['stale'] else dict(image_stamp=state.get('image_stamp'),objects=state.get('objects',[])[:8],coordinates='camera frame; not calibrated to base/map')
     if name=='locate_object' and set(args)=={'label'} and isinstance(args['label'],str):return memory(args['label'])[:6]
     if name=='inspect_scene' and set(args)=={'question'} and isinstance(args['question'],str):return inspect_scene(args['question'][:500])
-    if name=='stop_robot' and args=={}:return missions.cancel()
+    if name=='stop_robot' and args=={}:
+        stop_all()
+        return missions.cancel()
     return {'error':'Unsupported tool or invalid arguments'}
 
 def inspect_scene(question):
@@ -470,17 +506,17 @@ def infer(messages):
 def agent(prompt:Prompt):
     # Stop does not depend on model availability or model interpretation.
     if prompt.text.strip().lower() in ('stop','стоп','остановись'):
-        return dict(answer='Stop requested.',result=emit('stop'))
+        return dict(answer='Стоп запрошен.',result=stop_all())
     if any(word in prompt.text.lower() for word in ('батар','заряд','battery')):
         s=tool('get_status',{})
         ru=any('а'<=c.lower()<='я' for c in prompt.text)
-        estimate=s.get('battery_estimate_percent')
+        estimate=s.get('battery_voltage_reserve_percent')
         if s['stale'] or s['battery_voltage_V'] is None:
             answer='Нет свежих данных батареи.' if ru else 'No fresh battery reading.'
         elif ru:
-            answer=f"Напряжение батареи: {s['battery_voltage_V']:.2f} В. Процент заряда и оставшееся время пока неизвестны: нужны характеристики батареи и проверенная оценка ёмкости. Состояние зарядки не измеряется."
+            answer=f"Напряжение батареи: {s['battery_voltage_V']:.2f} В. Шкала напряжения V≈{estimate}% (10,8–12,6 В); это не измеренный процент заряда. Остаток времени и факт зарядки неизвестны."
         else:
-            answer=f"Battery voltage: {s['battery_voltage_V']:.2f} V. SOC, runtime and charging are unknown; the pack is not characterized."
+            answer=f"Battery voltage: {s['battery_voltage_V']:.2f} V. Voltage reserve V≈{estimate}% on the 10.8–12.6 V scale; this is not measured SOC. Runtime and charging are unknown."
         return dict(answer=answer,tools=[dict(name='get_status',result=s)],deterministic=True)
     if not agent_lock.acquire(blocking=False):raise HTTPException(429,'Agent is busy')
     try:
