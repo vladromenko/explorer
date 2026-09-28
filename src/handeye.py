@@ -45,6 +45,15 @@ def visual_pose(reference, current):
                           depth_median_error_m=float(np.median(depth_error)),coverage=float(coverage))
 
 
+def mount_poses(samples):
+    explicit=['base_mount' in sample for sample in samples]
+    if any(explicit):
+        if not all(explicit) or any(str(sample.get('mount_frame'))!='arm4' for sample in samples):
+            raise ValueError('Mixed or unknown hand-eye mount frames')
+        return [sample['base_mount'] for sample in samples],'arm4'
+    return [sample['base_tool'] for sample in samples],'Gripping with servo5 held at 90 degrees'
+
+
 def fit(paths):
     samples=[dict(np.load(p,allow_pickle=False)) for p in paths]
     if len(samples)<8:raise ValueError('At least eight independently observed arm poses required')
@@ -62,7 +71,7 @@ def fit(paths):
                 except ValueError:pass
         if result is None:raise ValueError(f'No reliable visual overlap for sample {i}')
         visual.append(result[0]);metrics.append(result[1])
-    tools=[s['base_tool'] for s in samples]
+    tools,mount_frame=mount_poses(samples)
     rotation_axes=np.array([Rotation.from_matrix(tools[0][:3,:3].T@t[:3,:3]).as_rotvec() for t in tools[1:-2]])
     singular=np.linalg.svd(rotation_axes,compute_uv=False)
     if singular[1]<.15:raise ValueError('Insufficient independent rotation axes')
@@ -81,7 +90,7 @@ def fit(paths):
     translation=[float(np.linalg.norm(e[:3,3])) for e in errors]
     angle=[float(np.degrees(Rotation.from_matrix(e[:3,:3]).magnitude())) for e in errors]
     accepted=max(translation)<.01 and max(angle)<2 and np.linalg.norm(result[:3,3])<.25
-    return dict(camera_to_mount_reference=result.tolist(),reference_mount='Gripping with servo5 held at 90 degrees',
+    return dict(camera_to_mount_reference=result.tolist(),reference_mount=mount_frame,
                 samples=[str(p) for p in paths],visual_quality=metrics,
                 translation_residual_m=translation,rotation_residual_deg=angle,
                 held_out_indices=[len(samples)-2,len(samples)-1],consistent=accepted,

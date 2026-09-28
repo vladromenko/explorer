@@ -40,7 +40,9 @@ def main():
     path=folder/(name+'.npz')
     np.savez_compressed(path,rgb=rgb,depth=depth,k=np.array(data['info'].k).reshape(3,3),
                         d=np.array(data['info'].d),stamp=stamp(data['rgb']),
-                        servo_deg=state['servo_deg'],base_tool=transform,base_pose=np.array(list(status['raw_pose'][k] for k in ('x','y','yaw'))))
+                        servo_deg=state['servo_deg'],base_tool=transform,
+                        base_mount=model.state.get_global_link_transform('arm4'),mount_frame='arm4',
+                        base_pose=np.array(list(status['raw_pose'][k] for k in ('x','y','yaw'))))
     print(json.dumps(dict(path=str(path),servo_deg=state['servo_deg'],measured_joints=False)))
     node.destroy_node();rclpy.shutdown()
 

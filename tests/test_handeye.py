@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 import numpy as np
 from scipy.spatial.transform import Rotation
-from handeye import fit
+from handeye import fit,mount_poses
 
 
 class HandEyeTests(unittest.TestCase):
@@ -26,6 +26,18 @@ class HandEyeTests(unittest.TestCase):
             self.assertEqual(result['held_out_indices'],[10,11])
             self.assertFalse(result['execution_authorized'])
             self.assertFalse(result['measured_joint_positions'])
+            for path,t in zip(paths,tools):
+                np.savez(path,base_tool=np.eye(4),base_mount=t,mount_frame='arm4',base_pose=[0,0,0])
+            with patch('handeye.visual_pose',side_effect=[(v,{}) for v in views[1:]]):result=fit(paths)
+            self.assertEqual(result['reference_mount'],'arm4')
+            self.assertTrue(result['consistent'])
+            self.assertTrue(np.allclose(result['camera_to_mount_reference'],camera,atol=1e-6))
+
+    def test_mixed_mount_frames_are_rejected(self):
+        legacy=dict(base_tool=np.eye(4))
+        explicit=dict(base_mount=np.eye(4),mount_frame=np.array('arm4'))
+        with self.assertRaises(ValueError):mount_poses([legacy,explicit])
+        with self.assertRaises(ValueError):mount_poses([dict(explicit,mount_frame='arm5')])
 
     def test_insufficient_samples_cannot_authorize(self):
         with self.assertRaises(ValueError):fit([])
