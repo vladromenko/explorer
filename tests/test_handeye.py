@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import json
 from pathlib import Path
 from unittest.mock import patch
 import numpy as np
@@ -26,6 +27,7 @@ class HandEyeTests(unittest.TestCase):
             self.assertEqual(result['held_out_indices'],[10,11])
             self.assertFalse(result['execution_authorized'])
             self.assertFalse(result['measured_joint_positions'])
+            self.assertIs(json.loads(json.dumps(result))['consistent'],True)
             for path,t in zip(paths,tools):
                 np.savez(path,base_tool=np.eye(4),base_mount=t,mount_frame='arm4',base_pose=[0,0,0])
             with patch('handeye.visual_pose',side_effect=[(v,{}) for v in views[1:]]):result=fit(paths)

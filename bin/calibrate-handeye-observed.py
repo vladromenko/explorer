@@ -8,7 +8,10 @@ from arm_model import ArmModel
 from handeye import fit
 ROOT=Path('/home/vlad/Explorer')
 args=argparse.ArgumentParser();args.add_argument('--execute-observed',action='store_true');args.add_argument('--extended',action='store_true')
-args.add_argument('--approach-from-above',action='store_true');opts=args.parse_args()
+args.add_argument('--approach-from-above',action='store_true')
+args.add_argument('--approach-degrees',type=int,choices=(2,4),default=2)
+opts=args.parse_args()
+if opts.approach_degrees!=2 and not opts.approach_from_above:args.error('--approach-degrees requires --approach-from-above')
 if not opts.execute_observed:raise SystemExit('Requires explicit observer and clear near-home envelope')
 key=(ROOT/'config/access_token').read_text().strip()
 def api(path,body):
@@ -30,7 +33,7 @@ def approach_route(goal):
     route=[goal]
     if opts.approach_from_above:
         for joint in range(4):
-            raised=list(goal);raised[joint]+=2
+            raised=list(goal);raised[joint]+=opts.approach_degrees
             if raised[joint]>180:raise ValueError('Insufficient final approach margin')
             route.extend([raised,goal])
     return route
@@ -80,5 +83,6 @@ finally:
     api('control',dict(op='stop'))
 report['survey']=str(folder)
 report['approach_from_above']=opts.approach_from_above
+report['approach_degrees']=opts.approach_degrees if opts.approach_from_above else 0
 (folder/'result.json').write_text(json.dumps(report,indent=2))
 print(json.dumps(report),flush=True)

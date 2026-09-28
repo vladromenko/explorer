@@ -145,6 +145,7 @@ class Core(Node):
             op = req['op']
             if op == 'stop':
                 self.gate.stop()
+                self.joy_held=False
                 if self.probe:self.probe.finished=True
                 self.pub.publish(Twist())
             else:
@@ -177,6 +178,7 @@ class Core(Node):
                     if req['mode'] not in ('MANUAL','ASSISTED','AUTONOMOUS'):
                         raise ValueError('Invalid mode')
                     self.gate.command_at = -1e9
+                    self.joy_held=False
                     if self.probe:self.probe.finished=True
                     self.gate.mode = req['mode']
                 elif op == 'drive':
@@ -196,6 +198,11 @@ class Core(Node):
     def tick(self):
         now = time.monotonic()
         arm_link_ok=all(now-self.seen.get(k,-1e9)<ttl for k,ttl in [('odom',.5),('battery',2.)])
+        self.gate.observe_controller_link(arm_link_ok)
+        if not arm_link_ok:
+            self.autonomy_lease=-1e9
+            self.joy_held=False
+            if self.probe:self.probe.finished=True
         if getattr(self,'arm_link_was_healthy',False) and not arm_link_ok:
             try:
                 fault=ROOT/'data/arm-telemetry-fault.tmp'

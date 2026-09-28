@@ -10,7 +10,14 @@ import time
 import uuid
 from pathlib import Path
 import numpy as np
-from lerobot_bridge import training_budget,write_json
+from lerobot_bridge import write_json
+from arm_commissioning import stationary_status
+
+
+def motion_budget(root):
+    """Use the arm's live motion policy, not the separate GPU-training budget."""
+    status=json.loads((Path(root)/'data/status.json').read_text())
+    stationary_status(status,time.time())
 
 
 def command_steps(points,start):
@@ -100,7 +107,7 @@ class TrajectoryExecution:
             if not p or p['id']!=plan_id or not 0<=time.time()-p['at']<60:
                 raise ValueError('Рассчитайте свежий путь')
             if self.teaching.active:raise ValueError('Завершите показ')
-            training_budget(self.root)
+            motion_budget(self.root)
             start,_=self.teaching.observation()
             if start!=p['start'] or p['revision']!=self.manual.stop_revision:
                 raise ValueError('Положение или STOP изменились после расчёта')
@@ -117,7 +124,7 @@ class TrajectoryExecution:
         records=[];start=plan['start']
         try:
             for goal in plan['steps']:
-                self.permit();training_budget(self.root)
+                self.permit();motion_budget(self.root)
                 observed,_=self.teaching.observation()
                 if observed!=start:raise ValueError('Положение руки изменилось')
                 record=self.manual.move(start,goal,expected_stop_revision=self.revision,

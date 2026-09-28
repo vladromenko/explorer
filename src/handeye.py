@@ -89,7 +89,7 @@ def fit(paths):
     errors=[np.linalg.inv(world[0])@w for w in world]
     translation=[float(np.linalg.norm(e[:3,3])) for e in errors]
     angle=[float(np.degrees(Rotation.from_matrix(e[:3,:3]).magnitude())) for e in errors]
-    accepted=max(translation)<.01 and max(angle)<2 and np.linalg.norm(result[:3,3])<.25
+    accepted=bool(max(translation)<.01 and max(angle)<2 and np.linalg.norm(result[:3,3])<.25)
     return dict(camera_to_mount_reference=result.tolist(),reference_mount=mount_frame,
                 samples=[str(p) for p in paths],visual_quality=metrics,
                 translation_residual_m=translation,rotation_residual_deg=angle,

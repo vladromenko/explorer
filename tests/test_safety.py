@@ -51,5 +51,33 @@ class SafetyTests(unittest.TestCase):
         self.g.tick(0,.1,True)
         self.assertEqual(self.g.tick(.1,.1,False)[0], [0,0,0])
 
+    def test_controller_link_recovery_requires_explicit_rearming(self):
+        self.g.estop=False;self.g.mode='AUTONOMOUS'
+        self.g.submit([.2,0,0],'autonomy',1)
+        self.assertGreater(self.g.tick(1,.1,True)[0][0],0)
+        self.g.observe_controller_link(False)
+        self.assertTrue(self.g.estop)
+        self.assertEqual(self.g.mode,'MANUAL')
+        self.assertEqual(self.g.output,[0,0,0])
+        self.g.observe_controller_link(True)
+        self.assertFalse(self.g.submit([.2,0,0],'autonomy',1.1))
+        self.g.submit([.2,0,0],'manual',1.1)
+        self.assertEqual(self.g.tick(1.1,.1,True)[0],[0,0,0])
+
+    def test_each_source_expires_without_new_commands(self):
+        for source in ('manual','autonomy'):
+            with self.subTest(source=source):
+                self.g.estop=False;self.g.mode='AUTONOMOUS'
+                self.g.submit([.1,0,0],source,1)
+                self.assertGreater(self.g.tick(1,.1,True)[0][0],0)
+                self.assertEqual(self.g.tick(1.251,.1,True),([0,0,0],'COMMAND EXPIRED'))
+
+    def test_autonomy_does_not_need_manual_input(self):
+        self.g.estop=False;self.g.mode='AUTONOMOUS'
+        for now in (1,1.1,1.2,1.3):
+            self.g.observe_controller_link(True)
+            self.assertTrue(self.g.submit([.1,0,0],'autonomy',now))
+            self.assertGreater(self.g.tick(now,.1,True)[0][0],0)
+
 if __name__ == '__main__':
     unittest.main()

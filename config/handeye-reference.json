@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-28",
+  "parent_frame": "arm4",
+  "child_frame": "camera_color_optical_frame",
+  "parent_T_child": [
+    [
+      0.016549137236173187,
+      0.9996176887008756,
+      0.022149548379142354,
+      -0.05080040639920698
+    ],
+    [
+      -0.9997658064323368,
+      0.016852423269582546,
+      -0.013576749192736612,
+      0.008390836326068152
+    ],
+    [
+      -0.013944832212667187,
+      -0.021919677612468377,
+      0.9996624777340108,
+      0.0796749412518667
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "source_dataset": "data/handeye-surveys/20260928-041734",
+  "fit_consistent": true,
+  "translation_residual_max_m": 0.006639996883634111,
+  "rotation_residual_max_deg": 1.7939171176026503,
+  "held_out_translation_m": [
+    0.003651865222268093,
+    0.002234264752731317
+  ],
+  "held_out_rotation_deg": [
+    0.7651992208320784,
+    0.5400755235330887
+  ],
+  "approach_from_above": true,
+  "approach_degrees": 4,
+  "measured_joint_positions": false,
+  "reference_only": true,
+  "execution_authorized": false,
+  "note": "Natural-feature RGB-D consistency against commanded joint poses; not absolute joint or grasp calibration. Do not automatically publish as a validated runtime TF."
+}

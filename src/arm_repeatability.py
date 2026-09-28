@@ -2,7 +2,9 @@
 from arm_commissioning import HARD_LIMITS
 
 
-def plan(start, joints=(1,2,3,4), approach_from_above=False):
+def plan(start, joints=(1,2,3,4), approach_from_above=False, approach_degrees=2):
+    if type(approach_degrees) is not int or approach_degrees not in (2,4):
+        raise ValueError('Approach distance must be 2 or 4 degrees')
     if len(start)!=6 or any(type(v) is not int or not lo<=v<=hi
                            for v,(lo,hi) in zip(start,HARD_LIMITS)):
         raise ValueError('Invalid initial servo command')
@@ -28,10 +30,11 @@ def plan(start, joints=(1,2,3,4), approach_from_above=False):
         expanded=[]
         for step in steps:
             if 'capture' in step:
-                joint=int(step['capture'][1]);pose=list(step['pose']);pose[joint-1]+=2
-                if pose[joint-1]>HARD_LIMITS[joint-1][1]:raise ValueError('No approach margin')
-                expanded.extend([dict(joint=joint,delta=2,pose=pose),
-                                 dict(joint=joint,delta=-2,pose=list(step['pose']))])
+                joint=int(step['capture'][1]);pose=list(step['pose'])
+                if pose[joint-1]+approach_degrees>HARD_LIMITS[joint-1][1]:raise ValueError('No approach margin')
+                for delta in [2]*(approach_degrees//2)+[-2]*(approach_degrees//2):
+                    pose[joint-1]+=delta
+                    expanded.append(dict(joint=joint,delta=delta,pose=list(pose)))
             expanded.append(step)
         return expanded
     return steps

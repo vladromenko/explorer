@@ -14,11 +14,13 @@ parser.add_argument('--execute-observed',action='store_true')
 parser.add_argument('--joints',type=int,nargs='+',default=[1,2,3,4])
 parser.add_argument('--approach-from-above',action='store_true',
                     help='Test a consistent final approach using two additional 2-degree steps')
+parser.add_argument('--approach-degrees',type=int,choices=(2,4),default=2)
 args=parser.parse_args()
+if args.approach_degrees!=2 and not args.approach_from_above:parser.error('--approach-degrees requires --approach-from-above')
 root=Path('/home/vlad/Explorer')
 start=json.loads((root/'data/arm-state.json').read_text())['servo_deg']
 if start!=HOME:raise SystemExit('Start from the observed near-home pose first')
-steps=plan(start,args.joints,args.approach_from_above)
+steps=plan(start,args.joints,args.approach_from_above,args.approach_degrees)
 if not args.execute_observed:
     print(json.dumps(dict(executed=False,steps=steps)));raise SystemExit(0)
 base=json.loads((root/'data/status.json').read_text());stationary_status(base,time.time())
@@ -55,7 +57,8 @@ def capture(step):
     records.append(dict(label=step['capture'],servo_deg=step['pose'],image_stamp=float(frame['stamp'])))
     print(json.dumps(records[-1]),flush=True)
 report=dict(execution_authorized=False,calibration_applied=False,measured_joint_angles=False,
-            consistent_approach_test=args.approach_from_above)
+            consistent_approach_test=args.approach_from_above,
+            approach_degrees=args.approach_degrees if args.approach_from_above else 0)
 try:
     for step in steps:
         if 'delta' in step:

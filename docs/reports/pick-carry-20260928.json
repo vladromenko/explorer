@@ -1,0 +1,85 @@
+{
+  "date": "2026-09-28",
+  "robot": "Explorer ROSMASTER M3 Pro",
+  "firmware_changed": false,
+  "supervised": true,
+  "observation": "Assistant inspection of external Logitech camera frames with user nearby",
+  "object": "sock",
+  "outcome": "observed_pickup_carry_release",
+  "automatic_success_verifier_used": false,
+  "unattended_delivery_verified": false,
+  "measured_arm_angles": false,
+  "simultaneous_base_and_joint_motion": false,
+  "learned_policy_used": false,
+  "added_as_training_demonstration": false,
+  "commissioning_flags_changed": false,
+  "calibration_reference": "config/handeye-reference.json",
+  "gripper_reference": "config/gripper-reference.json",
+  "object_search_ids": [
+    "28c702a263b54a398b509cc11546adac",
+    "f7b75717491243318b042d2be94a4010"
+  ],
+  "approach_before_grasp": {
+    "forward_odometry_m": 0.0746469351,
+    "camera_translation_m": 0.0725767974
+  },
+  "successful_grasp_command_deg": [
+    88,
+    3,
+    37,
+    80,
+    90,
+    160
+  ],
+  "carry_command_deg": [
+    88,
+    93,
+    61,
+    6,
+    90,
+    160
+  ],
+  "release_command_deg": [
+    88,
+    94,
+    2,
+    52,
+    90,
+    30
+  ],
+  "final_command_deg": [
+    90,
+    125,
+    3,
+    0,
+    90,
+    30
+  ],
+  "nominal_carry_tcp_height_m": 0.32,
+  "carry": {
+    "backward_pulses": 4,
+    "right_pulses": 2,
+    "pulse_duration_s": 0.7,
+    "requested_speed_m_s": 0.05,
+    "backward_body_axis_sum_m": 0.0686391430146009,
+    "right_body_axis_sum_m": 0.01016814366245123,
+    "odom_delta_xy_m": [
+      -0.06975643383339047,
+      -0.01801375625655055
+    ],
+    "all_final_odometry_velocities_zero": true,
+    "object_retained_visually": true
+  },
+  "private_evidence_directories": [
+    "data/trajectory-runs",
+    "data/manipulator-functional-check",
+    "data/object-searches"
+  ],
+  "limitations": [
+    "One observed soft-object cycle; not repeatability validation",
+    "Close-range depth was unavailable; phase decisions used external observation",
+    "Arm positions are commanded references, not measured feedback",
+    "Existing MCU link-loss stop failure remains unresolved",
+    "Not an executable replay plan: object and base locations have changed"
+  ]
+}

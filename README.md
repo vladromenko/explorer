@@ -3,6 +3,8 @@
 Основной проект: `/home/vlad/Explorer`. Ubuntu 24.04, ROS 2 Jazzy, Jetson Orin Nano.
 **Физический ввод в эксплуатацию не завершён. Полностью автономный манипулятор пока не получен.**
 
+28.09.2026 под внешней камерой выполнен короткий цикл: подъезд к носку, захват, подъём, перевозка назад и вправо, отпускание. [Измерения и границы этой проверки](docs/calibration-progress-20260928.md); [штатный контроллер и потеря связи](docs/controller-behaviour.ru.md).
+
 Полная актуальная инструкция: [docs/operator-guide.ru.md](docs/operator-guide.ru.md).
 Первый эксперимент и подключение бота: [docs/lab-quickstart.ru.md](docs/lab-quickstart.ru.md).
 Честный реестр механизмов и недостающих условий: [docs/research_coverage.md](docs/research_coverage.md).

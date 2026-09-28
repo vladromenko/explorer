@@ -19,6 +19,15 @@ class SafetyGate:
         self.command = [0., 0., 0.]
         self.output = [0., 0., 0.]
 
+    def observe_controller_link(self, healthy):
+        """A lost motor-board link revokes the session; recovery never rearms it.
+
+        This cannot stop a disconnected MCU. It prevents new commands on recovery.
+        Joystick connectivity is deliberately not part of this signal.
+        """
+        if not healthy:
+            self.stop()
+
     def submit(self, values, source, now):
         if source not in ("manual","autonomy"):raise ValueError("Invalid command source")
         if len(values) != 3 or not all(math.isfinite(x) for x in values):

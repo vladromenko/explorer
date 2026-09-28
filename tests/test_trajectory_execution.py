@@ -1,7 +1,7 @@
-import tempfile,threading,time,unittest
+import tempfile,threading,time,unittest,json
 from pathlib import Path
 from unittest.mock import Mock,patch
-from trajectory_execution import command_steps,TrajectoryExecution
+from trajectory_execution import command_steps,TrajectoryExecution,motion_budget
 
 HOME=[90,125,3,0,90,30]
 class TrajectoryTests(unittest.TestCase):
@@ -21,7 +21,7 @@ class TrajectoryTests(unittest.TestCase):
         planner=Mock();planner.return_value.plan.return_value={'planned':True,'servo_waypoints':[HOME[:5],[92,125,3,0,90]]}
         return TrajectoryExecution(root,teaching,manual,planner)
     def test_stale_or_changed_start_rejected_before_movement(self):
-        with tempfile.TemporaryDirectory() as root,patch('trajectory_execution.training_budget'):
+        with tempfile.TemporaryDirectory() as root,patch('trajectory_execution.motion_budget'):
             p=self.runner(root);r=p.plan([92,125,3,0,90]);p.pending['at']-=61
             with self.assertRaises(ValueError):p.start(r['plan_id'],True)
             p.manual.move.assert_not_called();self.assertFalse(p.lock.locked());self.assertFalse(p.teaching.lock.locked())
@@ -37,3 +37,16 @@ class TrajectoryTests(unittest.TestCase):
             p.run({'start':HOME,'steps':[[92,125,3,0,90,30]]})
             p.manual.move.assert_not_called();self.assertEqual(p.state['phase'],'stopped')
             self.assertFalse(p.lock.locked());self.assertFalse(p.teaching.lock.locked())
+
+    def test_motion_policy_is_separate_from_gpu_training_and_rejects_faults(self):
+        with tempfile.TemporaryDirectory() as root:
+            path=Path(root)/'data/status.json';path.parent.mkdir()
+            status=dict(at=time.time(),stop_latched=True,velocity=[0,0,0],battery=11.45,
+                        power={'state':'NORMAL'},sensor_age={'odom':.02,'battery':.1})
+            path.write_text(json.dumps(status));motion_budget(root)
+            for change in (dict(power={'state':'LOW_POWER'}),dict(power={'state':'CRITICAL'}),
+                           dict(power={'state':'CHARGING'}),dict(stop_latched=False),
+                           dict(battery=10.9),dict(sensor_age={'odom':1,'battery':.1}),
+                           dict(at=time.time()-2)):
+                path.write_text(json.dumps(dict(status,**change)))
+                with self.assertRaises(ValueError):motion_budget(root)

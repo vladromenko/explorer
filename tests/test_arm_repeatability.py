@@ -28,8 +28,12 @@ class RepeatabilityTests(unittest.TestCase):
             self.assertEqual(plan(start)[-1]['pose'],start)
 
     def test_consistent_approach_preserves_limits_and_two_degree_steps(self):
+        for distance in (2,4):
+            self.check_approach(distance)
+
+    def check_approach(self,distance):
         previous=list(HOME)
-        for step in plan(HOME,approach_from_above=True):
+        for step in plan(HOME,approach_from_above=True,approach_degrees=distance):
             if 'capture' in step:self.assertEqual(step['pose'],previous)
             else:
                 self.assertEqual(sum(a!=b for a,b in zip(previous,step['pose'])),1)
@@ -37,3 +41,7 @@ class RepeatabilityTests(unittest.TestCase):
             self.assertTrue(all(lo<=v<=hi for v,(lo,hi) in zip(step['pose'],HARD_LIMITS)))
             previous=step['pose']
         self.assertEqual(previous,HOME)
+
+    def test_approach_distance_cannot_exceed_joint_limit(self):
+        with self.assertRaises(ValueError):plan([178,125,3,0,90,30],[1],True,4)
+        with self.assertRaises(ValueError):plan(HOME,[1],True,6)
