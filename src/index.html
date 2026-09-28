@@ -142,4 +142,4 @@ function sendVoice(){const text=document.getElementById('transcript').value.trim
 async function voiceLoop(){try{const s=await(await api('voice')).json();const phases={idle:'Микрофон выключен · готов',starting:'Подготовка…',recording:'🔴 Идёт запись — говорите',recognizing:'Распознаю на Jetson…',ready:'Команда распознана — проверьте текст',synthesizing:'Готовлю голос…',speaking:'Воспроизведение через динамик',error:'Ошибка'};document.getElementById('voicestate').textContent=(phases[s.phase]||s.phase)+(s.error?' · '+s.error:'');if(s.transcript&&s.transcript!==lastTranscript){lastTranscript=s.transcript;document.getElementById('transcript').value=s.transcript;}}catch(e){document.getElementById('voicestate').textContent='Нет связи с голосовым модулем';}setTimeout(voiceLoop,700);}
 voiceLoop();teachingLoop();listMaps();
 refresh();imageLoop();mapLoop();
-</script></html>
+</script><script src="/lab.js"></script></html>

@@ -56,6 +56,7 @@ class Core(Node):
         self.arm_pub = self.create_publisher(ArmJoints, '/arm6_joints', 1)
         self.rgb_pub = self.create_publisher(ColorRGBA, '/rgb', 1)
         self.heartbeat = self.create_publisher(UInt64, '/explorer/control_heartbeat', 1)
+        self.request_ack = self.create_publisher(String, '/explorer/request_ack', 10)
         self.create_subscription(Float32, '/battery', self.battery_cb, qos_profile_sensor_data)
         self.create_subscription(Imu, '/imu/data_raw', lambda m:self.touch('imu'), qos_profile_sensor_data)
         self.create_subscription(Odometry, '/odom_raw', self.odom_cb, qos_profile_sensor_data)
@@ -142,6 +143,7 @@ class Core(Node):
             if op == 'stop':
                 self.gate.stop()
                 if self.probe:self.probe.finished=True
+                self.pub.publish(Twist())
             else:
                 age = time.monotonic() - float(req['at'])
                 if not math.isfinite(age) or age < 0 or age > .25:
@@ -185,6 +187,8 @@ class Core(Node):
             self.last_result = dict(id=req.get('id'), ok=True, op=op)
         except (ValueError, TypeError, KeyError, OSError) as exc:
             self.last_result = dict(id=req.get('id'), ok=False, error=str(exc))
+        self.request_ack.publish(String(data=json.dumps(dict(self.last_result,
+            handled_monotonic=time.monotonic(),mcu_acknowledged=False))))
 
     def tick(self):
         now = time.monotonic()

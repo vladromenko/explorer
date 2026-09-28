@@ -4,7 +4,7 @@ After=explorer-web.service explorer-vpn.service
 Wants=explorer-vpn.service
 PartOf=explorer.target
 ConditionPathExists=/home/vlad/Explorer/config/telegram.json
-ConditionPathExists=/home/vlad/Explorer/config/telegram-token
+ConditionPathExists=/home/vlad/.config/explorer/secrets/telegram-token
 
 [Service]
 Type=simple
