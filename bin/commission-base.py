@@ -18,16 +18,26 @@ from std_msgs.msg import String
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Imu
+from commissioning import Pulse
 
 root=Path('/home/vlad/Explorer')
 parser=argparse.ArgumentParser()
-parser.add_argument('axis',choices=['forward','left','ccw'])
+parser.add_argument('axis',choices=['forward','backward','left','right','ccw','cw'])
 parser.add_argument('--timeout-test',action='store_true')
+parser.add_argument('--duration',type=float,default=.6)
+parser.add_argument('--speed',type=float,default=None)
 args=parser.parse_args()
 if args.timeout_test and args.axis!='forward':parser.error('Timeout test only permits forward')
-velocity={'forward':[.04,0.,0.],'left':[0.,.04,0.],'ccw':[0.,0.,.15]}[args.axis]
-duration=.6
+velocity={'forward':[.04,0.,0.],'backward':[-.04,0.,0.],
+          'left':[0.,.04,0.],'right':[0.,-.04,0.],
+          'ccw':[0.,0.,.15],'cw':[0.,0.,-.15]}[args.axis]
+if args.speed is not None:
+ if not math.isfinite(args.speed) or args.speed<=0:parser.error('Speed must be positive and finite')
+ velocity=[math.copysign(args.speed,v) if v else 0. for v in velocity]
+duration=args.duration
 quiet_seconds=.8 if args.timeout_test else 0.
+try:Pulse(velocity,duration,0.,quiet_seconds)
+except ValueError as exc:parser.error(str(exc))
 rclpy.init();node=Node('explorer_commission_base');pub=node.create_publisher(String,'/explorer/request',10)
 samples=[];started=time.monotonic();command_started=None
 def odom(m):
@@ -84,6 +94,12 @@ try:
  result=dict(axis=args.axis,requested=velocity,duration=duration,quiet_seconds=quiet_seconds,delta={k:after[k]-before[k] for k in ('x','y','yaw')},
              peak={k:max(abs(s[k]) for s in commands) for k in ('vx','vy','wz')},
              final_velocity={k:after[k] for k in ('vx','vy','wz')},physical_direction_confirmed=False)
+ dx,dy=after['x']-before['x'],after['y']-before['y']
+ yaw_delta=math.atan2(math.sin(after['yaw']-before['yaw']),math.cos(after['yaw']-before['yaw']))
+ result['body_delta']=dict(x=math.cos(before['yaw'])*dx+math.sin(before['yaw'])*dy,
+                           y=-math.sin(before['yaw'])*dx+math.cos(before['yaw'])*dy,yaw=yaw_delta)
+ result['command_gap_test']=bool(args.timeout_test)
+ result['controller_link_loss_test']=False
  print(json.dumps(result))
 finally:
  request('stop');spin(.2)

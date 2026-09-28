@@ -44,6 +44,7 @@ class Core(Node):
         self.seen = {}
         self.battery = None
         self.pose = None
+        self.odom_velocity = None
         self.scans = {}
         self.arm_feedback = None
         self.arm_active_until = 0.
@@ -97,6 +98,8 @@ class Core(Node):
 
     def odom_cb(self, msg):
         self.touch('odom')
+        t=msg.twist.twist
+        self.odom_velocity=[t.linear.x,t.linear.y,t.angular.z]
         p, q = msg.pose.pose.position, msg.pose.pose.orientation
         self.pose = dict(x=p.x, y=p.y, yaw=math.atan2(2*(q.w*q.z+q.x*q.y),1-2*(q.y*q.y+q.z*q.z)), frame=msg.header.frame_id)
 
@@ -244,6 +247,7 @@ class Core(Node):
             latch.replace(ROOT/'data/power-critical-latch.json')
             self.critical_saved=True
         status = dict(at=time.time(), mode=self.gate.mode, stop_latched=self.gate.estop,
+                      odom_velocity=self.odom_velocity,odom_received_monotonic=self.seen.get('odom'),
                       reason=self.reason, battery=self.battery, raw_pose=self.pose,
                       battery_gauge=battery_summary(self.power_policy.filtered,now-self.seen.get('battery',-1e9)),
                       power=self.power_state,

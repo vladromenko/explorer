@@ -504,11 +504,15 @@ def manual_prepare(c:ArmHome):
     if teaching.active:raise HTTPException(409,'Сначала завершите запись показа')
     if not teaching.lock.acquire(blocking=False):raise HTTPException(409,'Рука занята')
     try:
+        from arm_preparation import stop_base_before_prepare
+        stop_base_before_prepare(ROOT,stop_all)
         manual_arm.prepare_geometry()
         result=subprocess.run(['/bin/bash',str(ROOT/'bin/teach-step.sh'),'--observed-clear',
                                '--pose','90','125','3','0','90','30','--runtime-ms','5000'],
                               capture_output=True,text=True,timeout=25)
-        if result.returncode:raise ValueError('Подготовка не подтверждена: '+result.stderr[-500:])
+        if result.returncode:
+            reason=result.stderr.strip().splitlines()[-1] if result.stderr.strip() else 'нет ответа процесса подготовки'
+            raise ValueError('Подготовка не подтверждена: '+reason)
         return dict(manual_arm.status(),operator_observation_required=True)
     except (ValueError,OSError,subprocess.TimeoutExpired) as exc:raise HTTPException(409,str(exc))
     finally:teaching.lock.release()
