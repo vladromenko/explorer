@@ -15,7 +15,7 @@ from PIL import Image
 import torch
 from transformers import AutoProcessor,AutoModelForZeroShotObjectDetection
 ROOT=Path('/home/vlad/Explorer');sys.path.insert(0,str(ROOT/'src'))
-from object_finder import depth_position
+from surface_foreground import locate
 folder=Path(sys.argv[1]);request=json.loads((folder/'request.json').read_text())
 sample=np.load(folder/'rgbd.npz',allow_pickle=False)
 image=Image.fromarray(cv2.cvtColor(sample['rgb'],cv2.COLOR_BGR2RGB));started=time.monotonic()
@@ -29,8 +29,9 @@ result=processor.post_process_grounded_object_detection(outputs,inputs.input_ids
 objects=[];annotated=sample['rgb'].copy()
 labels=result.get('text_labels',result.get('labels',[]))
 for box,score,label in zip(result['boxes'],result['scores'],labels):
-    bbox=box.cpu().tolist();position=depth_position(sample,bbox)
-    objects.append(dict(label=str(label),requested_label=request['label'],bbox=bbox,confidence=float(score),position=position))
+    bbox=box.cpu().tolist();geometry=locate(sample,bbox)
+    objects.append(dict(label=str(label),requested_label=request['label'],bbox=bbox,confidence=float(score),
+                        position=geometry['position'],depth_evidence=geometry))
     x1,y1,x2,y2=map(int,bbox);cv2.rectangle(annotated,(x1,y1),(x2,y2),(80,230,140),2)
     cv2.putText(annotated,request['english_label']+' '+str(round(float(score),2)),(x1,max(16,y1-7)),cv2.FONT_HERSHEY_SIMPLEX,.5,(80,230,140),1)
 cv2.imwrite(str(folder/'result.jpg'),annotated)

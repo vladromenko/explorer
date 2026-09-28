@@ -35,12 +35,17 @@ def stationary_status(s, now):
     battery = s['battery']
     if not math.isfinite(age) or not 0 <= age < 1:
         raise ValueError('Controller status is stale')
-    if s['stop_latched'] is not True or len(velocity) != 3:
-        raise ValueError('Base stop must remain latched')
+    if not (s['stop_latched'] is True or s.get('base_hold_confirmed') is True) or len(velocity) != 3:
+        raise ValueError('Base requires latched STOP or confirmed stationary hold')
     if s.get('power',{}).get('state') in ('CRITICAL','CHARGING','UNKNOWN','LOW_POWER'):
         raise ValueError('Power policy blocks arm commissioning')
     if any(not math.isfinite(v) or abs(v) > .001 for v in velocity):
         raise ValueError('Base command is not zero')
+    observed=s.get('odom_velocity')
+    if not isinstance(observed,list) or len(observed)!=3 or any(
+            not isinstance(v,(int,float)) or not math.isfinite(v) or abs(v)>=limit
+            for v,limit in zip(observed,[.005,.005,.02])):
+        raise ValueError('Measured base velocity is missing or not stationary')
     if not isinstance(battery, (int, float)) or not math.isfinite(battery) or battery < 11:
         raise ValueError('Battery below commissioning threshold')
     if any(not math.isfinite(s['sensor_age'].get(k, math.inf)) or

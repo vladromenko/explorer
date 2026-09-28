@@ -92,6 +92,21 @@ def emit(op,**kwargs):
     return dict(queued=True,id=req['id'])
 
 from gamepad_panel import GamepadPanel
+from observed_base import ObservedBase
+observed_base=ObservedBase(ROOT,lambda:teaching.lock.locked())
+
+class BaseStep(BaseModel):
+    direction:str
+    duration:float=Field(default=1.,ge=.1,le=2.)
+    observing:bool=False
+    compact:bool=False
+
+@app.get('/api/base/step')
+def base_step_status():return observed_base.status()
+
+@app.post('/api/base/step')
+def base_step(c:BaseStep):return map_operation(observed_base.start,c.direction,c.duration,c.observing,c.compact)
+
 def stop_all():
     experiments.cancel()
     controller=globals().get('manual_arm')
@@ -101,7 +116,8 @@ def stop_all():
     trajectory=globals().get('trajectory_execution')
     if trajectory:trajectory.stop()
     return emit('stop')
-gamepad_panel=GamepadPanel(ROOT,teaching,stop_all,lambda values:emit('drive',velocity=values,source='manual'))
+gamepad_panel=GamepadPanel(ROOT,teaching,stop_all,lambda values:emit('drive',velocity=values,source='manual'),
+                          lambda:emit('manual_release',initiator='gamepad_panel'))
 
 @app.get('/api/teaching')
 def teaching_status():
@@ -259,6 +275,7 @@ def control(c:Command):
         if c.sequence<=command_sequence.get(c.session,-1):raise HTTPException(409,'Out-of-order command')
         command_sequence[c.session]=c.sequence
     if c.op=='clear_stop':return emit('clear_stop')
+    if c.op=='manual_release':return emit('manual_release',initiator='web_panel')
     if c.op=='mode' and c.mode in ('MANUAL','ASSISTED','AUTONOMOUS'):
         experiments.cancel();return emit('mode',mode=c.mode)
     if c.op=='drive' and all(math.isfinite(v) for v in c.velocity):
@@ -488,6 +505,21 @@ class ArmHome(BaseModel):
 
 @app.post('/api/arm/jog')
 def manual_jog(c:ArmJog):return map_operation(teaching.jog,c.joint,c.delta,c.observing)
+
+class FiniteArmGoal(BaseModel):
+    goal:list[int]=Field(min_length=6,max_length=6)
+    observing:bool=False
+
+@app.post('/api/arm/finite')
+def finite_arm(c:FiniteArmGoal):
+    if not c.observing:raise HTTPException(409,'Нужно наблюдать конечное движение')
+    plan=map_operation(trajectory_execution.plan,c.goal)
+    return map_operation(trajectory_execution.start,plan['plan_id'],True,True)
+
+@app.get('/api/arm/feedback')
+def arm_feedback_state():
+    from arm_feedback import describe
+    return describe(read_state('status.json'),now=time.time())
 
 class CartesianJog(BaseModel):
     axis:str

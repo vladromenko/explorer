@@ -1,10 +1,28 @@
 import tempfile,threading,time,unittest,json
 from pathlib import Path
 from unittest.mock import Mock,patch
-from trajectory_execution import command_steps,TrajectoryExecution,motion_budget
+from trajectory_execution import command_steps,gripper_steps,TrajectoryExecution,motion_budget
 
 HOME=[90,125,3,0,90,30]
 class TrajectoryTests(unittest.TestCase):
+    def test_full_gripper_closure_is_finite_not_cut_off_at_30_steps(self):
+        steps=gripper_steps(HOME,160)
+        self.assertEqual(len(steps),65);self.assertEqual(steps[-1],HOME[:5]+[160])
+        self.assertTrue(all(p[:5]==HOME[:5] for p in steps))
+        with self.assertRaises(ValueError):gripper_steps(HOME,171)
+    def test_local_execution_uses_mission_permission_not_browser_heartbeat(self):
+        with tempfile.TemporaryDirectory() as root:
+            p=self.runner(root);p.execution_mode='local_mission';p.deadline=time.monotonic()+1
+            p.revision=0;p.lease=-1;p.local_permit=Mock();p.permit();p.local_permit.assert_called_once()
+            p.local_permit.side_effect=ValueError('mission cancelled')
+            with self.assertRaises(ValueError):p.permit()
+    def test_finite_operator_execution_still_checks_deadline_and_stop(self):
+        with tempfile.TemporaryDirectory() as root:
+            p=self.runner(root);p.execution_mode='operator_finite';p.deadline=time.monotonic()+1;p.revision=0
+            p.lease=-1;p.permit();p.manual.stop_revision=1
+            with self.assertRaises(ValueError):p.permit()
+            p.manual.stop_revision=0;p.deadline=time.monotonic()-1
+            with self.assertRaises(ValueError):p.permit()
     def test_quantization_keeps_edges_short_and_gripper_unchanged(self):
         points=[HOME[:5],[91.4,124.3,3,1.5,90],[100,115,4,10,90]]
         steps=command_steps(points,HOME);previous=HOME
@@ -42,7 +60,7 @@ class TrajectoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             path=Path(root)/'data/status.json';path.parent.mkdir()
             status=dict(at=time.time(),stop_latched=True,velocity=[0,0,0],battery=11.45,
-                        power={'state':'NORMAL'},sensor_age={'odom':.02,'battery':.1})
+                        power={'state':'NORMAL'},sensor_age={'odom':.02,'battery':.1},odom_velocity=[0,0,0])
             path.write_text(json.dumps(status));motion_budget(root)
             for change in (dict(power={'state':'LOW_POWER'}),dict(power={'state':'CRITICAL'}),
                            dict(power={'state':'CHARGING'}),dict(stop_latched=False),

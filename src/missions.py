@@ -23,7 +23,7 @@ def readiness(s,now):
         if not isinstance(age,(int,float)) or not math.isfinite(age) or not 0<=age<ttl:reasons.append(sensor+'_stale')
     battery=s.get('battery');limit=s.get('commissioning',{}).get('battery_stop_voltage',10.8)
     if battery is None or not math.isfinite(battery) or battery<=limit:reasons.append('battery')
-    if s.get('reason') in ('OBSTACLE','SENSOR OR BATTERY FAULT'):reasons.append(s['reason'])
+    if s.get('reason')=='SENSOR OR BATTERY FAULT':reasons.append(s['reason'])
     return reasons
 
 class Missions:
@@ -31,7 +31,7 @@ class Missions:
         self.surveys=SurveyStore(ROOT);self.speak=None
         self.node=node;self.maps=maps;self.lock=threading.RLock();self.active=None;self.last=None
         self.client=ActionClient(node,NavigateToPose,'/navigate_to_pose')
-        self.pub=node.create_publisher(String,'/explorer/request',1)
+        self.pub=node.create_publisher(String,'/explorer/request',10)
         self.timer=node.create_timer(.1,self.monitor)
         with self.db() as db:
             db.execute('CREATE TABLE IF NOT EXISTS missions(id TEXT PRIMARY KEY, started REAL, ended REAL, kind TEXT, state TEXT, details TEXT)')
@@ -43,7 +43,7 @@ class Missions:
     def state(self):
         try:return json.loads((ROOT/'data/status.json').read_text())
         except (OSError,ValueError):return {}
-    def emit(self,op,**kw):self.pub.publish(String(data=json.dumps(dict(op=op,id=uuid.uuid4().hex,at=time.monotonic(),**kw))))
+    def emit(self,op,**kw):self.pub.publish(String(data=json.dumps(dict(op=op,id=uuid.uuid4().hex,at=time.monotonic(),initiator='missions',**kw))))
     def status(self):
         with self.lock:
             return dict(active={k:v for k,v in self.active.items() if k not in ('handle',)} if self.active else None,
@@ -63,13 +63,13 @@ class Missions:
             if not self.active or self.active['id']!=mid:return
             m=self.active;self.active=None;self.last=dict(id=mid,state=state,details=details,at=time.time())
             if m.get('handle'):m['handle'].cancel_goal_async()
-            self.emit('stop')
+            self.emit('finish_mission' if state=='succeeded' else 'cancel_mission',mission=mid)
             self.record(m,state,details)
 
     def cancel(self):
         with self.lock:
             if self.active:self.finish(self.active['id'],'cancelled',{'reason':'operator'})
-            else:self.emit('stop')
+            else:self.emit('hold_base')
         return dict(stopped=True)
 
     def monitor(self):
@@ -79,7 +79,11 @@ class Missions:
             try:
                 self.require_ready()
                 if self.maps.epoch()!=self.active['map_epoch']:raise ValueError('Map frame changed')
-                if time.time()>self.active['deadline']:raise ValueError('Mission time limit')
+                if time.monotonic()>self.active['deadline_monotonic']:raise ValueError('Mission time limit')
+                status=self.state()
+                if time.monotonic()-self.active['started_monotonic']>1 and status.get('mission')!=mid:
+                    raise ValueError('Mission permission revoked')
+                self.active['waiting_for_obstacle']=status.get('reason')=='OBSTACLE'
                 self.emit('autonomy_lease',mission=mid)
             except (OSError,ValueError,KeyError) as e:self.finish(mid,'interrupted',{'reason':str(e)})
 
@@ -116,8 +120,9 @@ class Missions:
         with self.lock:
             self.require_ready()
             if self.active:raise ValueError('A mission is already active')
-            mid=uuid.uuid4().hex;self.active=dict(id=mid,kind=kind,map_epoch=self.maps.epoch(),started=time.time(),deadline=time.time()+(600 if kind=='explore' else 120),phase='planning')
+            mid=uuid.uuid4().hex;self.active=dict(id=mid,kind=kind,map_epoch=self.maps.epoch(),started=time.time(),started_monotonic=time.monotonic(),deadline_monotonic=time.monotonic()+(600 if kind=='explore' else 120),phase='planning')
             self.record(self.active,'running',dict(x=x,y=y,yaw=yaw))
+            self.emit('begin_mission',mission=mid)
         threading.Thread(target=self.worker,args=(mid,kind,x,y,yaw),daemon=True).start()
         return dict(id=mid,accepted=True,completed=False)
 
@@ -131,9 +136,10 @@ class Missions:
             if any(n not in places or not places[n]['compatible_map'] for n in names):
                 raise ValueError('Место неизвестно или относится к другой карте')
             mid=uuid.uuid4().hex
-            self.active=dict(id=mid,kind='survey',map_epoch=self.maps.epoch(),started=time.time(),
-                             deadline=time.time()+min(1200,120*len(names)),phase='planning',route=names,visited=0)
+            self.active=dict(id=mid,kind='survey',map_epoch=self.maps.epoch(),started=time.time(),started_monotonic=time.monotonic(),
+                             deadline_monotonic=time.monotonic()+min(1200,120*len(names)),phase='planning',route=names,visited=0)
             self.record(self.active,'running',dict(route=names,narrate=narrate))
+            self.emit('begin_mission',mission=mid)
             route=[dict(places[n]) for n in names]
         threading.Thread(target=self.survey_worker,args=(mid,route,narrate),daemon=True).start()
         return dict(id=mid,accepted=True,completed=False)
@@ -185,12 +191,30 @@ class Missions:
                 raise ValueError('Mission cancelled')
             if not handle.accepted:raise ValueError('Navigator rejected goal')
             self.active.update(handle=handle,phase='navigating',target=dict(x=x,y=y,yaw=yaw))
+            self.emit('resume_base',mission=mid)
         result=wait(handle.get_result_async(),90)
         if result.status!=4:raise ValueError('Navigation did not succeed: '+str(result.status))
+        self.hold_base(mid)
         pose=self.maps.pose()
         if math.hypot(pose['x']-x,pose['y']-y)>.15:raise ValueError('Goal result disagrees with live pose')
         with self.db() as db:db.execute('INSERT INTO visits(seen,x,y,yaw,frame,provisional) VALUES(?,?,?,?,?,?)',(time.time(),pose['x'],pose['y'],pose['yaw'],'map',1))
         return pose
+
+    def hold_base(self,mid):
+        """Arrival is complete only after fresh measured base velocity settles."""
+        with self.lock:
+            if not self.active or self.active['id']!=mid:raise ValueError('Mission cancelled')
+            self.active['phase']='settling'
+            self.emit('hold_base',mission=mid)
+        deadline=time.monotonic()+3
+        while time.monotonic()<deadline:
+            with self.lock:
+                if not self.active or self.active['id']!=mid:raise ValueError('Mission cancelled')
+            s=self.state()
+            if 0<=time.time()-s.get('at',0)<.9 and s.get('mission')==mid and s.get('base_hold_confirmed'):
+                return
+            time.sleep(.05)
+        raise ValueError('Base did not confirm stationary hold')
 
     def worker(self,mid,kind,x,y,yaw):
         try:

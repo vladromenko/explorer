@@ -2,9 +2,11 @@ import unittest
 from commissioning import Pulse
 
 class ProbeTests(unittest.TestCase):
-    def test_small_single_axis_only(self):
-        for v,d in [([.051,0,0],.5),([.01,.01,0],.5),([float('nan'),0,0],.5),([.01,0,0],1)]:
+    def test_finite_speed_and_distance_bounds(self):
+        for v,d in [([.051,0,0],.5),([.05,.05,0],.5),([float('nan'),0,0],.5),([.01,0,0],3.01),([0,0,0],.5)]:
             with self.assertRaises(ValueError):Pulse(v,d,1)
+        p=Pulse([.02,.02,.08],2,1)
+        self.assertEqual(p.deadline,3)
     def test_estop_sensor_collision_and_lease_stop(self):
         for estop,sensors,obstacle,now in [(True,True,False,1.02),(False,False,False,1.02),(False,True,True,1.02),(False,True,False,1.16)]:
             p=Pulse([.04,0,0],.5,1)
@@ -17,6 +19,11 @@ class ProbeTests(unittest.TestCase):
         self.assertAlmostEqual(p.tick(1.02,.02,False,True,False)[0][0],.005)
         p.last_lease=1.49
         self.assertEqual(p.tick(1.50,.02,False,True,False)[0],[0,0,0])
+    def test_cancel_is_not_a_successful_completion(self):
+        p=Pulse([.04,0,0],2,1);p.cancel('HOLD_REQUESTED')
+        v,reason=p.tick(1.02,.02,False,True,False)
+        self.assertEqual(v,[0,0,0]);self.assertEqual(reason,'HOLD_REQUESTED')
+        self.assertEqual(p.tick(4,.02,True,False,True)[1],'HOLD_REQUESTED')
 
     def test_gap_does_not_disable_deadline_or_fault_stop(self):
         for reason in ('deadline','lease','sensor','estop','collision'):

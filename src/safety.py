@@ -15,9 +15,14 @@ class SafetyGate:
     def stop(self):
         self.mode = "MANUAL"
         self.estop = True
+        self.hold()
+
+    def hold(self):
+        """Zero and discard pending motion without changing mode or the STOP latch."""
         self.command_at = -1e9
         self.command = [0., 0., 0.]
         self.output = [0., 0., 0.]
+        self.source = None
 
     def observe_controller_link(self, healthy):
         """A lost motor-board link revokes the session; recovery never rearms it.

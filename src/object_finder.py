@@ -9,6 +9,7 @@ import time
 import uuid
 import cv2
 import numpy as np
+from surface_foreground import locate as locate_foreground
 
 ALIASES={'носок':'sock','носки':'sock','бутылка':'bottle','бутылку':'bottle','рюкзак':'backpack',
          'чашка':'cup','чашку':'cup','кружка':'mug','кружку':'mug','мяч':'ball','игрушка':'toy',
@@ -21,18 +22,7 @@ def english_label(label):
     raise ValueError('Для этого предмета введите английское название; например sock, bottle или backpack')
 
 def depth_position(sample,box):
-    b=np.asarray(box,dtype=float);depth=sample['depth'];h,w=depth.shape
-    if b.shape!=(4,) or not np.isfinite(b).all() or b[2]<=b[0] or b[3]<=b[1]:return None
-    u,v=(b[:2]+b[2:])/2;radius=max(3,min(12,int(min(b[2]-b[0],b[3]-b[1])/6)))
-    x,y=int(np.clip(u,0,w-1)),int(np.clip(v,0,h-1))
-    patch=depth[max(0,y-radius):min(h,y+radius+1),max(0,x-radius):min(w,x+radius+1)]
-    valid=patch[np.isfinite(patch)&(patch>.15)&(patch<3.)]
-    if len(valid)<20 or len(valid)<patch.size*.7:return None
-    z=float(np.median(valid));spread=float(np.percentile(valid,90)-np.percentile(valid,10))
-    if spread>.04:return None
-    xy=cv2.undistortPoints(np.array([[[u,v]]],dtype=float),sample['k'],sample['d'])[0,0]
-    return dict(x=float(xy[0]*z),y=float(xy[1]*z),z=z,frame=str(sample['frame']),
-                depth_spread_m=spread,depth_is_object_verified=False)
+    return locate_foreground(sample,box)['position']
 
 class ObjectFinder:
     def __init__(self,root):

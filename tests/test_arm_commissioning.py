@@ -19,13 +19,15 @@ class ArmCommissioningTests(unittest.TestCase):
 
     def test_stale_nonfinite_moving_and_unlatched_states_fail_closed(self):
         s = dict(at=100, stop_latched=True, velocity=[0,0,0], battery=11.2,
-                 sensor_age=dict(odom=.1, battery=.2))
+                 sensor_age=dict(odom=.1, battery=.2),odom_velocity=[0,0,0])
         stationary_status(s,100.1)
         for key, value in [('at',98),('at',float('nan')),('stop_latched',False),
                            ('velocity',[.02,0,0]),('velocity',[float('nan'),0,0]),
-                           ('battery',10.8),('battery',None),
+                           ('battery',10.8),('battery',None),('odom_velocity',None),('odom_velocity',[.02,0,0]),
                            ('sensor_age',dict(odom=.1,battery=3))]:
             changed = copy.deepcopy(s)
             changed[key] = value
             with self.assertRaises(ValueError):
                 stationary_status(changed,100.1)
+        s.update(stop_latched=False,base_hold_confirmed=True)
+        stationary_status(s,100.1)

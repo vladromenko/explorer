@@ -11,9 +11,10 @@ import yaml
 from contextlib import closing
 
 class GamepadPanel:
-    def __init__(self,root,teaching,stop,drive=None):
+    def __init__(self,root,teaching,stop,drive=None,release=None):
         self.config=yaml.safe_load((root/'config/gamepad.yaml').read_text())
         self.teaching=teaching;self.stop=stop;self.root=root;self.drive=drive
+        self.release=release or stop
         self.drive_active=False;self.drive_reasons=[];self.drive_vector=[0.,0.,0.]
         self.lock=threading.Lock();self.connected=False;self.keys=set();self.axes={}
         self.mode='DISARMED';self.joint=1;self.lease=0.;self.neutral=False
@@ -35,7 +36,7 @@ class GamepadPanel:
         with self.lock:
             self.lease=time.monotonic()+.25 if enabled is True else 0.
             if not enabled:
-                if self.drive_active:self.stop();self.drive_active=False
+                if self.drive_active:self.release();self.drive_active=False
                 self.mode='DISARMED';self.neutral=False
         return self.status()
 
@@ -44,9 +45,9 @@ class GamepadPanel:
         if kind==1:
             if value==1:self.keys.add(code)
             elif value==0:self.keys.discard(code)
-            if value==0 and code==b['l1']:self.stop()
+            if value==0 and code==b['l1'] and self.mode=='DRIVE':self.release()
             if value==1 and code==b['a'] and b['l1'] not in self.keys:
-                if self.mode=='DRIVE':self.stop();self.drive_active=False
+                if self.mode=='DRIVE':self.release();self.drive_active=False
                 self.mode='ARM' if self.mode!='ARM' and now<self.lease else 'DISARMED'
                 self.neutral=False
             if value==1 and code==b['x'] and b['l1'] not in self.keys:
@@ -88,10 +89,10 @@ class GamepadPanel:
             if not self.drive_reasons and self.drive is not None:
                 self.drive(self.drive_vector);self.drive_active=True
             elif self.drive_active:
-                self.stop();self.drive_active=False
+                self.release();self.drive_active=False
         else:
             self.drive_vector=[0.,0.,0.]
-            if self.drive_active:self.stop();self.drive_active=False
+            if self.drive_active:self.release();self.drive_active=False
 
     def run(self):
         import select
@@ -126,10 +127,11 @@ class GamepadPanel:
                             if self.combo_at and now-self.combo_at>=self.config['estop_hold_s']:
                                 self.stop();self.mode='DISARMED';self.lease=0;self.combo_at=now
                             if now>=self.lease:
-                                if self.mode in ('ARM','DRIVE'):self.stop()
+                                if self.drive_active:self.release();self.drive_active=False
                                 self.mode='DISARMED';self.neutral=False
                             self.drive_tick(now)
             except (OSError,ValueError,KeyError) as exc:
                 with self.lock:
+                    if self.drive_active:self.release();self.drive_active=False
                     self.connected=False;self.mode='DISARMED';self.keys.clear();self.neutral=False;self.error=str(exc)
-                self.stop();time.sleep(2)
+                time.sleep(2)

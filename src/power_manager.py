@@ -73,7 +73,7 @@ class PowerManager(Node):
                        [f'explorer-{n}.service' for n in names], timeout=2, check=False)
 
     def stop(self):
-        self.stop_pub.publish(String(data=json.dumps(dict(op='stop', at=time.monotonic(), source='power'))))
+        self.stop_pub.publish(String(data=json.dumps(dict(op='estop', at=time.monotonic(), initiator='power_manager'))))
 
     def resources(self):
         result = dict(jetson_rails=read_rails(), whole_robot_power_w=None, nvpmodel=self.mode)

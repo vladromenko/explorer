@@ -53,7 +53,8 @@ class ManualArm:
                     hardware_emergency_stop=False)
 
     def move(self,start,goal,deadline=None,expected_stop_revision=None,execution_permit=None,source="operator"):
-        if source not in ('operator','supervised_policy','supervised_trajectory'):raise ValueError('Неверный источник команды')
+        if source not in ('operator','supervised_policy','supervised_trajectory','local_mission'):raise ValueError('Неверный источник команды')
+        if source=='local_mission' and not callable(execution_permit):raise ValueError('Нет разрешения локальной миссии')
         if not self.ready:raise ValueError('Сначала дождитесь подготовки геометрии руки')
         if len(start)!=6 or len(goal)!=6 or any(type(v) is not int for v in start+goal):raise ValueError('Нужны шесть целых углов')
         if not any(a!=b for a,b in zip(start,goal)):raise ValueError('Нулевой шаг')

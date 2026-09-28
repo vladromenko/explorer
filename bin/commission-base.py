@@ -4,6 +4,7 @@
 Does not set any commissioning completion flag. Observer confirmation is required.
 """
 import argparse
+import fcntl
 import json
 import math
 import os
@@ -22,15 +23,24 @@ from commissioning import Pulse
 
 root=Path('/home/vlad/Explorer')
 parser=argparse.ArgumentParser()
-parser.add_argument('axis',choices=['forward','backward','left','right','ccw','cw'])
+parser.add_argument('axis',choices=['forward','backward','left','right','ccw','cw','combined'])
 parser.add_argument('--timeout-test',action='store_true')
 parser.add_argument('--duration',type=float,default=.6)
 parser.add_argument('--speed',type=float,default=None)
+parser.add_argument('--velocity',type=float,nargs=3,help='Combined vx vy wz; finite observed calibration only')
+parser.add_argument('--already-armed',action='store_true',help='Never clear STOP; normal completion holds without latching')
 args=parser.parse_args()
+process_lock=(root/'data/base-step.lock').open('w')
+fcntl.flock(process_lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+arm_lock=(root/'data/arm-commissioning.lock').open('w')
+fcntl.flock(arm_lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
 if args.timeout_test and args.axis!='forward':parser.error('Timeout test only permits forward')
 velocity={'forward':[.04,0.,0.],'backward':[-.04,0.,0.],
           'left':[0.,.04,0.],'right':[0.,-.04,0.],
-          'ccw':[0.,0.,.15],'cw':[0.,0.,-.15]}[args.axis]
+          'ccw':[0.,0.,.15],'cw':[0.,0.,-.15],'combined':args.velocity}[args.axis]
+if velocity is None:parser.error('Combined motion requires --velocity vx vy wz')
+if args.velocity is not None and args.axis!='combined':parser.error('--velocity requires combined')
+if args.axis=='combined' and args.speed is not None:parser.error('Use --velocity for combined motion')
 if args.speed is not None:
  if not math.isfinite(args.speed) or args.speed<=0:parser.error('Speed must be positive and finite')
  velocity=[math.copysign(args.speed,v) if v else 0. for v in velocity]
@@ -67,27 +77,30 @@ try:
   od=[s for s in samples if s['kind']=='odom']
   if len(od)>=5:break
  state=json.loads((root/'data/status.json').read_text())
- if time.time()-state['at']>1 or not state['stop_latched']:raise RuntimeError('Expected fresh, stop-latched controller')
+ if not 0<=time.time()-state['at']<1:raise RuntimeError('Expected fresh controller')
+ if state.get('mission') or state.get('mode')!='MANUAL':raise RuntimeError('Finite observed steps require manual mode without a mission')
+ if state['stop_latched']==args.already_armed:raise RuntimeError('Explicitly clear STOP first' if args.already_armed else 'Expected stop-latched controller')
  if any(state['sensor_age'].get(k,99)>limit for k,limit in [('imu',.3),('odom',.3),('scan0',.4),('scan1',.4),('battery',2)]):raise RuntimeError('Sensors are stale')
  if any(v.get('nearest',0) is None or v['nearest']<.30 for v in state['lidar'].values()):raise RuntimeError('Insufficient scanner clearance')
  od=[s for s in samples if s['kind']=='odom']
  if len(od)<5:raise RuntimeError('Probe odometry subscription has no fresh baseline')
  if any(abs(v)> .02 for s in od[-5:] for v in (s['vx'],s['vy'],s['wz'])):raise RuntimeError('Base is not stationary')
- clear_id=request('clear_stop');ack_deadline=time.monotonic()+2
- while time.monotonic()<ack_deadline:
-  spin(.05)
-  state=json.loads((root/'data/status.json').read_text())
-  if state.get('last_request',{}).get('id')==clear_id:break
- if state.get('last_request',{}).get('id')!=clear_id or not state['last_request'].get('ok') or state['stop_latched']:
-  raise RuntimeError('Controller did not acknowledge clearing stop: '+str(state.get('last_request')))
+ if not args.already_armed:
+  clear_id=request('clear_stop');ack_deadline=time.monotonic()+2
+  while time.monotonic()<ack_deadline:
+   spin(.05)
+   state=json.loads((root/'data/status.json').read_text())
+   if state.get('last_request',{}).get('id')==clear_id:break
+  if state.get('last_request',{}).get('id')!=clear_id or not state['last_request'].get('ok') or state['stop_latched']:
+   raise RuntimeError('Controller did not acknowledge clearing stop: '+str(state.get('last_request')))
  fd=os.open(permit,os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600)
  with os.fdopen(fd,'w') as f:json.dump(dict(token=token,expires=time.monotonic()+2),f)
  command_started=time.monotonic()
- request('commission_pulse',token=token,velocity=velocity,duration=duration,quiet_seconds=quiet_seconds)
- while time.monotonic()-command_started<duration+quiet_seconds:
+ probe_id=request('commission_pulse',token=token,velocity=velocity,duration=duration,quiet_seconds=quiet_seconds)
+ while time.monotonic()-command_started<duration+quiet_seconds+.15:
   spin(.045)
   request('commission_lease',token=token)
- request('stop');spin(1.2)
+ request('hold_base' if args.already_armed else 'stop');spin(1.2)
  before=[s for s in samples if s['kind']=='odom' and s['t']<command_started-started][-1]
  after=[s for s in samples if s['kind']=='odom'][-1]
  commands=[s for s in samples if s['kind']=='command' and s['t']>=command_started-started]
@@ -100,9 +113,12 @@ try:
                            y=-math.sin(before['yaw'])*dx+math.cos(before['yaw'])*dy,yaw=yaw_delta)
  result['command_gap_test']=bool(args.timeout_test)
  result['controller_link_loss_test']=False
+ outcome=json.loads((root/'data/status.json').read_text()).get('last_probe_result')
+ result['execution_outcome']=outcome if outcome and outcome.get('id')==probe_id else dict(completed=False,reason='MISSING_CORE_RESULT')
  print(json.dumps(result))
 finally:
- request('stop');spin(.2)
+ if not (args.already_armed and result):request('stop')
+ spin(.2)
  permit.unlink(missing_ok=True)
  path=root/'data'/('base-probe-'+args.axis+'-'+time.strftime('%Y%m%d-%H%M%S')+'.json')
  path.write_text(json.dumps(dict(result=result,samples=samples),indent=2))

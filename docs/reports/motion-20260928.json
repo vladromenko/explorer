@@ -1,0 +1,940 @@
+{
+  "at": 1790616713.0140724,
+  "reports": [
+    {
+      "file": "data/base-probe-backward-20260928-202203.json",
+      "result": {
+        "axis": "backward",
+        "requested": [
+          -0.04,
+          0.0,
+          0.0
+        ],
+        "duration": 2.0,
+        "quiet_seconds": 0.0,
+        "delta": {
+          "x": -0.06705002160742879,
+          "y": 0.0012017148546874523,
+          "yaw": 0.008687356440320027
+        },
+        "peak": {
+          "vx": 0.04,
+          "vy": 0.0,
+          "wz": 0.0
+        },
+        "final_velocity": {
+          "vx": 0.0,
+          "vy": 0.0,
+          "wz": 0.0
+        },
+        "physical_direction_confirmed": false,
+        "body_delta": {
+          "x": -0.06705675771582166,
+          "y": -0.0007353643928262495,
+          "yaw": 0.008687356440320027
+        },
+        "command_gap_test": false,
+        "controller_link_loss_test": false
+      },
+      "interleaved_zero_count": 0
+    },
+    {
+      "file": "data/base-probe-backward-20260928-202902.json",
+      "result": {
+        "axis": "backward",
+        "requested": [
+          -0.04,
+          0.0,
+          0.0
+        ],
+        "duration": 0.7,
+        "quiet_seconds": 0.0,
+        "delta": {
+          "x": -0.012231440749019384,
+          "y": -0.0011307490058243275,
+          "yaw": 0.0009618684055068454
+        },
+        "peak": {
+          "vx": 0.04,
+          "vy": 0.0,
+          "wz": 0.0
+        },
+        "final_velocity": {
+          "vx": 0.0,
+          "vy": 0.0,
+          "wz": 0.0
+        },
+        "physical_direction_confirmed": false,
+        "body_delta": {
+          "x": -0.012235053289136683,
+          "y": -0.0010909661419724439,
+          "yaw": 0.0009618684055068454
+        },
+        "command_gap_test": false,
+        "controller_link_loss_test": false
+      },
+      "interleaved_zero_count": 0
+    },
+    {
+      "file": "data/base-probe-backward-20260928-203018.json",
+      "result": {
+        "axis": "backward",
+        "requested": [
+          -0.04,
+          0.0,
+          0.0
+        ],
+        "duration": 0.7,
+        "quiet_seconds": 0.0,
+        "delta": {
+          "x": -0.012605682015419006,
+          "y": 4.813261330127716e-05,
+          "yaw": -0.003313104378368733
+        },
+        "peak": {
+          "vx": 0.04,
+          "vy": 0.0,
+          "wz": 0.0
+        },
+        "final_velocity": {
+          "vx": 0.0,
+          "vy": 0.0,
+          "wz": 0.0
+        },
+        "physical_direction_confirmed": false,
+        "body_delta": {
+          "x": -0.012603950349927933,
+          "y": 0.0002144094188064189,
+          "yaw": -0.003313104378368733
+        },
+        "command_gap_test": false,
+        "controller_link_loss_test": false
+      },
+      "interleaved_zero_count": 0
+    },
+    {
+      "file": "data/base-probe-ccw-20260928-202342.json",
+      "result": {
+        "axis": "ccw",
+        "requested": [
+          0.0,
+          0.0,
+          0.12
+        ],
+        "duration": 2.0,
+        "quiet_seconds": 0.0,
+        "delta": {
+          "x": 0.00013767019845545292,
+          "y": -0.0011506052687764168,
+          "yaw": 0.17661744848374428
+        },
+        "peak": {
+          "vx": 0.0,
+          "vy": 0.0,
+          "wz": 0.12
+        },
+        "final_velocity": {
+          "vx": 0.0,
+          "vy": 0.0,
+          "wz": 0.0
+        },
+        "physical_direction_confirmed": false,
+        "body_delta": {
+          "x": 0.00014156930988097743,
+          "y": -0.001150132035280575,
+          "yaw": 0.1766174484837443
+        },
+        "command_gap_test": false,
+        "controller_link_loss_test": false
+      },
+      "interleaved_zero_count": 0
+    },
+    {
+      "file": "data/base-probe-combined-20260928-202520.json",
+      "result": {
+        "axis": "combined",
+        "requested": [
+          0.02,
+          0.015,
+          0.08
+        ],
+        "duration": 2.0,
+        "quiet_seconds": 0.0,
+        "delta": {
+          "x": 0.030135335866361856,
+          "y": 0.018884763587266207,
+          "yaw": 0.1192106673505654
+        },
+        "peak": {
+          "vx": 0.02,
+          "vy": 0.015,
+          "wz": 0.08
+        },
+        "final_velocity": {
+          "vx": 0.0,
+          "vy": 0.0,
+          "wz": 0.0
+        },
+        "physical_direction_confirmed": false,
+        "body_delta": {
+          "x": 0.030388593611748047,
+          "y": 0.01847447270764167,
+          "yaw": 0.1192106673505654
+        },
+        "command_gap_test": false,
+        "controller_link_loss_test": false
+      },
+      "interleaved_zero_count": 0
+    },
+    {
+      "file": "data/base-probe-combined-20260928-202539.json",
+      "result": {
+        "axis": "combined",
+        "requested": [
+          -0.02,
+          -0.015,
+          -0.08
+        ],
+        "duration": 2.0,
+        "quiet_seconds": 0.0,
+        "delta": {
+          "x": -0.03217977995518595,
+          "y": -0.01834961026906967,
+          "yaw": -0.12456965322848368
+        },
+        "peak": {
+          "vx": 0.02,
+          "vy": 0.015,
+          "wz": 0.08
+        },
+        "final_velocity": {
+          "vx": 0.0,
+          "vy": 0.0,
+          "wz": 0.0
+        },
+        "physical_direction_confirmed": false,
+        "body_delta": {
+          "x": -0.034325670314527136,
+          "y": -0.01392820133575492,
+          "yaw": -0.12456965322848368
+        },
+        "command_gap_test": false,
+        "controller_link_loss_test": false
+      },
+      "interleaved_zero_count": 0
+    },
+    {
+      "file": "data/base-probe-cw-20260928-202407.json",
+      "result": {
+        "axis": "cw",
+        "requested": [
+          0.0,
+          0.0,
+          -0.12
+        ],
+        "duration": 2.0,
+        "quiet_seconds": 0.0,
+        "delta": {
+          "x": -0.0012839995324611664,
+          "y": 0.0038142306730151176,
+          "yaw": -0.15967024197842317
+        },
+        "peak": {
+          "vx": 0.0,
+          "vy": 0.0,
+          "wz": 0.12
+        },
+        "final_velocity": {
+          "vx": 0.0,
+          "vy": 0.0,
+          "wz": 0.0
+        },
+        "physical_direction_confirmed": false,
+        "body_delta": {
+          "x": -0.0006073505695926103,
+          "y": 0.003978458961953156,
+          "yaw": -0.15967024197842317
+        },
+        "command_gap_test": false,
+        "controller_link_loss_test": false
+      },
+      "interleaved_zero_count": 0
+    },
+    {
+      "file": "data/base-probe-forward-20260928-202137.json",
+      "result": {
+        "axis": "forward",
+        "requested": [
+          0.04,
+          0.0,
+          0.0
+        ],
+        "duration": 2.0,
+        "quiet_seconds": 0.0,
+        "delta": {
+          "x": 0.06931507587432861,
+          "y": 0.0013677633833140135,
+          "yaw": -0.028886601528533343
+        },
+        "peak": {
+          "vx": 0.04,
+          "vy": 0.0,
+          "wz": 0.0
+        },
+        "final_velocity": {
+          "vx": 0.0,
+          "vy": 0.0,
+          "wz": 0.0
+        },
+        "physical_direction_confirmed": false,
+        "body_delta": {
+          "x": 0.06931507587432861,
+          "y": 0.0013677633833140135,
+          "yaw": -0.028886601528533343
+        },
+        "command_gap_test": false,
+        "controller_link_loss_test": false
+      },
+      "interleaved_zero_count": 0
+    },
+    {
+      "file": "data/base-probe-forward-20260928-202857.json",
+      "result": {
+        "axis": "forward",
+        "requested": [
+          0.04,
+          0.0,
+          0.0
+        ],
+        "duration": 0.7,
+        "quiet_seconds": 0.0,
+        "delta": {
+          "x": 0.01806077139917761,
+          "y": 0.0009482679888606071,
+          "yaw": -0.004946753443468684
+        },
+        "peak": {
+          "vx": 0.04,
+          "vy": 0.0,
+          "wz": 0.0
+        },
+        "final_velocity": {
+          "vx": 0.0,
+          "vy": 0.0,
+          "wz": 0.0
+        },
+        "physical_direction_confirmed": false,
+        "body_delta": {
+          "x": 0.018067938932623654,
+          "y": 0.0008001615080921123,
+          "yaw": -0.004946753443468684
+        },
+        "command_gap_test": false,
+        "controller_link_loss_test": false
+      },
+      "interleaved_zero_count": 0
+    },
+    {
+      "file": "data/base-probe-forward-20260928-203014.json",
+      "result": {
+        "axis": "forward",
+        "requested": [
+          0.04,
+          0.0,
+          0.0
+        ],
+        "duration": 0.7,
+        "quiet_seconds": 0.0,
+        "delta": {
+          "x": 0.017884425353258848,
+          "y": 0.0005081081762909889,
+          "yaw": 0.007603346048562255
+        },
+        "peak": {
+          "vx": 0.04,
+          "vy": 0.0,
+          "wz": 0.0
+        },
+        "final_velocity": {
+          "vx": 0.0,
+          "vy": 0.0,
+          "wz": 0.0
+        },
+        "physical_direction_confirmed": false,
+        "body_delta": {
+          "x": 0.017886985417286668,
+          "y": 0.00040816273332537053,
+          "yaw": 0.007603346048562255
+        },
+        "command_gap_test": false,
+        "controller_link_loss_test": false
+      },
+      "interleaved_zero_count": 0
+    },
+    {
+      "file": "data/base-probe-left-20260928-202231.json",
+      "result": {
+        "axis": "left",
+        "requested": [
+          0.0,
+          0.04,
+          0.0
+        ],
+        "duration": 2.0,
+        "quiet_seconds": 0.0,
+        "delta": {
+          "x": 0.003064109478145838,
+          "y": 0.05568077019415796,
+          "yaw": 0.01128287586035688
+        },
+        "peak": {
+          "vx": 0.0,
+          "vy": 0.04,
+          "wz": 0.0
+        },
+        "final_velocity": {
+          "vx": 0.0,
+          "vy": 0.0,
+          "wz": 0.0
+        },
+        "physical_direction_confirmed": false,
+        "body_delta": {
+          "x": 0.001938851363124149,
+          "y": 0.055731299928320384,
+          "yaw": 0.01128287586035688
+        },
+        "command_gap_test": false,
+        "controller_link_loss_test": false
+      },
+      "interleaved_zero_count": 0
+    },
+    {
+      "file": "data/base-probe-right-20260928-202327.json",
+      "result": {
+        "axis": "right",
+        "requested": [
+          0.0,
+          -0.04,
+          0.0
+        ],
+        "duration": 2.0,
+        "quiet_seconds": 0.0,
+        "delta": {
+          "x": -0.0014551531057804823,
+          "y": -0.053573420736938715,
+          "yaw": 0.0055269273425997325
+        },
+        "peak": {
+          "vx": 0.0,
+          "vy": 0.04,
+          "wz": 0.0
+        },
+        "final_velocity": {
+          "vx": 0.0,
+          "vy": 0.0,
+          "wz": 0.0
+        },
+        "physical_direction_confirmed": false,
+        "body_delta": {
+          "x": -0.000977421191915249,
+          "y": -0.053584265674094224,
+          "yaw": 0.0055269273425997325
+        },
+        "command_gap_test": false,
+        "controller_link_loss_test": false
+      },
+      "interleaved_zero_count": 0
+    }
+  ],
+  "observer": "External Logitech C920 images reviewed during each two-second movement; directions and stop observed; not a metric camera calibration",
+  "api_acceptance": [
+    {
+      "direction": "forward",
+      "result": {
+        "phase": "completed",
+        "id": "9c91d7c102494f63a5ccc69e01b03c7d",
+        "direction": "forward",
+        "duration": 0.7,
+        "at": 1790616614.9444237,
+        "result": {
+          "axis": "forward",
+          "requested": [
+            0.04,
+            0.0,
+            0.0
+          ],
+          "duration": 0.7,
+          "quiet_seconds": 0.0,
+          "delta": {
+            "x": 0.017884425353258848,
+            "y": 0.0005081081762909889,
+            "yaw": 0.007603346048562255
+          },
+          "peak": {
+            "vx": 0.04,
+            "vy": 0.0,
+            "wz": 0.0
+          },
+          "final_velocity": {
+            "vx": 0.0,
+            "vy": 0.0,
+            "wz": 0.0
+          },
+          "physical_direction_confirmed": false,
+          "body_delta": {
+            "x": 0.017886985417286668,
+            "y": 0.00040816273332537053,
+            "yaw": 0.007603346048562255
+          },
+          "command_gap_test": false,
+          "controller_link_loss_test": false
+        },
+        "busy": false,
+        "mode": "observed_finite",
+        "unattended": false
+      },
+      "controller": {
+        "at": 1790616614.9539301,
+        "mode": "MANUAL",
+        "stop_latched": false,
+        "monotonic": 1614.199687831,
+        "boot_id": "da7c1449-d82a-4ce9-b6cb-bc30db008c57",
+        "config_sha256": "ad0bfdea5a1665a66c9570b5f0357ff4df947cf3ee524afbd46e2b94f78ff1c6",
+        "mission": null,
+        "mission_held": true,
+        "base_hold_confirmed": true,
+        "last_motion_event": {
+          "monotonic": 1612.463433359,
+          "at": 1790616613.2172523,
+          "initiator": "request",
+          "reason_code": "HOLD_BASE",
+          "before": {
+            "mode": "MANUAL",
+            "stop_latched": false,
+            "mission": null,
+            "held": true,
+            "velocity": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "command_source": null,
+            "command_at": -1000000000.0,
+            "lease_at": -1000000000.0
+          },
+          "after": {
+            "mode": "MANUAL",
+            "stop_latched": false,
+            "mission": null,
+            "held": true,
+            "velocity": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "command_source": null,
+            "command_at": -1000000000.0,
+            "lease_at": -1000000000.0
+          },
+          "command_source": null,
+          "command_age_s": 1000001612.4634122,
+          "lease_age_s": 1000001612.4634122,
+          "mission_id": null,
+          "sensor_age": {
+            "gamepad": 0.025115453999887905,
+            "odom": 0.058720276000030935,
+            "imu": 0.03657721699983085,
+            "scan0": 0.10398337799983892,
+            "scan1": 0.06823261299996375,
+            "battery": 0.8664199109998663
+          },
+          "observed_velocity": [
+            0.03314630687236786,
+            0.0025497162714600563,
+            0.01526776235550642
+          ],
+          "power": {
+            "state": "NORMAL",
+            "motion_allowed": true,
+            "speed_scale": 1.0,
+            "warning": false,
+            "filtered_voltage": 12.079828776396536,
+            "charging": null,
+            "shutdown_required": false
+          },
+          "obstacle": {
+            "scan0": {
+              "frame": "laser0_frame",
+              "valid": 453,
+              "nearest": 0.46000000834465027
+            },
+            "scan1": {
+              "frame": "laser1_frame",
+              "valid": 450,
+              "nearest": 0.4959999918937683
+            }
+          },
+          "config_sha256": "ad0bfdea5a1665a66c9570b5f0357ff4df947cf3ee524afbd46e2b94f78ff1c6"
+        },
+        "motion_log_dropped": 0,
+        "sensor_source_time": {
+          "odom": {
+            "stamp": 1790616614.86,
+            "age_at_receipt_s": 0.0002205371856689453,
+            "reason": null
+          },
+          "imu": {
+            "stamp": 1790616614.945,
+            "age_at_receipt_s": -0.0022411346435546875,
+            "reason": null
+          },
+          "scan0": {
+            "stamp": 1790616614.914,
+            "age_at_receipt_s": 0.02005791664123535,
+            "reason": null
+          },
+          "scan1": {
+            "stamp": 1790616614.816,
+            "age_at_receipt_s": 0.019484996795654297,
+            "reason": null
+          }
+        },
+        "commissioning_config_matches_disk": true,
+        "odom_velocity": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "odom_received_monotonic": 1614.10645484,
+        "reason": "BASE COMMISSIONING REQUIRED",
+        "battery": 12.094428062438965,
+        "raw_pose": {
+          "x": 0.024625498801469803,
+          "y": 0.008431673049926758,
+          "yaw": 0.013191338288216002,
+          "frame": "odom_raw"
+        },
+        "battery_gauge": {
+          "percent": 70,
+          "approximate": true,
+          "method": "operating_voltage_reserve",
+          "state_of_charge_percent": null,
+          "voltage_valid": true,
+          "charging": null,
+          "remaining_minutes": null,
+          "empty_voltage_v": 10.8,
+          "full_voltage_v": 12.6,
+          "reason": "Voltage scale only: 0% at software stop, 100% at standard pack full voltage; not measured charge"
+        },
+        "power": {
+          "state": "NORMAL",
+          "motion_allowed": true,
+          "speed_scale": 1.0,
+          "warning": false,
+          "filtered_voltage": 12.080542915089174,
+          "charging": null,
+          "shutdown_required": false
+        },
+        "velocity": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "sensor_age": {
+          "gamepad": 0.007,
+          "odom": 0.093,
+          "imu": 0.011,
+          "scan0": 0.019,
+          "scan1": 0.118,
+          "battery": 0.627
+        },
+        "lidar": {
+          "scan0": {
+            "frame": "laser0_frame",
+            "valid": 453,
+            "nearest": 0.46000000834465027
+          },
+          "scan1": {
+            "frame": "laser1_frame",
+            "valid": 450,
+            "nearest": 0.4959999918937683
+          }
+        },
+        "arm_feedback": null,
+        "commissioning": {
+          "base_commissioned": false,
+          "arm_commissioned": false,
+          "lidar_tf_validated": false,
+          "camera_tf_validated": false,
+          "mcu_watchdog_verified": false,
+          "max_velocity": [
+            0.15,
+            0.15,
+            0.4
+          ],
+          "max_acceleration": [
+            0.3,
+            0.3,
+            0.7
+          ],
+          "battery_stop_voltage": 10.8,
+          "notes": "Velocity and battery thresholds are provisional commissioning limits. Physical calibration is required before autonomous motion.",
+          "localization_verified": false
+        },
+        "arm_command_state": {
+          "phase": "UNKNOWN_AFTER_REBOOT",
+          "measured": false
+        },
+        "last_request": {
+          "id": "0ceab7cc-87b9-4895-9501-6242ce8bc929",
+          "ok": true,
+          "op": "hold_base"
+        }
+      }
+    },
+    {
+      "direction": "backward",
+      "result": {
+        "phase": "completed",
+        "id": "30d8105f1fe947bca3b45a09ec68b24c",
+        "direction": "backward",
+        "duration": 0.7,
+        "at": 1790616619.0745332,
+        "result": {
+          "axis": "backward",
+          "requested": [
+            -0.04,
+            0.0,
+            0.0
+          ],
+          "duration": 0.7,
+          "quiet_seconds": 0.0,
+          "delta": {
+            "x": -0.012605682015419006,
+            "y": 4.813261330127716e-05,
+            "yaw": -0.003313104378368733
+          },
+          "peak": {
+            "vx": 0.04,
+            "vy": 0.0,
+            "wz": 0.0
+          },
+          "final_velocity": {
+            "vx": 0.0,
+            "vy": 0.0,
+            "wz": 0.0
+          },
+          "physical_direction_confirmed": false,
+          "body_delta": {
+            "x": -0.012603950349927933,
+            "y": 0.0002144094188064189,
+            "yaw": -0.003313104378368733
+          },
+          "command_gap_test": false,
+          "controller_link_loss_test": false
+        },
+        "busy": false,
+        "mode": "observed_finite",
+        "unattended": false
+      },
+      "controller": {
+        "at": 1790616618.9539995,
+        "mode": "MANUAL",
+        "stop_latched": false,
+        "monotonic": 1618.199803372,
+        "boot_id": "da7c1449-d82a-4ce9-b6cb-bc30db008c57",
+        "config_sha256": "ad0bfdea5a1665a66c9570b5f0357ff4df947cf3ee524afbd46e2b94f78ff1c6",
+        "mission": null,
+        "mission_held": true,
+        "base_hold_confirmed": true,
+        "last_motion_event": {
+          "monotonic": 1616.582402691,
+          "at": 1790616617.3362207,
+          "initiator": "request",
+          "reason_code": "HOLD_BASE",
+          "before": {
+            "mode": "MANUAL",
+            "stop_latched": false,
+            "mission": null,
+            "held": true,
+            "velocity": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "command_source": null,
+            "command_at": -1000000000.0,
+            "lease_at": -1000000000.0
+          },
+          "after": {
+            "mode": "MANUAL",
+            "stop_latched": false,
+            "mission": null,
+            "held": true,
+            "velocity": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "command_source": null,
+            "command_at": -1000000000.0,
+            "lease_at": -1000000000.0
+          },
+          "command_source": null,
+          "command_age_s": 1000001616.5823894,
+          "lease_age_s": 1000001616.5823894,
+          "mission_id": null,
+          "sensor_age": {
+            "gamepad": 0.020359363999887137,
+            "odom": 0.04596247799986486,
+            "imu": 0.03258850599991092,
+            "scan0": 0.006962032999808798,
+            "scan1": 0.12668055599988293,
+            "battery": 0.04183072499995433
+          },
+          "observed_velocity": [
+            -0.03569602221250534,
+            -0.005099432077258825,
+            0.03053552284836769
+          ],
+          "power": {
+            "state": "NORMAL",
+            "motion_allowed": true,
+            "speed_scale": 1.0,
+            "warning": false,
+            "filtered_voltage": 12.067270336527173,
+            "charging": null,
+            "shutdown_required": false
+          },
+          "obstacle": {
+            "scan0": {
+              "frame": "laser0_frame",
+              "valid": 450,
+              "nearest": 0.4399999976158142
+            },
+            "scan1": {
+              "frame": "laser1_frame",
+              "valid": 452,
+              "nearest": 0.5009999871253967
+            }
+          },
+          "config_sha256": "ad0bfdea5a1665a66c9570b5f0357ff4df947cf3ee524afbd46e2b94f78ff1c6"
+        },
+        "motion_log_dropped": 0,
+        "sensor_source_time": {
+          "odom": {
+            "stamp": 1790616618.917,
+            "age_at_receipt_s": 3.218650817871094e-05,
+            "reason": null
+          },
+          "imu": {
+            "stamp": 1790616618.944,
+            "age_at_receipt_s": -0.0026171207427978516,
+            "reason": null
+          },
+          "scan0": {
+            "stamp": 1790616618.84,
+            "age_at_receipt_s": 0.021480798721313477,
+            "reason": null
+          },
+          "scan1": {
+            "stamp": 1790616618.876,
+            "age_at_receipt_s": 0.020549535751342773,
+            "reason": null
+          }
+        },
+        "commissioning_config_matches_disk": true,
+        "odom_velocity": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "odom_received_monotonic": 1618.16326171,
+        "reason": "BASE COMMISSIONING REQUIRED",
+        "battery": 12.074947357177734,
+        "raw_pose": {
+          "x": 0.012019816786050797,
+          "y": 0.008479805663228035,
+          "yaw": 0.009878233909847269,
+          "frame": "odom_raw"
+        },
+        "battery_gauge": {
+          "percent": 70,
+          "approximate": true,
+          "method": "operating_voltage_reserve",
+          "state_of_charge_percent": null,
+          "voltage_valid": true,
+          "charging": null,
+          "remaining_minutes": null,
+          "empty_voltage_v": 10.8,
+          "full_voltage_v": 12.6,
+          "reason": "Voltage scale only: 0% at software stop, 100% at standard pack full voltage; not measured charge"
+        },
+        "power": {
+          "state": "NORMAL",
+          "motion_allowed": true,
+          "speed_scale": 1.0,
+          "warning": false,
+          "filtered_voltage": 12.070329657851302,
+          "charging": null,
+          "shutdown_required": false
+        },
+        "velocity": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "sensor_age": {
+          "gamepad": 0.079,
+          "odom": 0.037,
+          "imu": 0.012,
+          "scan0": 0.092,
+          "scan1": 0.057,
+          "battery": 0.643
+        },
+        "lidar": {
+          "scan0": {
+            "frame": "laser0_frame",
+            "valid": 450,
+            "nearest": 0.4399999976158142
+          },
+          "scan1": {
+            "frame": "laser1_frame",
+            "valid": 452,
+            "nearest": 0.5009999871253967
+          }
+        },
+        "arm_feedback": null,
+        "commissioning": {
+          "base_commissioned": false,
+          "arm_commissioned": false,
+          "lidar_tf_validated": false,
+          "camera_tf_validated": false,
+          "mcu_watchdog_verified": false,
+          "max_velocity": [
+            0.15,
+            0.15,
+            0.4
+          ],
+          "max_acceleration": [
+            0.3,
+            0.3,
+            0.7
+          ],
+          "battery_stop_voltage": 10.8,
+          "notes": "Velocity and battery thresholds are provisional commissioning limits. Physical calibration is required before autonomous motion.",
+          "localization_verified": false
+        },
+        "arm_command_state": {
+          "phase": "UNKNOWN_AFTER_REBOOT",
+          "measured": false
+        },
+        "last_request": {
+          "id": "0af91c8f-fba7-44d7-af99-e46540f8a77e",
+          "ok": true,
+          "op": "hold_base"
+        }
+      }
+    }
+  ]
+}

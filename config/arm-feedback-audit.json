@@ -1,0 +1,34 @@
+{
+  "date": "2026-09-28",
+  "current_graph": {
+    "controller_node": "/robotio",
+    "domain_id": 30,
+    "rmw": "rmw_fastrtps_cpp",
+    "arm6_feedback_publishers": [],
+    "arm6_feedback_samples_in_20_seconds": 0,
+    "evidence": "data/motion-audit-baseline-20260928.json",
+    "command_subscriber_type": "arm_msgs/msg/ArmJoints"
+  },
+  "saved_current_readback": {
+    "sha256": "e41e3cf0f8a406e354624cbf6ea15937e4da83d0ec0b9d04f76e16354b08b94c",
+    "bytes": 1048576,
+    "contains_arm6_feedback_string": false,
+    "contains_arm6_raw_string": false,
+    "new_hardware_read_performed": false
+  },
+  "historical_milo_v4": {
+    "decoded_flash_start": "0x08000000",
+    "decoded_image_bytes": 133716,
+    "decoded_image_sha256": "0636521ad696eb9ebc9bd7e0348ffaaf692f57b4e598495b47d06a49b8aefd07",
+    "source": "MILO_Code/Firmware_V4/APP/ros2_handle.c:381-405",
+    "reader": "Arm_Get_Raw_Position -> UartServo_Get_Position -> USART3 register 0x38, 2 bytes",
+    "publisher": "arm6_feedback and arm6_raw, one joint per 60 ms, publish after six joints",
+    "invalid_position": -1,
+    "time_field": "HAL_GetTick & 0x7fff, not a ROS acquisition timestamp for each individual joint",
+    "historical_values_59_95_91_0_91_115_primary_log_found": false
+  },
+  "conclusion": "Historical custom source implements genuine UART requests, not just setpoint echo. It is not evidence that this implementation is installed now or that each historical sample was valid. The current observed ROS interface supplies no arm position publisher. No documented runtime read request was found in the reviewed stock configuration interface. This does not establish hardware impossibility.",
+  "firmware_changed": false,
+  "joint_states_source_changed": false,
+  "current_joint_state": "commanded and elapsed-command estimate; no measured position or force; boot pose unknown until preparation"
+}

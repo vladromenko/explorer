@@ -3,7 +3,8 @@ set -e
 source /home/vlad/Explorer/bin/env.sh
 cd "$EXPLORER_ROOT"
 case "$1" in
- mcu|state|ekf|geometry|slam|navigation|planning|camera|perception|mapview)
+ mcu) python3 bin/wait-clock.py --network-grace 60;;
+ state|ekf|geometry|slam|navigation|planning|camera|perception|mapview)
    python3 bin/wait-clock.py;;
 esac
 case "$1" in
