@@ -1,5 +1,6 @@
 """MoveIt OMPL planning with explicit reference state; never publishes actuators."""
 import math
+import json
 import threading
 from pathlib import Path
 import numpy as np
@@ -10,12 +11,15 @@ from shape_msgs.msg import SolidPrimitive
 from geometry_msgs.msg import Pose
 from arm_model import ArmModel, ROOT
 from servo_coordinates import to_radians,to_servo
+from factory_trajectory import motion_profile
 
 
 class ArmPlanner:
     def __init__(self):
         self.guard = ArmModel()  # verify pinned assets before loading plugins
         self.lock = threading.Lock()
+        try:motion=motion_profile(json.loads((ROOT/'config/arm-motion.json').read_text()))
+        except (OSError,ValueError):motion=motion_profile()
         config = {
             'robot_description': (ROOT/'config/explorer.urdf').read_text(),
             'robot_description_semantic': (ROOT/'config/explorer.srdf').read_text(),
@@ -39,13 +43,13 @@ class ArmPlanner:
             'plan_request_params': {
                 'planning_pipeline': 'ompl', 'planner_id': 'RRTConnectkConfigDefault',
                 'planning_attempts': 1, 'planning_time': 2.0,
-                'max_velocity_scaling_factor': 0.1, 'max_acceleration_scaling_factor': 0.1,
+                'max_velocity_scaling_factor': 1.0, 'max_acceleration_scaling_factor': 1.0,
             },
             'trajectory_execution': {'manage_controllers': False},
             'moveit_controller_manager': 'moveit_simple_controller_manager/MoveItSimpleControllerManager',
             'robot_description_planning': {'joint_limits': {
-                f'arm{i}_Joint': {'has_velocity_limits': True, 'max_velocity': 0.3,
-                                 'has_acceleration_limits': True, 'max_acceleration': 0.5}
+                f'arm{i}_Joint': {'has_velocity_limits': True, 'max_velocity': math.radians(motion['velocity_deg_s'][i-1]),
+                                 'has_acceleration_limits': True, 'max_acceleration': math.radians(motion['acceleration_deg_s2'][i-1])}
                 for i in range(1, 6)}},
         }
         self.robot = MoveItPy(node_name='explorer_arm_planner', config_dict=config,

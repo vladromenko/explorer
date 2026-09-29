@@ -1,15 +1,40 @@
-"""Retain MoveIt's timed path, quantize only at the factory ArmJoints boundary."""
+"""Retain MoveIt's timed path and stream a smooth look-ahead to factory robotio."""
 import math
 import numpy as np
 from arm_commissioning import HARD_LIMITS
 from servo_coordinates import SIGNS
 from timed_trajectory import Limits,TimedPath
 
-def compile_path(start,goal,trajectory,model):
+DEFAULT_MOTION=dict(
+    velocity_deg_s=[28,28,28,35,35,40],
+    acceleration_deg_s2=[100,100,100,140,140,160],
+    jerk_deg_s3=[1000,1000,1000,1400,1400,1800],
+    publish_period_s=.08,lookahead_s=.20,min_duration_s=.35)
+
+def motion_profile(value=None):
+    value=dict(DEFAULT_MOTION,**(value or {}))
+    arrays=[]
+    for key in ('velocity_deg_s','acceleration_deg_s2','jerk_deg_s3'):
+        array=np.asarray(value[key],dtype=float)
+        if array.shape!=(6,) or not np.isfinite(array).all() or np.any(array<=0):
+            raise ValueError('Invalid factory arm '+key)
+        arrays.append(array)
+    period=float(value['publish_period_s']);lookahead=float(value['lookahead_s']);minimum=float(value['min_duration_s'])
+    if not .04<=period<=.15 or not period<=lookahead<=.35 or not .2<=minimum<=1.:
+        raise ValueError('Invalid factory arm timing profile')
+    return dict(value,velocity_deg_s=arrays[0].tolist(),acceleration_deg_s2=arrays[1].tolist(),
+                jerk_deg_s3=arrays[2].tolist(),publish_period_s=period,lookahead_s=lookahead,min_duration_s=minimum)
+
+def compile_path(start,goal,trajectory,model,motion=None):
+    motion=motion_profile(motion)
     if len(start)!=6 or len(goal)!=6:raise ValueError('Six joint positions required')
+    final_pose=np.rint(goal).astype(int).tolist()
     a=np.radians(start);b=np.radians(goal)
     if trajectory is None:
-        times=[0.,max(.5,float(np.max(np.abs(b-a)))/math.radians(8))]
+        # TimedPath expands this minimum duration until the quintic satisfies
+        # velocity, acceleration and jerk limits. This gives zero velocity and
+        # acceleration at both ends without artificially slow 8 deg/s motion.
+        times=[0.,motion['min_duration_s']]
         positions=[a,b];velocities=np.zeros((2,6));accelerations=np.zeros((2,6))
     else:
         names=trajectory['names'];expected=['arm'+str(i)+'_Joint' for i in range(1,6)]
@@ -39,15 +64,26 @@ def compile_path(start,goal,trajectory,model):
         x,y=np.degrees(x),np.degrees(y)
         return all(model.path(x[:5],y[:5],shape)['valid'] for shape in (0.,-.2,-.4,-.6,-.8))
     limits=Limits(np.radians([v[0] for v in HARD_LIMITS]),np.radians([v[1] for v in HARD_LIMITS]),
-                  np.full(6,math.radians(10)),np.full(6,math.radians(30)),np.full(6,math.radians(120)))
+                  np.radians(motion['velocity_deg_s']),np.radians(motion['acceleration_deg_s2']),
+                  np.radians(motion['jerk_deg_s3']))
     path=TimedPath(['servo'+str(i) for i in range(1,7)],times,positions,velocities,accelerations,limits,clear)
-    # Continuous servo interpolation is bounded to 200 ms outstanding at a time.
-    times=np.linspace(0,path.duration,max(2,math.ceil(path.duration/.2)+1))
+    # robotio exposes integer-degree targets only. Send a receding target ahead
+    # of the desired state, before the preceding finite interpolation expires.
+    # The overlap avoids the stop/start seam that made the arm visibly twitch.
+    period=motion['publish_period_s'];lookahead=motion['lookahead_s']
+    send_times=np.arange(0.,max(0.,path.duration-lookahead)+period*.5,period).tolist()
+    send_times.append(max(0.,path.duration-lookahead))
     commands=[];previous=list(start)
-    for t0,t1 in zip(times,times[1:]):
-        pose=np.rint(np.degrees(path.sample(float(t1))['position'])).astype(int).tolist()
+    for at in sorted(set(round(float(t),9) for t in send_times)):
+        target=min(path.duration,at+lookahead)
+        pose=np.rint(np.degrees(path.sample(target)['position'])).astype(int).tolist()
+        if pose==previous:continue
         if not clear(np.radians(previous),np.radians(pose)):raise ValueError('Rounded factory path collides')
-        commands.append(dict(at=float(t0),end=float(t1),pose=pose,runtime_ms=max(20,round((t1-t0)*1000))))
+        commands.append(dict(at=at,end=target,pose=pose,runtime_ms=max(20,round((target-at)*1000))))
         previous=pose
+    if not commands or commands[-1]['pose']!=final_pose:
+        at=max(0.,path.duration-lookahead)
+        commands.append(dict(at=at,end=path.duration,pose=final_pose,runtime_ms=max(20,round((path.duration-at)*1000))))
     return dict(commands=commands,duration=path.duration,source_sha256=path.source_sha256,
-                time_scale=path.scale,full_moveit_path_retained=trajectory is not None)
+                time_scale=path.scale,full_moveit_path_retained=trajectory is not None,
+                profile='coordinated_quintic_lookahead',motion=motion)

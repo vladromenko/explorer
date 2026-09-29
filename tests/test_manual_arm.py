@@ -67,16 +67,19 @@ class ManualArmTests(unittest.TestCase):
     def test_delivery_failure_prevents_next_step(self):
         self.pub.wait_for_all_acked.return_value=False
         with self.assertRaises(ValueError):self.arm.move(self.start,self.goal)
-        self.assertEqual(self.pub.publish.call_count,1)
+        first_attempt=self.pub.publish.call_count
+        self.assertGreaterEqual(first_attempt,2)
         state=json.loads((self.root/'data/arm-state.json').read_text())
         self.assertEqual(state['phase'],'monitor_failed_state_unknown')
         with self.assertRaises(ValueError):self.arm.move(self.goal,self.start)
-        self.assertEqual(self.pub.publish.call_count,1)
+        self.assertEqual(self.pub.publish.call_count,first_attempt)
 
-    def test_single_finite_position_command_and_honest_state(self):
+    def test_smooth_finite_position_stream_and_honest_state(self):
         result=self.arm.move(self.start,self.goal)
-        self.pub.publish.assert_called_once()
-        self.assertEqual(self.pub.publish.call_args.args[0].time,200)
+        self.assertGreaterEqual(self.pub.publish.call_count,2)
+        self.assertLessEqual(max(c.args[0].time for c in self.pub.publish.call_args_list),200)
+        self.assertEqual(self.pub.publish.call_args.args[0].joint1,self.goal[0])
+        self.assertEqual(result['motion_profile'],'coordinated_quintic_lookahead')
         self.assertFalse(result['measured']);self.assertFalse(result['attained'])
 
     def test_observed_reference_never_publishes_or_claims_measurement(self):

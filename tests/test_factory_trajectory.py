@@ -15,7 +15,7 @@ class FactoryTrajectoryTests(unittest.TestCase):
         self.assertEqual(path['commands'][-1]['pose'],[90]*6)
         self.assertGreaterEqual(max(c['pose'][0] for c in path['commands']),94)
         self.assertTrue(all(c['runtime_ms']<=200 for c in path['commands']))
-        for a,b in zip(path['commands'],path['commands'][1:]):self.assertAlmostEqual(a['end'],b['at'])
+        self.assertEqual(path['profile'],'coordinated_quintic_lookahead')
     def test_no_final_pose_shortcut_and_collision_before_execution(self):
         self.model.path=lambda *a:dict(valid=False)
         with self.assertRaises(ValueError):compile_path([90]*6,[100]*6,None,self.model)
@@ -25,9 +25,11 @@ class FactoryTrajectoryTests(unittest.TestCase):
         with self.assertRaises(ValueError):compile_path([90]*6,[90]*6,trajectory,self.model)
     def test_duration_limits_and_no_measured_claim(self):
         path=compile_path([90]*6,[100,90,90,90,90,90],None,self.model)
-        self.assertGreaterEqual(path['duration'],1.)
+        self.assertLess(path['duration'],1.)
         self.assertEqual(path['commands'][-1]['pose'],[100,90,90,90,90,90])
         self.assertTrue(all(c['end']>c['at'] for c in path['commands']))
+        self.assertTrue(any(b['at']<a['end'] for a,b in zip(path['commands'],path['commands'][1:])))
+        self.assertGreater(len(path['commands']),2)
 
     def test_totg_boundary_rest_blend_preserves_goal(self):
         trajectory=dict(names=['arm'+str(i)+'_Joint' for i in range(1,6)],times=[0.,2.],

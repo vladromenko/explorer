@@ -1,0 +1,9 @@
+{
+  "velocity_deg_s": [28, 28, 28, 35, 35, 40],
+  "acceleration_deg_s2": [100, 100, 100, 140, 140, 160],
+  "jerk_deg_s3": [1000, 1000, 1000, 1400, 1400, 1800],
+  "publish_period_s": 0.08,
+  "lookahead_s": 0.20,
+  "min_duration_s": 0.35,
+  "profile": "coordinated_quintic_lookahead"
+}

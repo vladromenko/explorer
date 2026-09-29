@@ -26,6 +26,19 @@ def bernstein_bounds(coefficients):
     return bernstein.min(axis=0), bernstein.max(axis=0)
 
 
+def exact_bounds(coefficients):
+    """Tight numeric extrema of a power-basis polynomial on [0, 1]."""
+    coefficients=np.asarray(coefficients,dtype=float)
+    low=np.empty(coefficients.shape[1]);high=np.empty(coefficients.shape[1])
+    slope=derivative(coefficients)
+    for joint in range(coefficients.shape[1]):
+        roots=np.polynomial.polynomial.polyroots(slope[:,joint]) if len(slope)>1 else []
+        points=[0.,1.,*(float(r.real) for r in roots if abs(r.imag)<1e-9 and 0<r.real<1)]
+        values=[np.polynomial.polynomial.polyval(x,coefficients[:,joint]) for x in points]
+        low[joint],high[joint]=min(values),max(values)
+    return low,high
+
+
 def quintic(q0, q1, v0, v1, a0, a1, duration):
     c = np.zeros((6, len(q0)))
     c[0], c[1], c[2] = q0, v0 * duration, a0 * duration**2 / 2
@@ -88,7 +101,10 @@ class TimedPath:
             d = c
             for order, maximum in enumerate((limits.velocity, limits.acceleration, limits.jerk), 1):
                 d = derivative(d)
-                low, high = bernstein_bounds(d)
+                # The Bernstein hull is ideal for collision subdivision but is
+                # overly conservative for motion timing. Exact derivative
+                # extrema avoid turning a smooth 24 deg/s request into 5 deg/s.
+                low, high = exact_bounds(d)
                 bound = np.maximum(np.abs(low), np.abs(high)) / dt**order
                 scale = max(scale, float(np.max((bound / maximum)**(1 / order))))
             segments.append(c)

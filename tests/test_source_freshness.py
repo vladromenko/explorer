@@ -9,6 +9,7 @@ class SourceFreshnessTests(unittest.TestCase):
             self.assertFalse(f.accept('odom',stamp,now,.5))
         self.assertEqual(f.last['odom'],100)
         self.assertTrue(f.accept('odom',101,101.01,.5))
+        self.assertTrue(f.accept('scan',101.2,101,.5))
     def test_independent_sources_and_checked_clock_recovery(self):
         f=SourceFreshness();f.accept('odom',100,100,.5)
         self.assertTrue(f.accept('scan',99.9,100,.6))
