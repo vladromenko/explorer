@@ -16,6 +16,7 @@ from lerobot_bridge import write_json
 from telegram_pairing import Pairing
 
 HELP='''Explorer: /status — питание, нагрузка, режим и датчики; /stop — остановить;
+/control — как открыть ручное управление; /learn — запись обучения; /map — карта и лидары;
 /objects — что видно; /where предмет — последние наблюдения;
 /find sock — поиск на текущем кадре; /places — сохранённые места;
 /go имя — поездка; /survey имя1,имя2 — осмотр маршрута;
@@ -79,6 +80,8 @@ def command(text):
     if name=='/explore':return 'missions',dict(kind='explore',x=None,y=None,yaw=0.)
     if name=='/camera':return 'camera',None
     if name=='/mobile':return 'mobile',None
+    if name=='/control':return 'control_help',None
+    if name=='/map':return 'map_help',None
     if name=='/lights':
         allowed=('auto','off','headlights','work','search','success','error','water','marquee','breathe','gradient','sparkle','battery')
         if not argument:return 'appearance',None
@@ -142,7 +145,7 @@ class TelegramBridge:
 
     def reply(self,chat,text,markup=None):
         keyboard=markup or {'keyboard':[[{'text':x} for x in row] for row in
-            [('Состояние','Камера'),('Телефон','Эксперименты'),('Память','Обучение'),('Результаты','Остановить')]],
+            [('Состояние','Камера'),('Управление','Обучение'),('Карта','Эксперименты'),('Помощь','Остановить')]],
             'resize_keyboard':True}
         self.telegram('sendMessage',dict(chat_id=chat,text=text[:3900],reply_markup=keyboard,
             link_preview_options={'is_disabled':True}),timeout=8)
@@ -181,6 +184,10 @@ class TelegramBridge:
             if remote.get('tailscale_url'):urls.append('Вне дома через Tailscale: '+remote['tailscale_url']+'#'+self.api_token)
             text='Телефонное управление и запись обучения:\n'+'\n'.join(urls)+'\nПанель содержит шасси, руку, захват, камеру и запись полного показа.'
             self.reply(item['chat_id'],text);return
+        if path=='control_help':
+            self.reply(item['chat_id'],'Ручное управление: откройте /mobile, отметьте, что наблюдаете за роботом, нажмите «Разрешить движение». Там доступны шасси, шесть суставов, захват и запись показа. Полная панель с клавиатурой и джойстиком доступна через кнопку «Полная панель».');return
+        if path=='map_help':
+            self.reply(item['chat_id'],'Карта: откройте полную панель через /camera → «Лидар и карта». Для ручного построения медленно объедьте границы комнаты, осмотрите дверные проёмы и вернитесь в исходную область, затем сохраните карту.');return
         if path=='experiments':
             result=self.api(path,None)
             self.reply(item['chat_id'],format_experiment_catalog(result['experiments']),
@@ -234,12 +241,13 @@ class TelegramBridge:
         me=self.telegram('getMe',{})
         if me['id']!=self.config.get('bot_id',8850343219):raise ValueError('Unexpected bot ID')
         if self.telegram('getWebhookInfo',{}).get('url'):raise ValueError('Existing webhook; no changes made')
-        names={'/status':'Состояние','/camera':'Камера','/experiments':'Эксперименты','/memory':'Память',
+        names={'/status':'Состояние','/camera':'Камера','/control':'Управление','/map':'Карта и лидары','/experiments':'Эксперименты','/memory':'Память',
                '/skills':'Функции и обучение','/explore':'Исследовать комнату','/mobile':'Телефонная панель',
                '/learn':'Обучение','/lights':'Передняя подсветка','/results':'Результаты','/stop':'Остановить'}
         self.telegram('setMyCommands',{'commands':[{'command':k[1:],'description':v} for k,v in names.items()]})
         labels={v:k for k,v in names.items()}
         labels['Телефон']='/mobile'
+        labels['Помощь']='/help'
         threading.Thread(target=self.worker,daemon=True).start()
         while True:
             try:

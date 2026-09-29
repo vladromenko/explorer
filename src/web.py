@@ -6,6 +6,7 @@ import math
 import os
 from pathlib import Path
 import secrets
+import shutil
 import sqlite3
 import subprocess
 import threading
@@ -185,6 +186,9 @@ class PanelLease(BaseModel):
     enabled:bool=False
     observing:bool=False
 
+class GamepadMode(BaseModel):
+    mode:str
+
 class MobileStage(BaseModel):
     stage:str
 
@@ -265,6 +269,9 @@ def training_log(ident:str):return {'text':map_operation(learning_jobs.log,ident
 @app.post('/api/gamepad/panel')
 def panel_lease(c:PanelLease):return gamepad_panel.heartbeat(c.enabled and c.observing)
 
+@app.post('/api/gamepad/mode')
+def gamepad_mode(c:GamepadMode):return map_operation(gamepad_panel.select,c.mode)
+
 class VoiceRequest(BaseModel):
     operation:str
     text:str=Field(default='',max_length=1200)
@@ -336,6 +343,32 @@ def status():
         s['resources']['temperature_c']=float(Path('/sys/class/thermal/thermal_zone0/temp').read_text())/1000
     except (OSError,ValueError):pass
     return s
+
+SERVICE_NAMES={
+    'control':'explorer-control.service','web':'explorer-web.service',
+    'mcu':'explorer-mcu.service','camera':'explorer-camera.service',
+    'navigation':'explorer-navigation.service','planning':'explorer-planning.service',
+    'oled':'explorer-oled.service','telegram':'explorer-telegram.service',
+}
+
+@app.get('/api/diagnostics')
+def diagnostics():
+    services={}
+    for name,unit in SERVICE_NAMES.items():
+        result=subprocess.run(['systemctl','--user','is-active',unit],capture_output=True,text=True,timeout=2)
+        services[name]=result.stdout.strip() or 'inactive'
+    disk=shutil.disk_usage(ROOT)
+    return dict(at=time.time(),load_average=list(os.getloadavg()),
+        disk_free_gb=round(disk.free/1024**3,1),disk_total_gb=round(disk.total/1024**3,1),
+        uptime_s=float(Path('/proc/uptime').read_text().split()[0]),services=services)
+
+@app.get('/api/logs')
+def logs(service:str='control',lines:int=80):
+    if service not in SERVICE_NAMES:raise HTTPException(400,'Неизвестная служба')
+    lines=max(20,min(300,lines))
+    result=subprocess.run(['journalctl','--user','-u',SERVICE_NAMES[service],'-n',str(lines),
+                           '--no-pager','-o','short-iso'],capture_output=True,text=True,timeout=5)
+    return {'service':service,'text':result.stdout[-40000:]}
 
 class Command(BaseModel):
     op:str

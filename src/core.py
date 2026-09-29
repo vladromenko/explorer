@@ -324,8 +324,11 @@ class Core(Node):
                     publish_hold(self)
                 elif op=='manual_release':
                     # A disconnected/idle panel cannot cancel local autonomy.
-                    if self.gate.source=='manual' and not self.session.mission:
+                    if self.gate.mode=='MANUAL' and not self.session.mission:
                         self.gate.hold();self.joy_held=False
+                        # Manual base/arm operation is sequential: releasing the
+                        # chassis establishes the stationary hold needed by the arm.
+                        self.hold_requested=True;self.stationary_since=None
                         publish_hold(self)
                 elif op == 'mode':
                     if req['mode'] not in ('MANUAL','ASSISTED','AUTONOMOUS'):
@@ -376,7 +379,12 @@ class Core(Node):
         healthy = all(now-self.seen.get(k,-1e9) < ttl for k,ttl in [('odom',.5),('imu',.5),('scan0',.6),('scan1',.6),('battery',3.)])
         healthy = healthy and self.power_state['motion_allowed'] and self.battery is not None and self.battery > self.config['battery_stop_voltage']
         # Conservative all-direction guard until the measured scanner extrinsics are installed.
-        collision = any(s['nearest'] is None or s['nearest'] < .30 for s in self.scans.values())
+        # The fixed lidars have legitimate near-field returns from the robot itself.
+        # Until a direction-aware footprint filter is available, obstacle stops belong
+        # to autonomous navigation.  A present operator keeps the independent STOP,
+        # command-expiry, power and sensor gates, but must be able to manoeuvre away.
+        collision = self.gate.mode == 'AUTONOMOUS' and any(
+            s['nearest'] is None or s['nearest'] < .30 for s in self.scans.values())
         if self.session.mission and now-self.session.lease_at>.25:
             before=self.snapshot();self.session.end();self.gate.hold();self.hold_requested=True
             self.event('mission','MISSION_LEASE_EXPIRED',before)

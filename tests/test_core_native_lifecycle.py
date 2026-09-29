@@ -86,6 +86,20 @@ class CoreNativeLifecycleTests(unittest.TestCase):
         c.tick()
         self.assertEqual(self.requests[-1]['operation'], 'BASE')
 
+    def test_near_lidar_return_does_not_lock_present_operator(self):
+        c = self.core;c.scans['scan1']['nearest']=.15
+        c.gate.submit([.04,0.,0.], 'manual', self.now)
+        c.tick()
+        self.assertEqual(self.requests[-1]['operation'],'BASE')
+        self.assertEqual(c.reason,'ACTIVE')
+
+    def test_near_lidar_return_still_stops_autonomy(self):
+        c = self.core;c.gate.mode='AUTONOMOUS';c.scans['scan1']['nearest']=.15
+        c.autonomy_lease=self.now+.5;c.gate.submit([.04,0.,0.], 'autonomy', self.now)
+        c.tick()
+        self.assertEqual(self.requests[-1]['operation'],'HOLD')
+        self.assertEqual(c.reason,'OBSTACLE')
+
     def test_probe_and_renewal_keep_request_acquisition_time(self):
         c = self.core
         with tempfile.TemporaryDirectory() as directory:
@@ -110,6 +124,13 @@ class CoreNativeLifecycleTests(unittest.TestCase):
         self.core.request(SimpleNamespace(data=json.dumps(dict(op='hold_base', at=100.02))))
         self.assertEqual(self.requests[-1]['operation'], 'HOLD')
         self.assertFalse(self.core.gate.estop)
+
+    def test_manual_release_establishes_hold_for_arm_without_latching_stop(self):
+        c=self.core;c.gate.submit([.04,0.,0.], 'manual', self.now)
+        c.request(SimpleNamespace(data=json.dumps(dict(op='manual_release',at=self.now))))
+        self.assertTrue(c.hold_requested)
+        self.assertFalse(c.gate.estop)
+        self.assertEqual(self.requests[-1]['operation'],'HOLD')
 
     def test_shutdown_sends_native_stop_before_destroying_node(self):
         c = self.core; c.destroy_node = Mock()

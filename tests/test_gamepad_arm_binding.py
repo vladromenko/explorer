@@ -79,5 +79,20 @@ class GamepadArmBindingTests(unittest.TestCase):
         self.assertEqual(self.panel.decide(self.buttons['l2'],1,1,self.now),(6,-5))
         self.assertEqual(self.panel.decide(self.buttons['r2'],1,1,self.now),(6,5))
 
+    def test_visible_panel_can_select_drive_and_arm_modes(self):
+        self.panel.connected=True
+        self.panel.select('DRIVE')
+        self.assertEqual(self.panel.mode,'DRIVE')
+        self.panel.select('ARM')
+        self.assertEqual(self.panel.mode,'ARM')
+        self.release.assert_called_once()
+
+    def test_mode_selection_requires_connected_controller_and_live_panel(self):
+        with self.assertRaisesRegex(ValueError,'не подключён'):
+            self.panel.select('DRIVE')
+        self.panel.connected=True;self.panel.lease=0
+        with self.assertRaisesRegex(ValueError,'включите панель'):
+            self.panel.select('DRIVE')
+
 
 if __name__=='__main__':unittest.main()

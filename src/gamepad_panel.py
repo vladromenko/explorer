@@ -55,11 +55,32 @@ class GamepadPanel:
 
     def heartbeat(self,enabled):
         with self.lock:
-            self.lease=time.monotonic()+.25 if enabled is True else 0.
+            # Browsers throttle sub-second timers in background tabs.  A one-second
+            # visible-panel lease remains short, while surviving Wi-Fi/UI jitter.
+            self.lease=time.monotonic()+1.0 if enabled is True else 0.
             if not enabled:
                 if self.mode in ('ARM','ARM_CARTESIAN'):self.arm_cancel()
                 if self.drive_active:self.release();self.drive_active=False
                 self.mode='DISARMED';self.neutral=False
+        return self.status()
+
+    def select(self,mode):
+        """Select an operator mode explicitly from the visible web panel."""
+        if mode not in ('DRIVE','ARM','ARM_CARTESIAN','DISARMED'):
+            raise ValueError('Неизвестный режим джойстика')
+        with self.lock:
+            if mode != 'DISARMED' and not self.connected:
+                raise ValueError('Геймпад не подключён')
+            if mode != 'DISARMED' and time.monotonic() >= self.lease:
+                raise ValueError('Сначала включите панель джойстика')
+            if self.mode in ('ARM','ARM_CARTESIAN') and self.mode != mode:
+                self.arm_cancel()
+            if self.mode == 'DRIVE' and mode != 'DRIVE':
+                self.release(); self.drive_active=False
+            if mode == 'DRIVE' and any(abs(v) > 1e-6 for v in velocity(self.axes,self.config)):
+                raise ValueError('Отпустите стики в центр и повторите')
+            self.mode=mode
+            self.neutral=False
         return self.status()
 
     def decide(self,code,value,kind,now):

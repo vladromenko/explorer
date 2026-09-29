@@ -75,3 +75,7 @@ bin/install-all.sh --assets /путь/к/Explorer-assets
 - `docs/` — учебник и инструкции.
 
 `data/`, `models/`, большая часть `vendor/`, секреты, VPN, фотографии и видео не публикуются в Git. Их восстановление предусмотрено установочными скриптами.
+
+### Manual operator UI
+
+Open `http://explorer.local:8080/` for the seven-section desktop interface or `/mobile` for the touch interface. The desktop panel supports keyboard and the Jetson-connected gamepad for both holonomic chassis and six-joint arm control. Diagnostics and allowlisted service logs are available in the Machine status tab. See `docs/operator-guide.ru.md` for the exact controls.
