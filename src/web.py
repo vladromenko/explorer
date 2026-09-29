@@ -441,11 +441,22 @@ def autonomy_graduation_status():
 class LocalizationReturn(BaseModel):
     heading:str
 
+class GripperAperture(BaseModel):
+    open_deg:float
+    sock_close_deg:float
+    open_aperture_mm:float
+    closed_gap_mm:float
+    observing:bool=False
+
 @app.post('/api/autonomy/localization/begin')
 def localization_begin():return map_operation(localization_exercise.begin)
 
 @app.post('/api/autonomy/localization/return')
 def localization_return(c:LocalizationReturn):return map_operation(localization_exercise.capture,c.heading)
+
+@app.post('/api/autonomy/gripper/aperture')
+def gripper_aperture(c:GripperAperture):return map_operation(autonomy_graduation.record_aperture,
+    c.open_deg,c.sock_close_deg,c.open_aperture_mm,c.closed_gap_mm,c.observing)
 
 class ResearchRuntime(BaseModel):
     continual_memory:bool

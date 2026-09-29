@@ -54,6 +54,24 @@ class AutonomyGraduation:
     @staticmethod
     def progress(value,required):return dict(value=value,required=required,complete=value>=required)
 
+    def record_aperture(self,open_deg,sock_close_deg,open_aperture_mm,closed_gap_mm,observing):
+        values=(open_deg,sock_close_deg,open_aperture_mm,closed_gap_mm)
+        if observing is not True:raise ValueError('Нужно наблюдать захват и измерить раскрытие')
+        if not all(type(v) in (int,float) and math.isfinite(v) for v in values):raise ValueError('Нужны четыре конечных измерения')
+        if not 30<=open_deg<=120 or not open_deg+20<=sock_close_deg<=170:raise ValueError('Углы открытия и закрытия не образуют проверяемый диапазон')
+        if not 20<=open_aperture_mm<=100 or not 0<=closed_gap_mm<=15 or closed_gap_mm>=open_aperture_mm-10:
+            raise ValueError('Измеренные раскрытия не образуют рабочий диапазон')
+        state=read(self.root/'data/status.json')
+        if not 0<=time.time()-state.get('at',0)<2 or state.get('stop_latched') is not True or any(abs(v)>1e-3 for v in state.get('velocity',[])):
+            raise ValueError('Для записи калибровки нужен свежий STOP и неподвижное шасси')
+        row=dict(schema='explorer_autonomy_evidence_v1',kind='gripper_aperture_calibration',at=time.time(),hardware_executed=True,
+                 simulation=False,verifier='bounded_operator_measurement_v1',verifier_outcome='success',open_deg=open_deg,
+                 sock_close_deg=sock_close_deg,open_aperture_mm=open_aperture_mm,closed_gap_mm=closed_gap_mm,
+                 joint_state_source='command_estimate',operator_observed=True)
+        path=self.folder/(time.strftime('%Y%m%d-%H%M%S')+'-gripper_aperture_calibration.json')
+        if path.exists():raise ValueError('Измерение этой секунды уже сохранено')
+        atomic(path,row);return row
+
     def localization(self):
         c=self.config['localization'];rows=[r for r in self.records('localization_return') if r['verifier_outcome']=='success']
         errors=[r.get('translation_error_m') for r in rows];yaws=[r.get('yaw_error_deg') for r in rows]
@@ -88,7 +106,8 @@ class AutonomyGraduation:
         return dict(id='visual_grasp',name='Визуально подтверждённый захват robotio',state='accepted' if passed else 'training',metrics=metrics,
             progress=[self.progress(len(aperture),c['minimum_aperture_calibrations']),self.progress(len(episodes),c['minimum_complete_demonstrations']),self.progress(len(corrections),c['minimum_failures_or_interventions']),
                       self.progress(len(lifts),c['minimum_verified_lifts']),self.progress(len(places),c['minimum_verified_places']),self.progress(len(conditions),c['minimum_object_conditions'])],
-            next_action='Записывайте полный показ. После закрытия поднимите предмет и удерживайте не менее секунды в поле камеры; после отпускания отведите захват. Неудачи и ваши вмешательства тоже сохраняйте.',
+            next_action=('Сначала измерьте открытый и закрытый захват в панели «Калибровка раскрытия».' if not aperture else
+                         'Записывайте полный показ. После закрытия поднимите предмет и удерживайте не менее секунды в поле камеры; после отпускания отведите захват. Неудачи и ваши вмешательства тоже сохраняйте.'),
             verification='RGB-D отслеживает тот же предмет относительно захвата, подтверждает отрыв от пола, удержание и размещение. Одна отметка оператора не открывает допуск.',
             unlocks=['замкнутый визуальный захват','проверка политики на роботе'],evidence=aperture+lifts+places)
 
