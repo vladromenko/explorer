@@ -114,6 +114,11 @@ class ArmPlanner:
                     if not self.guard.path(a, b, q)['valid']:
                         raise ValueError('Trajectory fails conservative jaw-envelope check')
             return dict(planned=True, planner='MoveIt2/OMPL/RRTConnect', servo_waypoints=points,
+                        joint_trajectory=dict(names=names,
+                            positions=[[float(p.positions[i]) for i in order] for p in trajectory.points],
+                            velocities=[[float(p.velocities[i]) for i in order] if p.velocities else [] for p in trajectory.points],
+                            accelerations=[[float(p.accelerations[i]) for i in order] if p.accelerations else [] for p in trajectory.points],
+                            times=[p.time_from_start.sec+p.time_from_start.nanosec/1e9 for p in trajectory.points]),
                         time_from_start_s=[p.time_from_start.sec+p.time_from_start.nanosec/1e9
                                            for p in trajectory.points],
                         start_deg=list(start_deg), goal_deg=list(goal_deg),

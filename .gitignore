@@ -1,6 +1,8 @@
 .venv/
 .venv-learning/
 vendor/
+!firmware/vendor/
+!firmware/vendor/**
 models/
 data/
 logs/
@@ -15,3 +17,10 @@ config/access_token
 config/telegram.json
 config/telegram-token
 config/vpn/
+
+# Fresh device readbacks are local recovery evidence, not repository contents.
+releases/*/sessions/
+
+.DS_Store
+# Local release/recovery images remain on this Mac, outside the source repository.
+/releases/

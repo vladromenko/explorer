@@ -8,6 +8,29 @@ from types import SimpleNamespace
 from observed_base import ObservedBase,arm_command_pending
 
 class ObservedBaseTests(unittest.TestCase):
+    def test_native_arm_busy_uses_live_controller_and_fresh_executor_record(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory); (root/'data').mkdir(); (root/'config').mkdir()
+            (root/'config/controller-profile.json').write_text('{}')
+            live_path=root/'data/controller-state.json'; arm_path=root/'data/arm-state.json'
+            status=dict(boot_id='linux',arm_command_state=dict(phase='command_in_progress',at=10.))
+            ended=dict(boot_id='linux',controller_boot_id=123,phase='measured_reached',
+                       at=11.,ends_monotonic=time.monotonic()-.3)
+            arm_path.write_text(json.dumps(ended))
+            live=dict(monotonic_ns=time.monotonic_ns(),telemetry_fresh=True,identity=dict(boot=123),
+                      controller=dict(arm_enabled=False,arm_cancel_pending=True))
+            live_path.write_text(json.dumps(live))
+            self.assertTrue(arm_command_pending(root,status))
+            live['controller']['arm_cancel_pending']=False
+            live_path.write_text(json.dumps(live))
+            self.assertFalse(arm_command_pending(root,status))
+            # New activity must block even if Core still caches a finished record.
+            arm_path.write_text(json.dumps(dict(ended,phase='command_in_progress')))
+            self.assertTrue(arm_command_pending(root,dict(status,arm_command_state=ended)))
+            arm_path.write_text(json.dumps(ended))
+            live['identity']['boot']=456; live_path.write_text(json.dumps(live))
+            self.assertTrue(arm_command_pending(root,status))
+
     def test_arm_completion_uses_newer_same_boot_executor_record(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d);(root/'data').mkdir();path=root/'data/arm-state.json'

@@ -34,7 +34,7 @@ class Demonstrations:
                                    steps=len(e['steps']),state=e['state']) for e in episodes][-30:],
                     framework='LeRobot 0.6.1',policy_type='ACT',
                     training_required_successful_demonstrations=10,
-                    joint_state_source='commanded_not_measured',automatic_motion_enabled=False)
+                    joint_state_source='per_episode_provenance',automatic_motion_enabled=False)
 
 
 class TeachingController:
@@ -42,6 +42,7 @@ class TeachingController:
         self.root=Path(root);self.store=Demonstrations(self.root/'data/demonstrations')
         self.lock=threading.Lock();self.active=None;self.error=None
         self.move=None;self.stop_revision=lambda:0
+        self.measured_reference=None
         # A restart never resumes recording or motion.
         for episode in self.store.episodes():
             if episode.get('state')=='recording':
@@ -52,8 +53,10 @@ class TeachingController:
         folder=self.store.root/episode['id'];folder.mkdir(exist_ok=True)
         temporary=folder/'episode.tmp';temporary.write_text(json.dumps(episode));temporary.replace(folder/'episode.json')
 
-    def observation(self):
+    def pose(self):
         state=json.loads((self.root/'data/status.json').read_text());stationary_status(state,time.time())
+        if self.measured_reference is not None:
+            return self.measured_reference()['servo_deg']
         arm=json.loads((self.root/'data/arm-state.json').read_text())
         boot=Path('/proc/sys/kernel/random/boot_id').read_text().strip()
         if arm.get('boot_id')!=boot or arm.get('phase')!='command_elapsed_observation_required':
@@ -61,11 +64,15 @@ class TeachingController:
         fault=self.root/'data/arm-telemetry-fault.json'
         if fault.exists() and json.loads(fault.read_text()).get('at',0)>arm['at']:
             raise ValueError('После потери связи заново подготовьте руку')
+        return arm['servo_deg']
+
+    def observation(self):
+        pose=self.pose()
         path=self.root/'data/frame-raw.jpg'
         if not 0<=time.time()-path.stat().st_mtime<2:raise ValueError('Нет свежего кадра камеры')
         image=cv2.imread(str(path))
         if image is None:raise ValueError('Не удалось прочитать кадр')
-        return arm['servo_deg'],image
+        return pose,image
 
     def status(self):
         try:
@@ -82,7 +89,7 @@ class TeachingController:
             pose,image=self.observation()
             episode=dict(id=uuid.uuid4().hex,created=time.time(),name=name[:80],state='recording',
                          outcome='unknown',label_source=None,source='operator_demonstration',
-                         start_deg=pose,steps=[],joint_positions_measured=False)
+                         start_deg=pose,steps=[],joint_positions_measured=self.measured_reference is not None)
             self.save(episode)
             cv2.imwrite(str(self.store.root/episode['id']/'start.jpg'),image)
             self.active=episode;self.error=None
@@ -97,7 +104,7 @@ class TeachingController:
         if not self.lock.acquire(blocking=False):raise ValueError('Предыдущий шаг ещё выполняется')
         try:
             if self.move is None:raise ValueError('Постоянный контроллер руки не готов')
-            pose,_=self.observation();goal=list(pose);goal[joint-1]+=delta
+            pose=self.pose();goal=list(pose);goal[joint-1]+=delta
             return self.move(pose,goal,deadline)
         finally:self.lock.release()
 
@@ -109,9 +116,9 @@ class TeachingController:
             if self.move is None:raise ValueError('Контроллер руки не готов')
             from cartesian_jog import propose
             revision=self.stop_revision()
-            pose,_=self.observation();proposal=propose(model,pose,axis,direction)
+            pose=self.pose();proposal=propose(model,pose,axis,direction)
             result=self.move(pose,proposal['goal_deg'],expected_stop_revision=revision)
-            return dict(proposal,executed=True,command=result,attainment_verified=False)
+            return dict(proposal,executed=True,command=result,attainment_verified=result.get('attained') is True)
         finally:self.lock.release()
 
     def step(self,joint,delta,deadline=None):
@@ -128,10 +135,12 @@ class TeachingController:
             result=self.move(pose,goal,deadline)
             (folder/f'{index:04d}-command.log').write_text(json.dumps(result))
             after_pose,after_image=self.observation()
-            if after_pose!=goal:raise ValueError('Состояние команды изменилось во время показа')
+            matched=np.allclose(after_pose,goal,atol=.5,rtol=0) if self.measured_reference is not None else after_pose==goal
+            if not matched:raise ValueError('Измеренное положение не совпало с целью показа')
             after=f'{index:04d}-after.jpg';cv2.imwrite(str(folder/after),after_image)
             self.active['steps'].append(dict(at=time.time(),observation_at=observed_at,start_deg=pose,goal_deg=goal,
-                before_image=before,after_image=after,measured=False,actuator_attainment_verified=False))
+                before_image=before,after_image=after,measured=self.measured_reference is not None,
+                measured_after_deg=after_pose,actuator_attainment_verified=result.get('attained') is True))
             self.save(self.active);return self.status()
         except (OSError,ValueError,subprocess.TimeoutExpired) as exc:
             self.error=str(exc)

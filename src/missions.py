@@ -28,7 +28,7 @@ def readiness(s,now):
 
 class Missions:
     def __init__(self,node,maps):
-        self.surveys=SurveyStore(ROOT);self.speak=None
+        self.surveys=SurveyStore(ROOT);self.speak=None;self.compound_guard=None;self.compound_cancel=None
         self.node=node;self.maps=maps;self.lock=threading.RLock();self.active=None;self.last=None
         self.client=ActionClient(node,NavigateToPose,'/navigate_to_pose')
         self.pub=node.create_publisher(String,'/explorer/request',10)
@@ -84,6 +84,7 @@ class Missions:
                 if time.monotonic()-self.active['started_monotonic']>1 and status.get('mission')!=mid:
                     raise ValueError('Mission permission revoked')
                 self.active['waiting_for_obstacle']=status.get('reason')=='OBSTACLE'
+                if self.active.get('kind')=='delivery' and self.compound_guard:self.compound_guard(mid)
                 self.emit('autonomy_lease',mission=mid)
             except (OSError,ValueError,KeyError) as e:self.finish(mid,'interrupted',{'reason':str(e)})
 
@@ -143,6 +144,23 @@ class Missions:
             route=[dict(places[n]) for n in names]
         threading.Thread(target=self.survey_worker,args=(mid,route,narrate),daemon=True).start()
         return dict(id=mid,accepted=True,completed=False)
+
+    def begin_compound(self,mid,kind,timeout,permit=lambda:None):
+        with self.lock:
+            permit()
+            self.require_ready()
+            if self.active:raise ValueError('Другая миссия уже выполняется')
+            self.active=dict(id=mid,kind=kind,map_epoch=self.maps.epoch(),started=time.time(),
+                started_monotonic=time.monotonic(),deadline_monotonic=time.monotonic()+timeout,phase='preparing')
+            self.record(self.active,'running',dict(local_execution=True))
+            self.emit('begin_mission',mission=mid)
+        deadline=time.monotonic()+1
+        while time.monotonic()<deadline:
+            permit()
+            if self.state().get('mission')==mid:return
+            time.sleep(.02)
+        self.finish(mid,'failed',dict(reason='Controller did not acknowledge mission ownership'))
+        raise ValueError('Контроллер не подтвердил владение миссией')
 
     def survey_permit(self,mid):
         with self.lock:

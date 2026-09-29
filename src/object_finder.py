@@ -48,6 +48,15 @@ class ObjectFinder:
             return self.status()
         except Exception:self.lock.release();raise
 
+    def cancel(self,request_id):
+        if not re.fullmatch(r'[0-9a-f]{32}',str(request_id)) or self.state.get('id')!=request_id:
+            return dict(cancelled=False)
+        if not self.lock.locked():return dict(cancelled=False)
+        self.state.update(phase='cancelled')
+        subprocess.run(['systemctl','--user','stop','explorer-grounding-'+request_id],
+                       check=False,timeout=3,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        return dict(cancelled=True)
+
     def run(self,folder):
         try:
             with (folder/'log.txt').open('w') as log:
@@ -56,6 +65,9 @@ class ObjectFinder:
                     '--property=Nice=15','--property=CPUWeight=10','--property=RuntimeMaxSec=90',
                     str(self.root/'.venv-learning/bin/python'),str(self.root/'bin/ground-object.py'),str(folder)],
                     check=True,timeout=100,stdout=log,stderr=log)
-            self.state.update(phase='ready',result=json.loads((folder/'result.json').read_text()))
-        except (OSError,ValueError,subprocess.SubprocessError) as exc:self.state.update(phase='error',error=str(exc))
+            if self.state.get('id')==folder.name and self.state.get('phase')!='cancelled':
+                self.state.update(phase='ready',result=json.loads((folder/'result.json').read_text()))
+        except (OSError,ValueError,subprocess.SubprocessError) as exc:
+            if self.state.get('id')==folder.name and self.state.get('phase')!='cancelled':
+                self.state.update(phase='error',error=str(exc))
         finally:self.lock.release()

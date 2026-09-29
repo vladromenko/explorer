@@ -1,0 +1,239 @@
+"""Jetson-only bindings for the accepted, bounded sock delivery scenario.
+
+Task coordinates/calibrations are physical acceptance artifacts, never guessed
+from a detector label. MoveIt plans each actual measured pose to its next goal.
+"""
+import hashlib
+import json
+import math
+import time
+from pathlib import Path
+import numpy as np
+from grasp_verification import verify_lift, verify_place
+from delivery_vision import FeatureObject, reacquire_candidate
+
+
+def load_settings(root, source_sha, calibration_sha):
+    root=Path(root)
+    evidence=json.loads((root/'config/delivery-acceptance.json').read_text())
+    if evidence.get('accepted') is not True or not evidence.get('physical_test_records'):
+        raise ValueError('Нет результатов физической приёмки доставки')
+    if evidence.get('firmware_source_sha256')!=source_sha or evidence.get('controller_calibration_sha256')!=calibration_sha:
+        raise ValueError('Приёмка доставки относится к другой прошивке или калибровке')
+    required={'config/delivery.json','config/handeye-accepted.json','config/gripper-accepted.json',
+              'config/explorer.urdf','config/explorer.srdf'}
+    artifacts=evidence.get('artifacts',{})
+    if not required.issubset(artifacts):raise ValueError('Неполный список артефактов приёмки доставки')
+    for name,digest in dict(artifacts,**evidence['physical_test_records']).items():
+        path=(root/name).resolve()
+        if not path.is_relative_to(root.resolve()) or hashlib.sha256(path.read_bytes()).hexdigest()!=digest:
+            raise ValueError('Артефакт приёмки изменён: '+name)
+    kinds=set()
+    for name in evidence['physical_test_records']:
+        record=json.loads((root/name).read_text())
+        if (record.get('hardware_executed') is not True or record.get('simulation') is True or
+            record.get('outcome')!='passed' or record.get('firmware_source_sha256')!=source_sha or
+            record.get('controller_calibration_sha256')!=calibration_sha):
+            raise ValueError('Файл не подтверждает физическую приёмку текущей машины: '+name)
+        kinds.add(record.get('kind'))
+    if not {'controller','arm','geometry'}.issubset(kinds):
+        raise ValueError('Не завершены физические проверки контроллера, руки и геометрии')
+    config=json.loads((root/'config/delivery.json').read_text())
+    handeye=json.loads((root/'config/handeye-accepted.json').read_text())
+    gripper=json.loads((root/'config/gripper-accepted.json').read_text())
+    if handeye.get('execution_authorized') is not True or handeye.get('measured_joint_positions') is not True:
+        raise ValueError('Нет принятой калибровки камеры по измеренным суставам')
+    if gripper.get('execution_authorized') is not True or gripper.get('aperture_mm_calibrated') is not True:
+        raise ValueError('Нет принятой калибровки захвата')
+    transform=np.asarray(handeye['camera_to_mount_reference'],dtype=float)
+    if transform.shape!=(4,4) or not np.isfinite(transform).all() or not np.allclose(transform[3],[0,0,0,1]):
+        raise ValueError('Неверное преобразование камеры')
+    if handeye.get('reference_mount')!='arm4' or not np.allclose(transform[:3,:3].T@transform[:3,:3],np.eye(3),atol=1e-5) or np.linalg.det(transform[:3,:3])<.999:
+        raise ValueError('Неверная система координат камеры')
+    config.update(camera_to_mount=transform.tolist(),open_deg=gripper['open_deg'],close_deg=gripper['sock_close_deg'])
+    for key in ('transport_deg','search_deg'):
+        value=np.asarray(config[key],dtype=float)
+        if value.shape!=(6,) or not np.isfinite(value).all():raise ValueError('Нет принятой позы '+key)
+    plane=np.asarray(config['floor_plane_base']);quat=np.asarray(config['grasp_quaternion_xyzw'])
+    if plane.shape!=(4,) or not np.isfinite(plane).all() or abs(np.linalg.norm(plane[:3])-1)>.001:
+        raise ValueError('Нет измеренной плоскости пола')
+    if quat.shape!=(4,) or not np.isfinite(quat).all() or abs(np.linalg.norm(quat)-1)>.001:
+        raise ValueError('Нет принятой ориентации захвата')
+    if not isinstance(config['search_places'],list) or not 1<=len(config['search_places'])<=5 or any(not isinstance(v,str) for v in config['search_places']):
+        raise ValueError('Нужны от одного до пяти принятых мест поиска')
+    if not isinstance(config['destination'],str) or not config['destination']:raise ValueError('Нет места доставки')
+    for key,lo,hi in [('open_deg',30,170),('close_deg',30,170),('approach_height_m',.03,.10),
+                      ('lift_height_m',.04,.12),('grasp_tcp_offset_m',-.02,.04),('gripper_linkage_rad',-1.54,0)]:
+        value=config[key]
+        if type(value) not in (float,int) or not math.isfinite(value) or not lo<=value<=hi:
+            raise ValueError('Параметр доставки вне принятого диапазона: '+key)
+    if config['close_deg']<=config['open_deg']:raise ValueError('Неверное направление захвата')
+    zone=config['drop_zone'];center=np.asarray(zone['center_xyz'])
+    if center.shape!=(3,) or not np.isfinite(center).all() or np.linalg.norm(center)>1 or not .03<=zone['radius_m']<=.3 or not .005<=zone['support_tolerance_m']<=.03:
+        raise ValueError('Нет принятой доступной области размещения')
+    return config
+
+
+class DeliveryRobot:
+    def __init__(self, root, missions, arm, trajectory, finder, vision, model):
+        self.root,self.missions,self.arm,self.trajectory=Path(root),missions,arm,trajectory
+        self.finder,self.vision,self.model=finder,vision,model
+        self.mid=None;self.settings=None;self.tracking=False;self.grasp_xyz=None;self.boot=None;self.owner_check=lambda:None;self.search_id=None
+
+    def blockers(self):
+        reasons=[]
+        if self.finder.status().get('busy'):reasons.append('Дождитесь завершения текущего распознавания')
+        if not getattr(self.arm,'native',False):reasons.append('Доставка требует измеренного положения руки')
+        else:
+            status=self.arm.status()
+            if status.get('blocked_by'):reasons.append(status['blocked_by'])
+            if status.get('busy'):reasons.append('Рука уже выполняет движение')
+            if self.trajectory.status().get('busy'):reasons.append('Исполнитель пути руки занят')
+            try:
+                profile=self.arm.profile
+                load_settings(self.root,profile['firmware_source_sha256'],profile['calibration_sha256'])
+            except FileNotFoundError as exc:reasons.append('Не завершена приёмка: '+Path(exc.filename).name)
+            except (OSError,ValueError,KeyError,TypeError) as exc:reasons.append(str(exc))
+        try:self.missions.require_ready()
+        except (OSError,ValueError,KeyError) as exc:reasons.append(str(exc))
+        return list(dict.fromkeys(reasons))
+
+    def begin(self, mid, check):
+        check()
+        self.owner_check=check
+        reasons=self.blockers()
+        if reasons:raise ValueError('; '.join(reasons))
+        self.settings=load_settings(self.root,self.arm.profile['firmware_source_sha256'],self.arm.profile['calibration_sha256'])
+        self.boot=self.arm.reference()['boot_id']
+        self.mid=mid;self.tracking=False
+        self.missions.begin_compound(mid,'delivery',900,check)
+        check()
+        self.hold()
+        self.arm.prepare_geometry()
+        self._move(self.settings['transport_deg'])
+
+    def permit(self, mid):
+        self.owner_check()
+        if self.mid!=mid:raise ValueError('Исполнитель доставки отменён')
+        self.missions.survey_permit(mid)
+        self.arm.reference(expected_boot=self.boot)
+        if self.tracking:self.vision.latest()
+
+    def hold(self):
+        self.owner_check()
+        self.missions.hold_base(self.mid)
+        return dict(base_stationary_confirmed=True)
+
+    def _move(self, goal):
+        self.permit(self.mid);self.hold()
+        if self.arm.status().get('busy') or self.trajectory.status().get('busy'):
+            raise ValueError('Другой исполнитель ещё управляет рукой')
+        actual=self.arm.reference()['servo_deg']
+        if np.allclose(actual,goal,atol=.3,rtol=0):
+            state=self.arm._state();stamp=state.get('monotonic_ns');controller=state.get('controller',{})
+            if (not isinstance(stamp,int) or not 0<=time.monotonic_ns()-stamp<350_000_000
+                    or not state.get('telemetry_fresh') or controller.get('arm_enabled') is not False
+                    or controller.get('arm_cancel_pending') is not False):
+                raise ValueError('Рука ещё исполняет или отменяет предыдущую команду')
+            return dict(attained=True,already_at_measured_goal=True)
+        plan=self.trajectory.plan([float(v) for v in goal]);mid=self.mid
+        started=self.trajectory.start_local(plan['plan_id'],lambda:self.permit(mid))
+        session=started['session'];end=time.monotonic()+70
+        while time.monotonic()<end:
+            self.permit(mid);state=self.trajectory.status()
+            if state.get('session')!=session:raise ValueError('Исполнитель пути заменён')
+            if not state['busy']:
+                if state.get('reached') is not True:raise ValueError('Поза не достигнута: '+str(state.get('reason')))
+                return dict(attained=True,session=session,measured_deg=self.arm.reference()['servo_deg'])
+            time.sleep(.03)
+        self.trajectory.stop();raise ValueError('Истёк срок пути руки')
+
+    def _xyz(self, point, grip):
+        current=self.arm.reference()['servo_deg']
+        solution=self.model().ik(point,current[:5],self.settings['gripper_linkage_rad'],self.settings['grasp_quaternion_xyzw'])
+        if not solution.get('solved') or solution.get('collision'):raise ValueError('Нет доступного положения захвата без столкновения')
+        return self._move(solution['servo_deg']+[grip])
+
+    def find(self):
+        places={p['name']:p for p in self.missions.places()}
+        for name in self.settings['search_places']:
+            self.permit(self.mid)
+            p=places.get(name)
+            if not p or not p['compatible_map']:raise ValueError('Место поиска не принадлежит текущей карте: '+name)
+            self.missions.go(self.mid,p['x'],p['y'],p['yaw']);self.hold()
+            self._move(self.settings['search_deg'])
+            arrived=time.time();deadline=time.monotonic()+2
+            while float(self.vision.snapshot()['stamp'])<arrived:
+                self.permit(self.mid)
+                if time.monotonic()>deadline:raise ValueError('Нет кадра после достижения поисковой позы')
+                time.sleep(.03)
+            before=self.arm.reference()['position_rad'];base=self.missions.maps.pose()
+            request=self.finder.start('sock');self.search_id=request['id'];end=time.monotonic()+105
+            while self.finder.status().get('busy') and time.monotonic()<end:
+                self.permit(self.mid);time.sleep(.1)
+            found=self.finder.status()
+            if found.get('id')!=request['id'] or found.get('phase')!='ready':
+                raise ValueError('Поиск предмета не завершился: '+str(found.get('error','timeout')))
+            objects=[o for o in found['result']['objects'] if o.get('position') and o.get('confidence',0)>=.35]
+            if len(objects)>1:raise ValueError('Несколько похожих предметов: выбор для принятого сценария неоднозначен')
+            if objects:
+                current=self.arm.reference()['position_rad'];pose=self.missions.maps.pose()
+                if np.max(np.abs(np.asarray(before)-current))>math.radians(.15) or max(abs(pose[k]-base[k]) for k in ('x','y','yaw'))>.003:
+                    raise ValueError('Камера сместилась во время распознавания')
+                with np.load(self.root/'data/object-searches'/request['id']/'rgbd.npz',allow_pickle=False) as f:initial=dict(f)
+                fresh=self.vision.snapshot()
+                candidate=reacquire_candidate(initial,fresh,objects[0]['bbox'])
+                tracker=FeatureObject(fresh,candidate['bbox'])
+                self.vision.start_tracker(tracker,self.settings)
+                end=time.monotonic()+2
+                while not self.vision.frames and time.monotonic()<end:time.sleep(.03)
+                target=self.vision.latest();self.tracking=True
+                return dict(place=name,target=target,semantic_label='sock',semantic_identity_verified=False,reacquisition=candidate)
+            self._move(self.settings['transport_deg'])
+        raise ValueError('В принятых местах не найден доступный носок')
+
+    def approach(self, target):
+        # The accepted bounded release searches saved base poses with a reachable
+        # foreground object. It never drives blind using optical-frame coordinates.
+        self.hold();point=np.asarray(self.vision.latest()['object_xyz'])
+        point[2]+=self.settings['grasp_tcp_offset_m']
+        above=point+[0,0,self.settings['approach_height_m']]
+        solved=self.model().ik(above,self.arm.reference()['servo_deg'][:5],self.settings['gripper_linkage_rad'],self.settings['grasp_quaternion_xyzw'])
+        if not solved.get('solved') or solved.get('collision'):raise ValueError('Предмет недоступен из принятой точки поиска')
+        self.grasp_xyz=point.tolist()
+        return dict(reachable=True,base_stationary_confirmed=True,grasp_xyz=self.grasp_xyz)
+
+    def reobserve(self, target):
+        current=self.vision.latest()
+        if np.linalg.norm(np.asarray(current['object_xyz'])-target['target']['object_xyz'])>.015:
+            raise ValueError('Предмет сдвинулся до захвата')
+        return current
+    def pregrasp(self, target):return self._xyz((np.asarray(self.grasp_xyz)+[0,0,self.settings['approach_height_m']]).tolist(),self.settings['open_deg'])
+    def observe(self):return self.vision.observe(lambda:self.permit(self.mid))
+    def grasp(self, target):
+        self._xyz(self.grasp_xyz,self.settings['open_deg'])
+        return self._xyz(self.grasp_xyz,self.settings['close_deg'])
+    def lift(self):return self._xyz((np.asarray(self.grasp_xyz)+[0,0,self.settings['lift_height_m']]).tolist(),self.settings['close_deg'])
+    def verify_hold(self, before):return verify_lift(before,self.observe(),True)
+    def transport(self):return self._move(self.settings['transport_deg'][:5]+[self.settings['close_deg']])
+    def carry(self):
+        places={p['name']:p for p in self.missions.places()};p=places.get(self.settings['destination'])
+        if not p or not p['compatible_map']:raise ValueError('Место доставки относится к другой карте')
+        # Navigation heartbeat also checks tracking through the compound guard.
+        return self.missions.go(self.mid,p['x'],p['y'],p['yaw'])
+    def support(self):return self._xyz(self.settings['drop_zone']['center_xyz'],self.settings['close_deg'])
+    def release(self):return self._xyz(self.settings['drop_zone']['center_xyz'],self.settings['open_deg'])
+    def withdraw(self):return self._xyz((np.asarray(self.settings['drop_zone']['center_xyz'])+[0,0,.08]).tolist(),self.settings['open_deg'])
+    def verify_place(self, before):return verify_place(before,self.observe(),self.settings['drop_zone'],True)
+    def stop(self, mid):
+        if self.mid==mid:
+            self.tracking=False;self.vision.stop();self.trajectory.stop()
+            self.missions.finish(mid,'cancelled',dict(reason='Delivery cancelled'));self.mid=None
+            if self.search_id:self.finder.cancel(self.search_id)
+            self.search_id=None
+    def finish(self, mid, success):
+        if self.mid==mid:
+            self.tracking=False;self.vision.stop();self.trajectory.stop()
+            self.missions.finish(mid,'succeeded' if success else 'failed',dict(delivery_verified=success));self.mid=None
+            if self.search_id:self.finder.cancel(self.search_id)
+            self.search_id=None

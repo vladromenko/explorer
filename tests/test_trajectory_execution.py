@@ -5,6 +5,24 @@ from trajectory_execution import command_steps,gripper_steps,TrajectoryExecution
 
 HOME=[90,125,3,0,90,30]
 class TrajectoryTests(unittest.TestCase):
+    def test_native_plan_keeps_complete_moveit_path_and_streams_once(self):
+        with tempfile.TemporaryDirectory() as root,patch('trajectory_execution.motion_budget'):
+            (Path(root)/'data').mkdir()
+            p=self.runner(root);p.manual.native=True;p.teaching.pose.return_value=HOME
+            path=dict(names=['arm'+str(i)+'_Joint' for i in range(1,6)],
+                times=[0.,.4,1.],positions=[[0]*5,[.01]*5,[.02]*5],
+                velocities=[[0]*5,[.02]*5,[0]*5],accelerations=[[0]*5]*3)
+            p.planner.return_value.plan.return_value.update(joint_trajectory=path)
+            with patch('trajectory_execution.command_steps',side_effect=AssertionError('path was rounded')):
+                p.plan([92,125,3,0,90])
+            self.assertIs(p.pending['joint_trajectory'],path)
+            p.manual.move.return_value={'attained':True}
+            p.lock.acquire();p.teaching.lock.acquire();p.session='n'*32;p.revision=0
+            p.execution_mode='operator_finite';p.deadline=time.monotonic()+5
+            p.run(p.pending)
+            p.manual.move.assert_called_once()
+            self.assertIs(p.manual.move.call_args.kwargs['trajectory'],path)
+            self.assertTrue(p.state['reached'])
     def test_full_gripper_closure_is_finite_not_cut_off_at_30_steps(self):
         steps=gripper_steps(HOME,160)
         self.assertEqual(len(steps),65);self.assertEqual(steps[-1],HOME[:5]+[160])
