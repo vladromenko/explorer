@@ -26,6 +26,7 @@ static uint32_t max_control_us;
 static uint8_t results[8][20];
 static volatile uint32_t result_write,result_read,result_drops;
 static uint32_t sensor_generation_seen;
+static uint32_t arm_write_fault_seen;
 static uint64_t rgb_generation;
 
 /* Logical FL FR RL RR -> vendor M1 M3 M2 M4. */
@@ -47,6 +48,19 @@ static void snapshot(ec_controller_t *copy) {
     uint32_t saved=__get_PRIMASK(); __disable_irq();
     *copy=controller; __set_PRIMASK(saved);
 }
+bool servo_bus_commit(const ec_controller_t *copy,const uint8_t *frame,uint16_t length,bool cancel) {
+    uint32_t saved=__get_PRIMASK(); __disable_irq();
+    uint64_t now=board_time_us();
+    /* Check validity through the estimated end of a 115200 8N1 frame. A
+     * higher-priority stop during TX is handled by the next measured hold. */
+    uint64_t end=now+servo_write_budget_us(length);
+    bool allowed=ec_arm_commit_allowed(&controller,copy,end,cancel);
+    if(!cancel && (emergency || arm_write_fault_seen!=servo_write_fault_generation ||
+                  now<main_alive_us || now-main_alive_us>30000u ||
+                  now<control_alive_us || now-control_alive_us>30000u)) { allowed=false; }
+    bool sent=allowed && board_send(PORT_ARM,frame,length);
+    __set_PRIMASK(saved); return sent;
+}
 static void result(const ew_frame_t *f,ex_result_t r,uint64_t now) {
     uint32_t next=(result_write+1u)%8u;
     if(next==result_read) { ++result_drops; }
@@ -62,6 +76,9 @@ void board_control_interrupt(void) {
     uint64_t now=board_time_us();
     if(emergency || now-main_alive_us>30000) {
         ex_base_estop(&controller.base); command_read=command_write; emergency=0;
+    }
+    if(arm_write_fault_seen!=servo_write_fault_generation) {
+        ec_cancel_arm(&controller); arm_write_fault_seen=servo_write_fault_generation;
     }
     if(sensor_generation_seen!=servo_measure_generation) {
         /* Main is preempted here; the sample set is committed using the brief
@@ -152,6 +169,7 @@ static void hello(const ew_frame_t *request) {
 int main(void) {
     board_init();
     const uint64_t boot=board_boot_nonce();
+    servo_bus_init();
     board_sensor_init();
     if(ec_init(&controller,boot,board_time_us())!=EX_OK) { Error_Handler(); }
     previous_encoder[0]=(uint16_t)TIM3->CNT; previous_encoder[1]=(uint16_t)TIM5->CNT;
@@ -162,6 +180,7 @@ int main(void) {
     for(;;) {
         uint64_t now=board_time_us();
         uint32_t saved=__get_PRIMASK(); __disable_irq(); main_alive_us=now; __set_PRIMASK(saved);
+        board_io_poll();
         if(host_error!=board_uart_errors[PORT_HOST] || host_overrun!=board_rx_overruns[PORT_HOST]) {
             emergency=1; host_error=board_uart_errors[PORT_HOST]; host_overrun=board_rx_overruns[PORT_HOST];
             memset(&parser,0,sizeof(parser));

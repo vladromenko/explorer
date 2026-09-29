@@ -6,5 +6,17 @@ extern servo_measurement_t servo_measurements[6];
 extern volatile uint32_t servo_measure_generation;
 extern uint64_t servo_sent_generation;
 extern volatile uint32_t servo_cancel_completed_generation;
+extern volatile uint32_t servo_write_fault_generation;
+/* Baud is confirmed by USART3 configuration; processing quiet time still needs
+ * physical acceptance. Ten UART bits include start and stop for each byte. */
+#define SERVO_BAUD 115200u
+#define SERVO_WRITE_QUIET_US UINT64_C(5000)
+static inline uint64_t servo_write_budget_us(uint16_t length) {
+    return ((uint64_t)length*UINT64_C(10000000)+SERVO_BAUD-1u)/SERVO_BAUD+SERVO_WRITE_QUIET_US;
+}
+/* Initialize once before control interrupts; no UART or actuator commands. */
+void servo_bus_init(void);
+/* Main owns live controller state and performs the final atomic validation. */
+bool servo_bus_commit(const ec_controller_t *snapshot,const uint8_t *frame,uint16_t length,bool cancel);
 void servo_bus_poll(const ec_controller_t *snapshot);
 #endif

@@ -138,7 +138,48 @@ static void calibration_atomicity_and_zero_runtime(void) {
     assert(ec_dispatch(&c,&f,0)==EX_OK && c.rgb_generation==1);
     f=request(EW_HOLD,1,4,0); assert(ec_dispatch(&c,&f,0)==EX_OK && c.rgb_generation==1);
 }
+static void arm_transmit_authorization(void) {
+    ec_controller_t c; assert(ec_init(&c,123,0)==EX_OK);
+    ew_frame_t f=request(EW_OPEN,1,1,0); assert(ec_dispatch(&c,&f,0)==EX_OK);
+    f=calibration(2); assert(ec_dispatch(&c,&f,0)==EX_OK);
+    for(unsigned i=0;i<6;++i) { ec_measure(&c,i,2000,true,0); }
+    f=request(EW_ARM_ENABLE,1,3,0); assert(ec_dispatch(&c,&f,0)==EX_OK);
+    f=arm_request(&c,EW_ARM,1,4,2001); assert(ec_dispatch(&c,&f,0)==EX_OK);
+    ec_controller_t copy=c;
+    assert(ec_arm_commit_allowed(&c,&copy,1,false));
+    assert(!ec_arm_commit_allowed(&c,&copy,200000,false));
+    c.measured_valid[5]=false;
+    assert(!ec_arm_commit_allowed(&c,&copy,1,false));
+    c.measured_valid[5]=true;
+    ++c.arm_generation;
+    assert(!ec_arm_commit_allowed(&c,&copy,1,false));
+    copy=c; ++copy.base.session_id;
+    assert(!ec_arm_commit_allowed(&c,&copy,1,false));
+    copy=c; ++copy.base.boot_id;
+    assert(!ec_arm_commit_allowed(&c,&copy,1,false));
+    copy=c;
+    /* Base and arm may coexist in the MCU; Jetson owns collision sequencing. */
+    f=request(EW_BASE,1,5,0); f.length=60; ew_putf32(f.payload+40,.1f);
+    assert(ec_dispatch(&c,&f,0)==EX_OK);
+    assert(ec_arm_commit_allowed(&c,&copy,1,false));
+    c.base.expires_us=10;
+    assert(!ec_arm_commit_allowed(&c,&copy,10,false));
+    c.base.finite_end_us=5;
+    assert(ec_arm_commit_allowed(&c,&copy,10,false));
+    f=(ew_frame_t){.type=EW_ESTOP}; assert(ec_dispatch(&c,&f,1)==EX_OK);
+    assert(!ec_arm_commit_allowed(&c,&copy,1,false));
+    assert(!ec_arm_commit_allowed(&c,&copy,1,true));
+    copy=c;
+    assert(ec_arm_commit_allowed(&c,&copy,300000,true));
+    ++c.arm_cancel_generation;
+    assert(!ec_arm_commit_allowed(&c,&copy,1,true));
+    f=request(EW_CLEAR,2,1,1); assert(ec_dispatch(&c,&f,1)==EX_OK);
+    /* A clear cannot make a pending measured hold eligible for new calibration. */
+    c.base.mode=EX_BASE_ACTIVE; c.base.session_id=1;
+    f=calibration(6); assert(ec_dispatch(&c,&f,1)==EX_NOT_READY);
+}
 int main(void) {
     wire(); sessions(); arm_generations_and_recovery(); calibration_atomicity_and_zero_runtime();
+    arm_transmit_authorization();
     puts("wire fuzz, deadlines, replay, atomic calibration, bounded recovery and independent generations: PASS");
 }

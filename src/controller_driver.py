@@ -191,7 +191,7 @@ class ControllerDriver(Node):
             self.session.synchronize(clock, self.state.get('highest_session', 0))
             self.source_sha256 = source
             self.identity = dict(boot=boot, device=device, revision=revision, flash_kib=flash_kib,
-                                 source_sha256=source, reset_flags=struct.unpack_from('<I', payload, 84)[0])
+                                 uid=payload[36:48].hex(), source_sha256=source, reset_flags=struct.unpack_from('<I', payload, 84)[0])
             self.fault = None
         elif self.session.clock is not None:
             if kind == Kind.SENSOR_DIAGNOSTICS:
@@ -200,6 +200,7 @@ class ControllerDriver(Node):
                 self.sensor_health['startup'] = dict(received_ns=now,
                     imu_stage=payload[8], imu_id=payload[9], gyro_config=payload[10],
                     accel_config=payload[11], spi_status=payload[12],
+                    imu_ready=bool(payload[13]), mag_ready=bool(payload[14]), battery_ready=bool(payload[15]),
                     lidar=[dict(zip(('rx_bytes','valid_packets','parser_errors','overruns','uart_errors','start_attempts'),
                         struct.unpack_from('<6I', payload, 16+24*i))) for i in range(2)])
             elif kind == Kind.STATUS:
@@ -250,12 +251,14 @@ class ControllerDriver(Node):
                 if error == 0 and 0 < raw < 4096 and math.isfinite(volts) and 0 < volts < 20:
                     self.battery_pub.publish(Float32(data=volts))
             elif kind == Kind.IMU:
+                if len(payload) != 44:
+                    raise ValueError('bad IMU record')
                 self.sensor_health['imu'] = dict(error=payload[8], mag_error=payload[9], received_ns=now)
                 self.publish_imu(payload)
             elif kind in (Kind.LIDAR0, Kind.LIDAR1):
                 index = int(kind)-int(Kind.LIDAR0)
-                self.sensor_health['lidar'+str(index)] = dict(received_ns=now)
                 complete = self.scans[index].packet(payload)
+                self.sensor_health['lidar'+str(index)] = dict(received_ns=now)
                 if complete is not None:
                     self.publish_scan(index, complete)
 

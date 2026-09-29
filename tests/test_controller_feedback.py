@@ -1,12 +1,22 @@
 import math
 import struct
 import unittest
-from controller_feedback import ArmFeedback, Calibration, ScanAssembler, vendor_calibration
+from controller_feedback import ArmFeedback, Calibration, ScanAssembler, vendor_calibration, decode_status
 from controller_protocol import ClockMapping
 from arm_feedback import decode_position, describe
 
 
 class ControllerFeedbackTests(unittest.TestCase):
+    def test_uart_fault_counters_are_visible_without_changing_status_layout(self):
+        packet=bytearray(216)
+        for i,motor in enumerate((1,3,2,4)):
+            struct.pack_into('<I',packet,52+26*i+22,motor)
+        struct.pack_into('<III',packet,204,7,9,0)
+        state=decode_status(packet)
+        self.assertEqual(state['diagnostics']['host_rx_overruns'],7)
+        self.assertEqual(state['diagnostics']['host_uart_errors'],9)
+        self.assertFalse(state['encoder_measurement_valid'])
+
     def test_every_wire_target_uses_wire_calibration_and_stays_in_limits(self):
         for c in vendor_calibration():
             wire = struct.unpack('<4H4fHHI', c.payload())

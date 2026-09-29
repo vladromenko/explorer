@@ -7,6 +7,8 @@ from pathlib import Path
 import shutil
 import subprocess
 
+from preflight import HOST_TEST_EXECUTABLES, source_sha256
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -39,6 +41,7 @@ def main():
             raise SystemExit(result.returncode)
 
     for target in (('host', 'stm32') if args.target == 'all' else (args.target,)):
+        source_before = source_sha256(ROOT)
         build = args.output_root.resolve() / ('build-' + target)
         build.mkdir(parents=True, exist_ok=True)
         with (build / 'build.log').open('w') as log:
@@ -50,7 +53,17 @@ def main():
             run([cmake, '--build', str(build), '--clean-first', '--parallel', '4'], log)
             if target == 'host':
                 run([str(Path(cmake).with_name('ctest')), '--test-dir', str(build), '--output-on-failure'], log)
+                if source_sha256(ROOT) != source_before:
+                    raise SystemExit('Sources changed during host build/test; rebuild after edits stop')
+                (build / 'build-result.json').write_text(json.dumps(dict(
+                    status='host_built_and_tested', source_sha256=source_before,
+                    source_root=str(ROOT.resolve()), tests=list(HOST_TEST_EXECUTABLES),
+                    test_executables={name: hashlib.sha256((build/name).read_bytes()).hexdigest()
+                                      for name in HOST_TEST_EXECUTABLES.values()},
+                    flash_permitted=False), indent=2) + '\n')
             else:
+                if source_sha256(ROOT) != source_before:
+                    raise SystemExit('Sources changed during STM32 build; rebuild after edits stop')
                 artifacts = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
                              for p in build.glob('explorer.*') if p.suffix in ('.elf', '.map', '.bin', '.hex')}
                 (build / 'SHA256SUMS').write_text(''.join(f'{h}  {n}\n' for n, h in sorted(artifacts.items())))

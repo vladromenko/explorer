@@ -17,6 +17,7 @@ static void cancel_arm(ec_controller_t *c) {
     }
     c->arm_enabled=false; c->arm_pending=false;
 }
+void ec_cancel_arm(ec_controller_t *c) { if(c) { cancel_arm(c); } }
 static bool measured(const ec_controller_t *c,uint64_t now) {
     for(unsigned i=0;i<6;++i) {
         if(!c->measured_valid[i] || now<c->measured_us[i] ||
@@ -117,7 +118,7 @@ static ex_result_t dispatch(ec_controller_t *c,const ew_frame_t *f,uint64_t now)
         /* Align software target only. No boot/enable motion or torque write. */
         r=EX_OK;
     } else if(f->type==EW_CALIBRATION && f->length==232) {
-        if(c->arm_enabled || c->arm_pending) { return EX_NOT_READY; }
+        if(c->arm_enabled || c->arm_pending || c->arm_cancel) { return EX_NOT_READY; }
         ex_joint_calibration_t cal[6]; uint16_t recovery_lo[6],recovery_hi[6];
         for(unsigned i=0;i<6;++i) {
             const uint8_t *v=p+40+32*i;
@@ -196,4 +197,24 @@ void ec_measure(ec_controller_t *c,unsigned i,uint16_t raw,bool valid,uint64_t n
         c->measured_valid[i]=valid;
         if(valid) { c->measured_raw[i]=raw; c->measured_us[i]=now; }
     }
+}
+bool ec_arm_commit_allowed(const ec_controller_t *live,const ec_controller_t *copy,
+                           uint64_t now,bool cancel) {
+    if(!live || !copy || live->base.boot_id!=copy->base.boot_id ||
+       live->base.session_id!=copy->base.session_id) { return false; }
+    if(cancel) {
+        /* A fault may stop normal commands but must not prevent measured hold.
+         * Partial holds remain useful when one drive has stopped responding. */
+        return live->arm_cancel && copy->arm_cancel &&
+            live->arm_cancel_generation==copy->arm_cancel_generation;
+    }
+    /* The next tick will latch a lost base lease. Do not start another arm
+     * frame in the short interval before that interrupt. A finite command
+     * ending before its lease expires is a normal hold, not this fault. */
+    if(live->base.command_present && now>=live->base.expires_us &&
+       (!live->base.finite_end_us || live->base.finite_end_us>live->base.expires_us)) { return false; }
+    return live->base.mode==EX_BASE_ACTIVE && live->arm_enabled && live->arm_pending &&
+        !live->arm_cancel && copy->arm_enabled && copy->arm_pending && !copy->arm_cancel &&
+        live->arm_generation==copy->arm_generation && now<live->arm_expires_us &&
+        measured(live,now);
 }

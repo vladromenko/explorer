@@ -7,6 +7,9 @@ enum board_port { PORT_HOST, PORT_ARM, PORT_LIDAR0, PORT_LIDAR1, PORT_DEBUG, POR
 extern UART_HandleTypeDef board_uart[PORT_COUNT];
 extern volatile uint32_t board_rx_overruns[PORT_COUNT];
 extern volatile uint32_t board_uart_errors[PORT_COUNT];
+extern volatile uint32_t board_tx_completed[PORT_COUNT];
+void board_io_poll(void);
+HAL_StatusTypeDef board_uart_receive_start(unsigned port);
 void board_init(void);
 uint64_t board_time_us(void);
 uint64_t board_boot_nonce(void);

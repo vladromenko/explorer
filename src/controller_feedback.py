@@ -155,7 +155,9 @@ def decode_status(payload):
                 arm_enabled=bool(arm_enabled), arm_cancel_pending=bool(arm_cancel),
                 wheels=wheels, velocity=list(velocity),
                 encoder_measurement_valid=bool(validity),
-                diagnostics=dict(zip(names, struct.unpack_from('<5I', payload, 168))),
+                diagnostics=dict(zip(names, struct.unpack_from('<5I', payload, 168)),
+                    host_rx_overruns=struct.unpack_from('<I', payload, 204)[0],
+                    host_uart_errors=struct.unpack_from('<I', payload, 208)[0]),
                 arm_sent_generation=struct.unpack_from('<Q', payload, 188)[0],
                 highest_session=struct.unpack_from('<Q', payload, 196)[0])
 

@@ -11,12 +11,6 @@
  * Only RGB uses DMA, from a separate DMA-accessible D2 SRAM buffer. D-cache
  * remains disabled; no DMA operation ever references DTCM.
  */
-#define RX_SIZE 4096u
-#define TX_SIZE 2048u
-UART_HandleTypeDef board_uart[PORT_COUNT];
-volatile uint32_t board_rx_overruns[PORT_COUNT], board_uart_errors[PORT_COUNT];
-static uint8_t rx_byte[PORT_COUNT],rx[PORT_COUNT][RX_SIZE],tx[PORT_COUNT][TX_SIZE];
-static volatile uint16_t rx_write[PORT_COUNT],rx_read[PORT_COUNT];
 static TIM_HandleTypeDef tick_timer;
 static IWDG_HandleTypeDef watchdog;
 static SPI_HandleTypeDef rgb_spi;
@@ -44,7 +38,7 @@ static void uart_init(unsigned index,USART_TypeDef *instance,uint32_t baud,IRQn_
     check(HAL_UARTEx_SetTxFifoThreshold(u,UART_TXFIFO_THRESHOLD_1_8));
     check(HAL_UARTEx_EnableFifoMode(u));
     HAL_NVIC_SetPriority(irq,4,0); HAL_NVIC_EnableIRQ(irq);
-    check(HAL_UART_Receive_IT(u,&rx_byte[index],1));
+    check(board_uart_receive_start(index));
 }
 void HAL_UART_MspInit(UART_HandleTypeDef *u) { (void)u; /* Configured together below. */ }
 void HAL_MspInit(void) {
@@ -186,30 +180,6 @@ void board_start_control(void) {
     check(HAL_TIM_Base_Start_IT(&tick_timer));
 }
 void board_watchdog_feed(void) { check(HAL_IWDG_Refresh(&watchdog)); }
-bool board_receive(unsigned i,uint8_t *value) {
-    if(i>=PORT_COUNT || !value || rx_read[i]==rx_write[i]) { return false; }
-    *value=rx[i][rx_read[i]]; __DMB(); rx_read[i]=(uint16_t)((rx_read[i]+1u)%RX_SIZE); return true;
-}
-bool board_send(unsigned i,const uint8_t *data,uint16_t n) {
-    if(i>=PORT_COUNT || n>TX_SIZE || board_uart[i].gState!=HAL_UART_STATE_READY) { return false; }
-    memcpy(tx[i],data,n); return HAL_UART_Transmit_IT(&board_uart[i],tx[i],n)==HAL_OK;
-}
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *u) {
-    unsigned i=(unsigned)(u-board_uart);
-    if(i<PORT_COUNT) {
-        uint16_t next=(uint16_t)((rx_write[i]+1u)%RX_SIZE);
-        if(next==rx_read[i]) { ++board_rx_overruns[i]; }
-        else { rx[i][rx_write[i]]=rx_byte[i]; __DMB(); rx_write[i]=next; }
-        if(HAL_UART_Receive_IT(u,&rx_byte[i],1)!=HAL_OK) { ++board_uart_errors[i]; }
-    }
-}
-void HAL_UART_ErrorCallback(UART_HandleTypeDef *u) {
-    unsigned i=(unsigned)(u-board_uart);
-    if(i<PORT_COUNT) {
-        ++board_uart_errors[i]; __HAL_UART_CLEAR_OREFLAG(u);
-        (void)HAL_UART_Receive_IT(u,&rx_byte[i],1);
-    }
-}
 void TIM7_IRQHandler(void) { if(TIM7->SR&TIM_SR_UIF) { TIM7->SR=0; ++time_high; } }
 void TIM6_DAC_IRQHandler(void) {
     if(TIM6->SR&TIM_SR_UIF) { TIM6->SR=0; board_control_interrupt(); }
