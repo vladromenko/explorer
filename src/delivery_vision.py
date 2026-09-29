@@ -13,27 +13,47 @@ import cv2
 import numpy as np
 from surface_foreground import locate
 
+BRACKET_WAIT_SECONDS=.10
+MAX_PENDING_FRAMES=6
+
+
+class JointSamplePending(ValueError):
+    """An exposure has a left sample but still awaits its measured right sample."""
+
 
 class JointHistory:
     def __init__(self):
-        self.lock=threading.Lock();self.boot=None;self.samples=[deque(maxlen=512) for _ in range(6)]
+        self.lock=threading.Lock();self.boot=None;self.samples=[deque(maxlen=512) for _ in range(6)];self.invalid=[False]*6
     def add(self, sample):
         with self.lock:
             if sample['boot_id']!=self.boot:
-                self.boot=sample['boot_id'];self.samples=[deque(maxlen=512) for _ in range(6)]
+                self.boot=sample['boot_id'];self.samples=[deque(maxlen=512) for _ in range(6)];self.invalid=[False]*6
             index=sample['joint']-1
             if not 0<=index<6:raise ValueError('Invalid servo ID')
-            if sample.get('position_valid') and sample.get('error')==0 and sample.get('device_error')==0:
-                self.samples[index].append((sample['acquired_monotonic_ns']/1e9,sample['physical_deg']))
-            else:self.samples[index].clear()
+            if sample.get('position_valid') is True and sample.get('error')==0 and sample.get('device_error')==0:
+                stamp=sample['acquired_monotonic_ns']/1e9;angle=sample['physical_deg']
+                if not math.isfinite(stamp) or not math.isfinite(angle):
+                    self.invalid[index]=True;raise ValueError('Invalid joint sample geometry')
+                if self.samples[index] and stamp<=self.samples[index][-1][0]:
+                    self.invalid[index]=True;raise ValueError('Joint sample time did not advance')
+                self.invalid[index]=False;self.samples[index].append((stamp,angle))
+            else:self.samples[index].clear();self.invalid[index]=True
     def at(self, when, boot):
         with self.lock:
+            if self.boot is None:raise JointSamplePending('Waiting for first measured joint samples')
             if boot!=self.boot:raise ValueError('Camera pose belongs to another controller boot')
+            if not math.isfinite(when):raise ValueError('Invalid exposure time')
             result=[]
-            for samples in self.samples:
+            pending=False
+            for index,samples in enumerate(self.samples):
+                if self.invalid[index]:raise ValueError('Joint feedback reported an actual error')
                 pairs=[(a,b) for a,b in zip(samples,list(samples)[1:]) if a[0]<=when<=b[0] and 0<b[0]-a[0]<=.075]
-                if not pairs:raise ValueError('No measured joint samples bracketing camera exposure')
-                a,b=pairs[-1];u=(when-a[0])/(b[0]-a[0]);result.append(a[1]+u*(b[1]-a[1]))
+                if pairs:
+                    a,b=pairs[-1];u=(when-a[0])/(b[0]-a[0]);result.append(a[1]+u*(b[1]-a[1]))
+                elif not samples or samples[-1][0]<=when:
+                    pending=True
+                else:raise ValueError('No measured joint samples bracketing camera exposure')
+            if pending:raise JointSamplePending('Waiting for measured joint sample after camera exposure')
             return result
 
 
@@ -118,6 +138,7 @@ class MeasuredVision:
         self.root,self.arm,self.model,self.maps=root,arm,model,maps
         self.history=JointHistory();self.lock=threading.RLock();self.track=None;self.frames=deque(maxlen=400)
         self.error=None;self.last_stamp=0.;self.settings=None;self.generation=0
+        self.pending=deque();self.enqueued_stamp=0.;self.waiting_for_joints=None
         def sample(message):
             try:self.history.add(json.loads(message.data))
             except (KeyError,ValueError,TypeError):pass
@@ -141,35 +162,69 @@ class MeasuredVision:
         with self.lock:
             self.generation+=1;self.settings=settings;self.track=FeatureObject(sample,bbox)
             self.frames.clear();self.error=None;self.last_stamp=float(sample['stamp'])
+            self.pending.clear();self.enqueued_stamp=self.last_stamp;self.waiting_for_joints=None
         return self.track.object_id
     def start_tracker(self, tracker, settings):
         with self.lock:
             self.generation+=1;self.settings=settings;self.track=tracker
             self.frames.clear();self.error=None;self.last_stamp=tracker.stamp
+            self.pending.clear();self.enqueued_stamp=self.last_stamp;self.waiting_for_joints=None
     def stop(self):
-        with self.lock:self.generation+=1;self.track=None
+        with self.lock:self.generation+=1;self.track=None;self.pending.clear();self.waiting_for_joints=None
+
+    def process_snapshot(self, sample, now=None):
+        """Retry the same exposure for at most 100 ms; never extrapolate a pose."""
+        clock=time.monotonic if now is None else lambda:now
+        now=clock()
+        with self.lock:
+            track,settings,generation=self.track,self.settings,self.generation
+            if track is None or self.error is not None:return 0
+            stamp=float(sample['stamp'])
+            if stamp>self.enqueued_stamp:
+                if len(self.pending)>=MAX_PENDING_FRAMES:
+                    self.error='Measured camera pose queue overflow';self.pending.clear()
+                    raise ValueError(self.error)
+                self.pending.append((sample,now+BRACKET_WAIT_SECONDS));self.enqueued_stamp=stamp
+        processed=0
+        for _ in range(MAX_PENDING_FRAMES):
+            with self.lock:
+                if track is not self.track or generation!=self.generation or not self.pending:return processed
+                queued,deadline=self.pending[0]
+            try:
+                if clock()>=deadline:raise ValueError('Measured joint bracket deadline expired')
+                transform,tcp,angles=self.geometry(queued,settings)
+                if clock()>=deadline:raise ValueError('Measured joint bracket deadline expired')
+                with self.lock:
+                    if track is not self.track or generation!=self.generation:return processed
+                    observation=track.update(queued)
+                    obj=(transform@np.r_[observation['point_camera'],1])[:3]
+                    plane=np.asarray(settings['floor_plane_base']);pose=self.maps.pose()
+                    value=dict(at=float(queued['stamp']),object_id=observation['object_id'],confidence=observation['association_fraction'],
+                        confidence_kind='feature_retention_not_semantic_probability',
+                        association_fraction=observation['association_fraction'],identity_association_verified=True,
+                        depth_validated=True,camera_pose_measured=True,frame='base_footprint',
+                        object_xyz=obj.tolist(),tcp_xyz=tcp.tolist(),base_xyyaw=[pose[k] for k in ('x','y','yaw')],
+                        floor_clearance_m=float(obj@plane[:3]+plane[3]),
+                        gripper_open_measured=abs(angles[5]-settings['open_deg'])<.5)
+                    self.frames.append(value);self.last_stamp=float(queued['stamp']);self.pending.popleft()
+                    self.waiting_for_joints=None;processed+=1
+            except JointSamplePending as exc:
+                with self.lock:
+                    if track is self.track and generation==self.generation:self.waiting_for_joints=str(exc)
+                return processed
+            except (OSError,ValueError,KeyError,TypeError,cv2.error) as exc:
+                with self.lock:
+                    if track is self.track and generation==self.generation:
+                        self.error=str(exc);self.pending.clear();self.waiting_for_joints=None
+                raise
+        return processed
+
     def worker(self):
         while True:
             try:
                 with self.lock:track=self.track;settings=self.settings;generation=self.generation
                 if track is not None:
-                    sample=self.snapshot();stamp=float(sample['stamp'])
-                    if stamp>self.last_stamp:
-                        transform,tcp,angles=self.geometry(sample,settings)
-                        with self.lock:
-                            if track is self.track and generation==self.generation:
-                                observation=track.update(sample)
-                                obj=(transform@np.r_[observation['point_camera'],1])[:3]
-                                plane=np.asarray(settings['floor_plane_base'])
-                                pose=self.maps.pose()
-                                value=dict(at=stamp,object_id=observation['object_id'],confidence=observation['association_fraction'],
-                                    confidence_kind='feature_retention_not_semantic_probability',
-                                    association_fraction=observation['association_fraction'],identity_association_verified=True,
-                                    depth_validated=True,camera_pose_measured=True,frame='base_footprint',
-                                    object_xyz=obj.tolist(),tcp_xyz=tcp.tolist(),base_xyyaw=[pose[k] for k in ('x','y','yaw')],
-                                    floor_clearance_m=float(obj@plane[:3]+plane[3]),
-                                    gripper_open_measured=abs(angles[5]-settings['open_deg'])<.5)
-                                self.frames.append(value);self.last_stamp=stamp
+                    self.process_snapshot(self.snapshot())
             except (OSError,ValueError,KeyError,TypeError,cv2.error) as exc:
                 with self.lock:
                     if track is self.track and generation==self.generation and track is not None:self.error=str(exc)

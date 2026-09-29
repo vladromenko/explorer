@@ -610,6 +610,11 @@ delivery_robot=DeliveryRobot(ROOT,missions,manual_arm,trajectory_execution,objec
 delivery_task=DeliveryTask(ROOT,delivery_robot)
 missions.compound_guard=delivery_robot.permit
 
+from robot_readiness import status as robot_readiness
+
+@app.get('/api/readiness')
+def readiness_status():return robot_readiness(ROOT,delivery_task.status())
+
 @app.get('/api/delivery')
 def delivery_status():return delivery_task.status()
 

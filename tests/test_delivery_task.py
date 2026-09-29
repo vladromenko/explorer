@@ -150,5 +150,21 @@ class DeliveryTaskTests(unittest.TestCase):
         self.assertEqual(self.task.last['state'],'failed')
         self.assertFalse(self.task.last['delivered'])
 
+    def test_failed_start_record_does_not_leave_a_phantom_running_task(self):
+        with patch.object(self.task,'_save',side_effect=OSError('disk full')):
+            with self.assertRaises(OSError):self.task.start()
+        self.assertIsNone(self.task.active);self.assertFalse(self.task.status()['busy'])
+        self.assertEqual(self.robot.calls,[])
+
+    def test_cancel_still_stops_robot_when_record_cannot_be_saved(self):
+        result,run=self.queued()
+        with patch.object(self.task,'_save',side_effect=OSError('disk full')):
+            self.task.cancel()
+        self.assertIn(('stop',result['id']),self.robot.calls)
+        self.assertIsNone(self.task.active)
+        run()
+        self.assertFalse(self.task.status()['busy'])
+        self.assertTrue(self.task.status()['blocked_by'])
+
 
 if __name__=='__main__':unittest.main()

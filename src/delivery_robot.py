@@ -12,25 +12,31 @@ import numpy as np
 from grasp_verification import verify_lift, verify_place
 from delivery_vision import FeatureObject, reacquire_candidate
 
+SETUP_ARTIFACTS={'config/delivery.json','config/handeye-accepted.json','config/gripper-accepted.json',
+                 'config/explorer.urdf','config/explorer.srdf'}
 
-def load_settings(root, source_sha, calibration_sha):
+
+def load_settings(root, source_sha, calibration_sha, evidence=None):
     root=Path(root)
-    evidence=json.loads((root/'config/delivery-acceptance.json').read_text())
+    if evidence is None:evidence=json.loads((root/'config/delivery-acceptance.json').read_text())
     if evidence.get('accepted') is not True or not evidence.get('physical_test_records'):
-        raise ValueError('Нет результатов физической приёмки доставки')
+        raise ValueError('Нет результатов приёмки контроллера, руки и геометрии для первого задания')
     if evidence.get('firmware_source_sha256')!=source_sha or evidence.get('controller_calibration_sha256')!=calibration_sha:
         raise ValueError('Приёмка доставки относится к другой прошивке или калибровке')
-    required={'config/delivery.json','config/handeye-accepted.json','config/gripper-accepted.json',
-              'config/explorer.urdf','config/explorer.srdf'}
+    required=SETUP_ARTIFACTS
     artifacts=evidence.get('artifacts',{})
     if not required.issubset(artifacts):raise ValueError('Неполный список артефактов приёмки доставки')
+    if set(artifacts)&set(evidence['physical_test_records']):raise ValueError('Настройки и журналы приёмки пересекаются')
+    verified={}
     for name,digest in dict(artifacts,**evidence['physical_test_records']).items():
         path=(root/name).resolve()
-        if not path.is_relative_to(root.resolve()) or hashlib.sha256(path.read_bytes()).hexdigest()!=digest:
+        if not path.is_relative_to(root.resolve()):raise ValueError('Недопустимый путь артефакта: '+name)
+        verified[name]=path.read_bytes()
+        if hashlib.sha256(verified[name]).hexdigest()!=digest:
             raise ValueError('Артефакт приёмки изменён: '+name)
     kinds=set()
     for name in evidence['physical_test_records']:
-        record=json.loads((root/name).read_text())
+        record=json.loads(verified[name])
         if (record.get('hardware_executed') is not True or record.get('simulation') is True or
             record.get('outcome')!='passed' or record.get('firmware_source_sha256')!=source_sha or
             record.get('controller_calibration_sha256')!=calibration_sha):
@@ -38,9 +44,9 @@ def load_settings(root, source_sha, calibration_sha):
         kinds.add(record.get('kind'))
     if not {'controller','arm','geometry'}.issubset(kinds):
         raise ValueError('Не завершены физические проверки контроллера, руки и геометрии')
-    config=json.loads((root/'config/delivery.json').read_text())
-    handeye=json.loads((root/'config/handeye-accepted.json').read_text())
-    gripper=json.loads((root/'config/gripper-accepted.json').read_text())
+    config=json.loads(verified['config/delivery.json'])
+    handeye=json.loads(verified['config/handeye-accepted.json'])
+    gripper=json.loads(verified['config/gripper-accepted.json'])
     if handeye.get('execution_authorized') is not True or handeye.get('measured_joint_positions') is not True:
         raise ValueError('Нет принятой калибровки камеры по измеренным суставам')
     if gripper.get('execution_authorized') is not True or gripper.get('aperture_mm_calibrated') is not True:
@@ -62,6 +68,13 @@ def load_settings(root, source_sha, calibration_sha):
     if not isinstance(config['search_places'],list) or not 1<=len(config['search_places'])<=5 or any(not isinstance(v,str) for v in config['search_places']):
         raise ValueError('Нужны от одного до пяти принятых мест поиска')
     if not isinstance(config['destination'],str) or not config['destination']:raise ValueError('Нет места доставки')
+    if not isinstance(config.get('map_epoch'),str) or not config['map_epoch']:
+        raise ValueError('Настройки доставки не привязаны к принятой карте')
+    places=config.get('place_poses',{})
+    for name in set(config['search_places']+[config['destination']]):
+        pose=places.get(name,{})
+        if not all(type(pose.get(key)) in (int,float) and math.isfinite(pose[key]) for key in ('x','y','yaw')):
+            raise ValueError('Нет принятой позы места: '+name)
     for key,lo,hi in [('open_deg',30,170),('close_deg',30,170),('approach_height_m',.03,.10),
                       ('lift_height_m',.04,.12),('grasp_tcp_offset_m',-.02,.04),('gripper_linkage_rad',-1.54,0)]:
         value=config[key]
@@ -74,11 +87,70 @@ def load_settings(root, source_sha, calibration_sha):
     return config
 
 
+def seal_setup(root, source_sha, calibration_sha, record_paths, write=True):
+    """Link already accepted physical prerequisites; never claim a delivered sock.
+
+    No motion or inferred calibration. The records must already bind the exact
+    settings they physically checked, so editing geometry cannot reuse old logs.
+    """
+    root=Path(root).resolve()
+    profile=json.loads((root/'config/controller-profile.json').read_text())
+    if profile.get('firmware_source_sha256')!=source_sha or profile.get('calibration_sha256')!=calibration_sha:
+        raise ValueError('Профиль контроллера изменился до оформления приёмки')
+    artifacts={name:hashlib.sha256((root/name).read_bytes()).hexdigest() for name in sorted(SETUP_ARTIFACTS)}
+    records={};bound={}
+    for name in record_paths:
+        path=(root/name).resolve()
+        if not path.is_relative_to(root) or not path.is_file():raise ValueError('Недопустимый журнал приёмки')
+        relative=path.relative_to(root).as_posix();raw=path.read_bytes();record=json.loads(raw)
+        records[relative]=hashlib.sha256(raw).hexdigest()
+        for artifact,digest in record.get('artifacts',{}).items():
+            if artifact in artifacts and digest!=artifacts[artifact]:
+                raise ValueError('Журнал относится к прежним настройкам: '+artifact)
+            bound[artifact]=digest
+    if any(bound.get(name)!=digest for name,digest in artifacts.items()):
+        raise ValueError('Физические журналы не привязаны ко всем текущим настройкам доставки')
+    evidence=dict(accepted=True,scope='delivery_prerequisites',physical_delivery_verified=False,
+                  firmware_source_sha256=source_sha,controller_calibration_sha256=calibration_sha,
+                  artifacts=artifacts,physical_test_records=records)
+    load_settings(root,source_sha,calibration_sha,evidence)
+    path=root/'config/delivery-acceptance.json'
+    if write:
+        temporary=path.with_suffix('.tmp')
+        temporary.write_text(json.dumps(evidence,ensure_ascii=False,allow_nan=False,indent=2)+'\n')
+        temporary.replace(path)
+    return dict(prerequisites_accepted=True,physical_delivery_verified=False,record=str(path),saved=bool(write))
+
+
+def placement_zone(zone, saved_pose, actual_pose):
+    """Keep the taught placement point fixed in map when Nav2 stops with error."""
+    x,y,z=np.asarray(zone['center_xyz'],dtype=float)
+    sx,sy,sa=(float(saved_pose[k]) for k in ('x','y','yaw'))
+    ax,ay,aa=(float(actual_pose[k]) for k in ('x','y','yaw'))
+    if not np.isfinite([x,y,z,sx,sy,sa,ax,ay,aa]).all():raise ValueError('Неверная локализация размещения')
+    wx=sx+math.cos(sa)*x-math.sin(sa)*y;wy=sy+math.sin(sa)*x+math.cos(sa)*y
+    dx,dy=wx-ax,wy-ay
+    return dict(zone,center_xyz=[math.cos(aa)*dx+math.sin(aa)*dy,-math.sin(aa)*dx+math.cos(aa)*dy,float(z)])
+
+
+def validated_places(settings, places, epoch):
+    if epoch!=settings['map_epoch']:raise ValueError('Карта отличается от принятого сценария доставки')
+    available={p['name']:p for p in places}
+    for name,accepted in settings['place_poses'].items():
+        current=available.get(name)
+        if not current or not current['compatible_map']:raise ValueError('Нет принятого места: '+name)
+        angle=math.atan2(math.sin(current['yaw']-accepted['yaw']),math.cos(current['yaw']-accepted['yaw']))
+        if max(abs(current['x']-accepted['x']),abs(current['y']-accepted['y']),abs(angle))>1e-6:
+            raise ValueError('Сохранённое место изменилось после приёмки: '+name)
+    return available
+
+
 class DeliveryRobot:
     def __init__(self, root, missions, arm, trajectory, finder, vision, model):
         self.root,self.missions,self.arm,self.trajectory=Path(root),missions,arm,trajectory
         self.finder,self.vision,self.model=finder,vision,model
         self.mid=None;self.settings=None;self.tracking=False;self.grasp_xyz=None;self.boot=None;self.owner_check=lambda:None;self.search_id=None
+        self.drop_zone=None;self.destination_pose=None
 
     def blockers(self):
         reasons=[]
@@ -104,8 +176,9 @@ class DeliveryRobot:
         reasons=self.blockers()
         if reasons:raise ValueError('; '.join(reasons))
         self.settings=load_settings(self.root,self.arm.profile['firmware_source_sha256'],self.arm.profile['calibration_sha256'])
+        validated_places(self.settings,self.missions.places(),self.missions.maps.epoch())
         self.boot=self.arm.reference()['boot_id']
-        self.mid=mid;self.tracking=False
+        self.mid=mid;self.tracking=False;self.drop_zone=None;self.destination_pose=None
         self.missions.begin_compound(mid,'delivery',900,check)
         check()
         self.hold()
@@ -143,8 +216,11 @@ class DeliveryRobot:
             self.permit(mid);state=self.trajectory.status()
             if state.get('session')!=session:raise ValueError('Исполнитель пути заменён')
             if not state['busy']:
-                if state.get('reached') is not True:raise ValueError('Поза не достигнута: '+str(state.get('reason')))
-                return dict(attained=True,session=session,measured_deg=self.arm.reference()['servo_deg'])
+                measured=self.arm.reference()['servo_deg']
+                if (state.get('phase')!='reached' or state.get('reached') is not True or
+                    not np.allclose(measured,goal,atol=.5,rtol=0)):
+                    raise ValueError('Поза не достигнута: '+str(state.get('reason')))
+                return dict(attained=True,session=session,measured_deg=measured)
             time.sleep(.03)
         self.trajectory.stop();raise ValueError('Истёк срок пути руки')
 
@@ -155,7 +231,7 @@ class DeliveryRobot:
         return self._move(solution['servo_deg']+[grip])
 
     def find(self):
-        places={p['name']:p for p in self.missions.places()}
+        places=validated_places(self.settings,self.missions.places(),self.missions.maps.epoch())
         for name in self.settings['search_places']:
             self.permit(self.mid)
             p=places.get(name)
@@ -169,6 +245,9 @@ class DeliveryRobot:
                 time.sleep(.03)
             before=self.arm.reference()['position_rad'];base=self.missions.maps.pose()
             request=self.finder.start('sock');self.search_id=request['id'];end=time.monotonic()+105
+            try:self.permit(self.mid)
+            except Exception:
+                self.finder.cancel(request['id']);raise
             while self.finder.status().get('busy') and time.monotonic()<end:
                 self.permit(self.mid);time.sleep(.1)
             found=self.finder.status()
@@ -186,7 +265,8 @@ class DeliveryRobot:
                 tracker=FeatureObject(fresh,candidate['bbox'])
                 self.vision.start_tracker(tracker,self.settings)
                 end=time.monotonic()+2
-                while not self.vision.frames and time.monotonic()<end:time.sleep(.03)
+                while not self.vision.frames and time.monotonic()<end:
+                    self.permit(self.mid);time.sleep(.03)
                 target=self.vision.latest();self.tracking=True
                 return dict(place=name,target=target,semantic_label='sock',semantic_identity_verified=False,reacquisition=candidate)
             self._move(self.settings['transport_deg'])
@@ -217,23 +297,28 @@ class DeliveryRobot:
     def verify_hold(self, before):return verify_lift(before,self.observe(),True)
     def transport(self):return self._move(self.settings['transport_deg'][:5]+[self.settings['close_deg']])
     def carry(self):
-        places={p['name']:p for p in self.missions.places()};p=places.get(self.settings['destination'])
+        places=validated_places(self.settings,self.missions.places(),self.missions.maps.epoch());p=places.get(self.settings['destination'])
         if not p or not p['compatible_map']:raise ValueError('Место доставки относится к другой карте')
+        self.destination_pose=dict(p)
         # Navigation heartbeat also checks tracking through the compound guard.
         return self.missions.go(self.mid,p['x'],p['y'],p['yaw'])
-    def support(self):return self._xyz(self.settings['drop_zone']['center_xyz'],self.settings['close_deg'])
-    def release(self):return self._xyz(self.settings['drop_zone']['center_xyz'],self.settings['open_deg'])
-    def withdraw(self):return self._xyz((np.asarray(self.settings['drop_zone']['center_xyz'])+[0,0,.08]).tolist(),self.settings['open_deg'])
-    def verify_place(self, before):return verify_place(before,self.observe(),self.settings['drop_zone'],True)
-    def stop(self, mid):
+    def support(self):
+        self.permit(self.mid);self.hold()
+        if self.destination_pose is None:raise ValueError('Нет принятого места доставки')
+        self.drop_zone=placement_zone(self.settings['drop_zone'],self.destination_pose,self.missions.maps.pose())
+        return self._xyz(self.drop_zone['center_xyz'],self.settings['close_deg'])
+    def release(self):return self._xyz(self.drop_zone['center_xyz'],self.settings['open_deg'])
+    def withdraw(self):return self._xyz((np.asarray(self.drop_zone['center_xyz'])+[0,0,.08]).tolist(),self.settings['open_deg'])
+    def verify_place(self, before):return verify_place(before,self.observe(),self.drop_zone,True)
+    def _end(self, mid, state, details):
         if self.mid==mid:
-            self.tracking=False;self.vision.stop();self.trajectory.stop()
-            self.missions.finish(mid,'cancelled',dict(reason='Delivery cancelled'));self.mid=None
-            if self.search_id:self.finder.cancel(self.search_id)
-            self.search_id=None
-    def finish(self, mid, success):
-        if self.mid==mid:
-            self.tracking=False;self.vision.stop();self.trajectory.stop()
-            self.missions.finish(mid,'succeeded' if success else 'failed',dict(delivery_verified=success));self.mid=None
-            if self.search_id:self.finder.cancel(self.search_id)
-            self.search_id=None
+            search_id=self.search_id;self.mid=None;self.tracking=False;self.search_id=None
+            operations=[self.trajectory.stop,lambda:self.missions.finish(mid,state,details),self.vision.stop]
+            if search_id:operations.append(lambda:self.finder.cancel(search_id))
+            errors=[]
+            for operation in operations:
+                try:operation()
+                except Exception as exc:errors.append(str(exc))
+            if errors:raise ValueError('Ошибки завершения доставки: '+'; '.join(errors))
+    def stop(self, mid):self._end(mid,'cancelled',dict(reason='Delivery cancelled'))
+    def finish(self, mid, success):self._end(mid,'succeeded' if success else 'failed',dict(delivery_verified=success))

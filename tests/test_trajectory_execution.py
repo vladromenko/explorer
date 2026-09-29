@@ -86,3 +86,49 @@ class TrajectoryTests(unittest.TestCase):
                            dict(at=time.time()-2)):
                 path.write_text(json.dumps(dict(status,**change)))
                 with self.assertRaises(ValueError):motion_budget(root)
+
+    def test_previous_reached_does_not_survive_start_error_or_stop(self):
+        with tempfile.TemporaryDirectory() as root,patch('trajectory_execution.motion_budget'):
+            p=self.runner(root);prior=dict(phase='reached',reached=True,session='old')
+            p.state=dict(prior);p.last_result=dict(prior)
+            with self.assertRaises(ValueError):p.start('missing',True)
+            self.assertFalse(p.status()['physically_verified']);self.assertFalse(p.state['reached'])
+            self.assertTrue(p.status()['previous_result']['reached'])
+            p.state=dict(prior);p.stop()
+            self.assertFalse(p.status()['physically_verified']);self.assertFalse(p.state['reached'])
+
+    def test_new_start_clears_old_reached_before_worker_runs(self):
+        with tempfile.TemporaryDirectory() as root,patch('trajectory_execution.motion_budget'),patch('trajectory_execution.threading.Thread'):
+            p=self.runner(root);plan=p.plan([92,125,3,0,90]);p.state.update(reached=True,reason='old failure')
+            p.start(plan['plan_id'],True)
+            try:
+                self.assertFalse(p.status()['physically_verified']);self.assertFalse(p.state['reached'])
+                self.assertIsNone(p.state['reason'])
+            finally:p.lock.release();p.teaching.lock.release()
+
+    def test_late_native_attainment_after_stop_cannot_overwrite_cancel(self):
+        with tempfile.TemporaryDirectory() as root,patch('trajectory_execution.motion_budget'):
+            (Path(root)/'data').mkdir()
+            p=self.runner(root);p.manual.native=True;p.teaching.pose.return_value=HOME
+            p.lock.acquire();p.teaching.lock.acquire();p.session='c'*32;p.revision=0
+            p.execution_mode='operator_finite';p.deadline=time.monotonic()+5
+            def late_result(*args,**kwargs):
+                p.stop()
+                return dict(attained=True)
+            p.manual.move.side_effect=late_result
+            p.run(dict(native=True,start=HOME,goal=[91,125,3,0,90,30],joint_trajectory=None))
+            self.assertFalse(p.state['reached']);self.assertEqual(p.state['phase'],'stopped')
+            self.assertFalse(p.status()['physically_verified'])
+            saved=json.loads((Path(root)/'data/trajectory-runs'/('c'*32+'.json')).read_text())
+            self.assertFalse(saved['physical_attainment_verified'])
+
+    def test_native_executor_error_clears_prior_attainment(self):
+        with tempfile.TemporaryDirectory() as root,patch('trajectory_execution.motion_budget'):
+            (Path(root)/'data').mkdir()
+            p=self.runner(root);p.state.update(phase='moving',reached=True)
+            p.lock.acquire();p.teaching.lock.acquire();p.session='e'*32;p.revision=0
+            p.execution_mode='operator_finite';p.deadline=time.monotonic()+5
+            p.manual.move.side_effect=RuntimeError('transport failed')
+            p.run(dict(native=True,start=HOME,goal=HOME,joint_trajectory=None))
+            self.assertFalse(p.state['reached']);self.assertEqual(p.state['phase'],'stopped')
+            self.assertFalse(p.status()['physically_verified'])

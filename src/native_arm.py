@@ -74,11 +74,23 @@ class NativeManualArm:
     def _state(self):
         return json.loads((self.root/'data/controller-state.json').read_text())
 
+    def _refresh_profile(self):
+        profile=json.loads((self.root/'config/controller-profile.json').read_text())
+        if (profile.get('transport')!='controller_v1' or
+            profile.get('calibration_sha256')!=self.profile.get('calibration_sha256')):
+            raise ValueError('Калибровка/транспорт изменены; требуется перезапуск исполнителя руки')
+        self.profile=profile
+
     def reference(self, expected_boot=None, expected_session=None):
-        return measured_reference(self._state(), self.calibration, time.monotonic_ns(),
+        self._refresh_profile()
+        state=self._state()
+        if (state.get('identity') or {}).get('source_sha256')!=self.profile['firmware_source_sha256']:
+            raise ValueError('Ожидаю телеметрию выбранной прошивки STM32')
+        return measured_reference(state, self.calibration, time.monotonic_ns(),
                                   expected_boot=expected_boot, expected_session=expected_session)
 
     def _transport(self):
+        self._refresh_profile()
         state = self._state()
         if self.profile.get('telemetry_only', True) or state.get('telemetry_only', True):
             raise ValueError(self.profile.get('blocking_reason_ru') or 'Профиль STM32 разрешает только телеметрию')

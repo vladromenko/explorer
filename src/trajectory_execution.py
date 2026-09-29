@@ -54,13 +54,17 @@ def gripper_steps(start,target):
 class TrajectoryExecution:
     def __init__(self,root,teaching,manual,planner):
         self.root=Path(root);self.teaching=teaching;self.manual=manual;self.planner=planner
-        self.lock=threading.Lock();self.pending=None;self.state=dict(phase='idle')
+        self.lock=threading.Lock();self.state_lock=threading.RLock();self.pending=None;self.state=dict(phase='idle',reached=False)
+        self.last_result=None
         self.session=None;self.lease=0.;self.cancelled=threading.Event()
         self.execution_mode='operator_held';self.local_permit=None;self.deadline=0
 
     def status(self):
-        return dict(self.state,busy=self.lock.locked(),requires_held_button=self.execution_mode=='operator_held',
-                    physically_verified=self.state.get('reached') is True,base_motion=False)
+        with self.state_lock:
+            busy=self.lock.locked()
+            return dict(self.state,busy=busy,requires_held_button=self.execution_mode=='operator_held',
+                        physically_verified=not busy and self.state.get('phase')=='reached' and self.state.get('reached') is True,
+                        previous_result=dict(self.last_result) if self.last_result else None,base_motion=False)
 
     def plan(self,goal):
         if not isinstance(goal,list) or len(goal) not in (5,6) or any(type(v) not in (float,int) or not math.isfinite(v) for v in goal):raise ValueError('Нужны пять или шесть конечных углов')
@@ -69,6 +73,7 @@ class TrajectoryExecution:
         if not self.lock.acquire(blocking=False):raise ValueError('Уже идёт расчёт или выполнение пути')
         reserved=False
         try:
+            with self.state_lock:self.state=dict(phase='planning',reached=False,executed=False)
             if not self.teaching.lock.acquire(blocking=False):raise ValueError('Рука занята')
             reserved=True;self.pending=None
             if self.teaching.active:raise ValueError('Завершите запись показа')
@@ -90,7 +95,7 @@ class TrajectoryExecution:
                     revision=revision,native=True,steps=[],
                     joint_trajectory=plan['joint_trajectory'] if plan else None)
                 self.state=dict(phase='planned',plan_id=self.pending['id'],goal_deg=goal,
-                    executed=False,estimated_duration_s=None,moveit_duration_s=duration,continuous_motion=True,
+                    reached=False,executed=False,estimated_duration_s=None,moveit_duration_s=duration,continuous_motion=True,
                     full_moveit_path_retained=plan is not None)
                 return self.status()
             if len(goal)==6:steps+=gripper_steps(steps[-1] if steps else start,goal[5])
@@ -105,9 +110,12 @@ class TrajectoryExecution:
             self.pending=dict(id=uuid.uuid4().hex,at=time.time(),start=start,goal=goal,
                               steps=steps,revision=revision)
             self.state=dict(phase='planned',plan_id=self.pending['id'],goal_deg=goal,
-                            total_steps=len(steps),steps=0,executed=False,
+                            total_steps=len(steps),steps=0,reached=False,executed=False,
                             estimated_duration_s=round(len(steps)*.4,1))
             return self.status()
+        except Exception as exc:
+            with self.state_lock:self.state.update(phase='failed',reached=False,reason=str(exc))
+            raise
         finally:
             if reserved:self.teaching.lock.release()
             self.lock.release()
@@ -126,7 +134,10 @@ class TrajectoryExecution:
         return self.status()
 
     def stop(self):
-        self.cancelled.set();self.lease=0;self.manual.stop()
+        with self.state_lock:
+            self.cancelled.set();self.lease=0
+            self.state.update(phase='stopping' if self.lock.locked() else 'stopped',reached=False,reason='Движение отменено')
+        self.manual.stop()
         return dict(stopping=True,cancel_requested=True,physical_stop_confirmed=False)
 
     def start_local(self,plan_id,mission_permit):
@@ -140,6 +151,7 @@ class TrajectoryExecution:
         if not self.lock.acquire(blocking=False):raise ValueError('Рука уже выполняет путь')
         reserved=False
         try:
+            with self.state_lock:self.state.update(reached=False,reason=None)
             if not self.teaching.lock.acquire(blocking=False):raise ValueError('Рука занята')
             reserved=True
             p=self.pending
@@ -156,10 +168,13 @@ class TrajectoryExecution:
             self.execution_mode='local_mission' if mission_permit else 'operator_finite' if finite else 'operator_held'
             self.local_permit=mission_permit
             self.deadline=time.monotonic()+(600. if p.get('native') else min(180.,5.+len(p['steps'])*.7))
-            self.state.update(phase='moving',session=self.session,steps=0,executed=False,execution_mode=self.execution_mode)
+            with self.state_lock:
+                self.state.update(phase='moving',session=self.session,steps=0,reached=False,reason=None,
+                                  executed=False,execution_mode=self.execution_mode)
             threading.Thread(target=self.run,args=(p,),daemon=True).start()
             return self.status()
-        except Exception:
+        except Exception as exc:
+            with self.state_lock:self.state.update(phase='failed',reached=False,reason=str(exc))
             if reserved:self.teaching.lock.release()
             self.lock.release();raise
 
@@ -172,8 +187,10 @@ class TrajectoryExecution:
                     execution_permit=self.permit,trajectory=plan['joint_trajectory'],
                     source='local_mission' if self.execution_mode=='local_mission' else 'supervised_trajectory')
                 records.append(record)
-                reached=record.get('attained') is True
-                self.state.update(phase='reached' if reached else 'unconfirmed',executed=True,reached=reached)
+                with self.state_lock:
+                    self.permit()  # A late move result cannot overwrite STOP.
+                    reached=record.get('attained') is True
+                    self.state.update(phase='reached' if reached else 'unconfirmed',executed=True,reached=reached)
                 return
             for goal in plan['steps']:
                 self.permit();motion_budget(self.root)
@@ -183,11 +200,17 @@ class TrajectoryExecution:
                                         execution_permit=self.permit,source='local_mission' if self.execution_mode=='local_mission' else 'supervised_trajectory')
                 records.append(record);start=goal
                 self.state.update(steps=len(records),executed=True)
-            self.state.update(phase='commanded',reason='Команды пути завершены; проверьте физическое положение')
-        except (OSError,ValueError,KeyError) as exc:self.state.update(phase='stopped',reason=str(exc))
+            with self.state_lock:
+                self.permit()
+                self.state.update(phase='commanded',reached=False,reason='Команды пути завершены; проверьте физическое положение')
+        except Exception as exc:
+            with self.state_lock:self.state.update(phase='stopped',reached=False,reason=str(exc))
         finally:
             try:
                 folder=self.root/'data/trajectory-runs';folder.mkdir(exist_ok=True)
-                write_json(folder/(self.session+'.json'),dict(plan=plan,commands=records,result=self.state,
-                                                            physical_attainment_verified=bool(self.state.get('reached'))))
+                with self.state_lock:
+                    terminal=dict(self.state)
+                    self.last_result=dict(terminal)
+                write_json(folder/(self.session+'.json'),dict(plan=plan,commands=records,result=terminal,
+                    physical_attainment_verified=terminal.get('phase')=='reached' and terminal.get('reached') is True))
             finally:self.teaching.lock.release();self.lock.release()

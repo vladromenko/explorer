@@ -11,6 +11,12 @@ from survey import SurveyStore
 ROOT=Path('/home/vlad/Explorer')
 FLAGS=('base_commissioned','lidar_tf_validated','mcu_watchdog_verified','localization_verified')
 
+def navigation_attained(pose,x,y,yaw):
+    values=[pose.get('x'),pose.get('y'),pose.get('yaw'),x,y,yaw]
+    if not all(type(value) in (int,float) and math.isfinite(value) for value in values):return False
+    angle=abs(math.atan2(math.sin(pose['yaw']-yaw),math.cos(pose['yaw']-yaw)))
+    return math.hypot(pose['x']-x,pose['y']-y)<=.15 and angle<=.15
+
 def readiness(s,now):
     reasons=[]
     if now-s.get('at',0)>.9 or now<s.get('at',0):reasons.append('controller_stale')
@@ -62,15 +68,21 @@ class Missions:
         with self.lock:
             if not self.active or self.active['id']!=mid:return
             m=self.active;self.active=None;self.last=dict(id=mid,state=state,details=details,at=time.time())
-            if m.get('handle'):m['handle'].cancel_goal_async()
-            self.emit('finish_mission' if state=='succeeded' else 'cancel_mission',mission=mid)
-            self.record(m,state,details)
+            errors=[]
+            if m.get('handle'):
+                try:m['handle'].cancel_goal_async()
+                except Exception as exc:errors.append('Nav2 cancel: '+str(exc))
+            try:self.emit('finish_mission' if state=='succeeded' else 'cancel_mission',mission=mid)
+            except Exception as exc:errors.append('Base stop: '+str(exc))
+            if errors:self.last['details']=dict(details,stop_errors=errors)
+            self.record(m,state,self.last['details'])
+            if errors:raise ValueError('; '.join(errors))
 
     def cancel(self):
         with self.lock:
             if self.active:self.finish(self.active['id'],'cancelled',{'reason':'operator'})
             else:self.emit('hold_base')
-        return dict(stopped=True)
+        return dict(cancel_requested=True,physical_stop_confirmed=False)
 
     def monitor(self):
         with self.lock:
@@ -86,7 +98,9 @@ class Missions:
                 self.active['waiting_for_obstacle']=status.get('reason')=='OBSTACLE'
                 if self.active.get('kind')=='delivery' and self.compound_guard:self.compound_guard(mid)
                 self.emit('autonomy_lease',mission=mid)
-            except (OSError,ValueError,KeyError) as e:self.finish(mid,'interrupted',{'reason':str(e)})
+            except Exception as e:
+                try:self.finish(mid,'interrupted',{'reason':str(e)})
+                except Exception:pass  # Recorded stop errors; never renew this mission's lease.
 
     def frontiers(self):
         if not self.maps.grid or time.monotonic()-self.maps.grid[1]>15:raise ValueError('Map stale')
@@ -187,7 +201,7 @@ class Missions:
                     except (OSError,ValueError):pass
             self.finish(mid,'succeeded',dict(visited=len(observations),observations=observations,
                                              complete_room_coverage_verified=False))
-        except (ValueError,OSError,TimeoutError,KeyError) as exc:
+        except Exception as exc:
             self.finish(mid,'failed',dict(reason=str(exc),observations=observations))
 
     def go(self,mid,x,y,yaw):
@@ -210,11 +224,23 @@ class Missions:
             if not handle.accepted:raise ValueError('Navigator rejected goal')
             self.active.update(handle=handle,phase='navigating',target=dict(x=x,y=y,yaw=yaw))
             self.emit('resume_base',mission=mid)
-        result=wait(handle.get_result_async(),90)
+        try:
+            result_future=handle.get_result_async();deadline=time.monotonic()+90
+            while not result_future.done():
+                self.survey_permit(mid)
+                if time.monotonic()>=deadline:raise TimeoutError('Navigation timed out')
+                time.sleep(.05)
+            self.survey_permit(mid)
+            result=result_future.result()
+        except Exception:
+            try:handle.cancel_goal_async()
+            finally:self.emit('hold_base',mission=mid)
+            raise
         if result.status!=4:raise ValueError('Navigation did not succeed: '+str(result.status))
         self.hold_base(mid)
         pose=self.maps.pose()
-        if math.hypot(pose['x']-x,pose['y']-y)>.15:raise ValueError('Goal result disagrees with live pose')
+        if not navigation_attained(pose,x,y,yaw):
+            raise ValueError('Goal result disagrees with live position/orientation')
         with self.db() as db:db.execute('INSERT INTO visits(seen,x,y,yaw,frame,provisional) VALUES(?,?,?,?,?,?)',(time.time(),pose['x'],pose['y'],pose['yaw'],'map',1))
         return pose
 
@@ -247,4 +273,4 @@ class Missions:
                 p=options[0];self.go(mid,p['x'],p['y'],p['yaw']);visited.append((p['x'],p['y']))
                 time.sleep(2.) # let new lidar/image observations enter the persistent world model
             self.finish(mid,'limit_reached',{'visited':len(visited)})
-        except (ValueError,OSError,TimeoutError,KeyError) as exc:self.finish(mid,'failed',{'reason':str(exc)})
+        except Exception as exc:self.finish(mid,'failed',{'reason':str(exc)})

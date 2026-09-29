@@ -3,7 +3,11 @@ set -e
 source /home/vlad/Explorer/bin/env.sh
 cd "$EXPLORER_ROOT"
 case "$1" in
- mcu) python3 bin/wait-clock.py --network-grace 60;;
+ mcu) # Native controller leases use its monotonic clock and must reconnect
+      # even before NTP. Only the legacy micro-ROS epoch startup needs this wait.
+      if [ ! -f "$EXPLORER_ROOT/config/controller-profile.json" ]; then
+        python3 bin/wait-clock.py --network-grace 60
+      fi;;
  state|ekf|geometry|slam|navigation|planning|camera|perception|mapview)
    python3 bin/wait-clock.py;;
 esac
@@ -25,8 +29,8 @@ case "$1" in
  mapview) exec python3 src/map_view.py;;
  slam) python3 -c 'import json,time,uuid,os; from pathlib import Path; p=Path(os.environ["EXPLORER_ROOT"])/"data/map_session.json"; t=p.with_suffix(".tmp"); t.write_text(json.dumps(dict(id=uuid.uuid4().hex,at=time.time()))); t.replace(p)'
        exec ros2 launch slam_toolbox online_async_launch.py use_sim_time:=false slam_params_file:="$EXPLORER_ROOT/config/slam.yaml";;
- navigation) exec ros2 launch "$EXPLORER_ROOT/src/navigation.launch.py";;
- planning) exec ros2 launch "$EXPLORER_ROOT/src/planning.launch.py";;
+ navigation) exec python3 src/navigation_service.py navigation;;
+ planning) exec python3 src/navigation_service.py planning;;
  ekf) exec ros2 run robot_localization ekf_node --ros-args -r __node:=explorer_ekf --params-file "$EXPLORER_ROOT/config/ekf.yaml";;
  gamepad) exec ros2 run joy game_controller_node --ros-args -p deadzone:=0.15 -p autorepeat_rate:=20.0 -p sticky_buttons:=false;;
  llm) export LD_LIBRARY_PATH="$EXPLORER_ROOT/vendor/llama:$LD_LIBRARY_PATH"

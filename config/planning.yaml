@@ -38,6 +38,7 @@ global_costmap:
           data_type: LaserScan
           marking: true
           clearing: true
+          expected_update_rate: 0.3
           inf_is_valid: false
           obstacle_min_range: 0.05
           obstacle_max_range: 5.0
@@ -49,6 +50,7 @@ global_costmap:
           data_type: LaserScan
           marking: true
           clearing: true
+          expected_update_rate: 0.3
           inf_is_valid: false
           obstacle_min_range: 0.05
           obstacle_max_range: 5.0

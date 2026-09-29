@@ -70,7 +70,10 @@ class DeliveryTask:
             self.active = dict(id=uuid.uuid4().hex, generation=generation, state='running',
                                phase='preparing', started=time.time(), started_monotonic=time.monotonic(),
                                events=[], delivered=False)
-            self._save(self.active)
+            try:self._save(self.active)
+            except (OSError,ValueError):
+                self.active=None
+                raise
             mid = self.active['id']
             self.worker_id=mid
             try:
@@ -115,7 +118,11 @@ class DeliveryTask:
             if value:
                 value.update(state='cancelled', ended=time.time(), reason='Остановлено пользователем')
                 self.stopping.add(value['id'])
-                self._save(value); self.last=value; self.active=None
+                self.last=value;self.active=None
+                try:self._save(value)
+                except (OSError,ValueError) as exc:
+                    value['record_error']=str(exc)
+                    self.recovery_errors.append('Не удалось сохранить отмену: '+str(exc))
         if value:
             try:
                 self.robot.stop(value['id'])

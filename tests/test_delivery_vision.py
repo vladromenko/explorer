@@ -1,7 +1,10 @@
 import unittest
+import threading
+from collections import deque
+from types import SimpleNamespace
 import cv2
 import numpy as np
-from delivery_vision import FeatureObject,JointHistory
+from delivery_vision import FeatureObject,JointHistory,JointSamplePending,MeasuredVision,MAX_PENDING_FRAMES
 
 class VisionTests(unittest.TestCase):
     def sample(self,t=1.,dx=0):
@@ -46,3 +49,89 @@ class VisionTests(unittest.TestCase):
         self.assertNotEqual(a.object_id,b.object_id)
         changed=self.sample(20,8)
         with self.assertRaises(ValueError):reacquire_candidate(old,changed,candidate['bbox'])
+
+    def test_future_joint_sample_wait_differs_from_real_feedback_or_geometry_error(self):
+        history=JointHistory()
+        def add(joint,t,q=-10):history.add(dict(boot_id=1,joint=joint,position_valid=True,error=0,device_error=0,
+            acquired_monotonic_ns=int(t*1e9),physical_deg=q))
+        for joint in range(1,7):add(joint,1.)
+        with self.assertRaises(JointSamplePending):history.at(1.01,1)
+        for joint in range(1,7):add(joint,1.02,-9)
+        np.testing.assert_allclose(history.at(1.01,1),[-9.5]*6)
+        history.add(dict(boot_id=1,joint=3,position_valid=False,error=14,device_error=0))
+        try:history.at(1.01,1)
+        except ValueError as exc:self.assertNotIsInstance(exc,JointSamplePending)
+        else:self.fail('Actual feedback error accepted as a pose')
+        for joint in range(1,7):add(joint,1.2)
+        try:history.at(1.1,1)
+        except ValueError as exc:self.assertNotIsInstance(exc,JointSamplePending)
+        else:self.fail('Measurement gap accepted as a pose')
+
+    def measured_vision(self):
+        vision=MeasuredVision.__new__(MeasuredVision)
+        vision.lock=threading.RLock();vision.generation=0;vision.frames=deque(maxlen=400)
+        vision.pending=deque();vision.track=None;vision.settings=None;vision.error=None
+        vision.last_stamp=0.;vision.enqueued_stamp=0.;vision.waiting_for_joints=None
+        vision.maps=SimpleNamespace(pose=lambda:dict(x=0,y=0,yaw=0))
+        updated=[]
+        def update(sample):
+            updated.append(float(sample['stamp']))
+            return dict(object_id='original-object',point_camera=np.array([.2,0,.04]),association_fraction=1.)
+        tracker=SimpleNamespace(stamp=1.,update=update)
+        vision.start_tracker(tracker,dict(floor_plane_base=[0,0,1,0],open_deg=30))
+        vision.geometry=lambda *args:(np.eye(4),np.zeros(3),[90,90,90,90,90,30])
+        return vision,updated
+
+    def test_pending_frame_retried_with_original_exposure_then_queue_drains_in_order(self):
+        vision,updated=self.measured_vision();ready=False;queried=[]
+        def geometry(sample,settings):
+            queried.append(sample['stamp'])
+            if not ready:raise JointSamplePending('right measurement not arrived')
+            return np.eye(4),np.zeros(3),[90,90,90,90,90,30]
+        vision.geometry=geometry
+        self.assertEqual(vision.process_snapshot(dict(stamp=1.02),now=0.),0)
+        self.assertIsNone(vision.error);self.assertTrue(vision.waiting_for_joints)
+        self.assertEqual(vision.process_snapshot(dict(stamp=1.04),now=.04),0)
+        self.assertEqual(len(vision.pending),2);self.assertEqual(updated,[])
+        ready=True
+        self.assertEqual(vision.process_snapshot(dict(stamp=1.04),now=.05),2)
+        self.assertEqual(updated,[1.02,1.04]);self.assertEqual([f['at'] for f in vision.frames],[1.02,1.04])
+        self.assertEqual(queried,[1.02,1.02,1.02,1.04])
+        self.assertIsNone(vision.waiting_for_joints);self.assertIsNone(vision.error)
+
+    def test_pending_joint_bracket_deadline_is_bounded_and_latches_failure(self):
+        vision,updated=self.measured_vision()
+        def pending(*args):raise JointSamplePending('wait')
+        vision.geometry=pending;vision.process_snapshot(dict(stamp=1.02),now=0.)
+        with self.assertRaisesRegex(ValueError,'deadline'):vision.process_snapshot(dict(stamp=1.03),now=.101)
+        self.assertTrue(vision.error);self.assertFalse(vision.pending);self.assertEqual(updated,[])
+        vision.geometry=lambda *args:(np.eye(4),np.zeros(3),[90]*6)
+        self.assertEqual(vision.process_snapshot(dict(stamp=1.04),now=.11),0)
+        self.assertTrue(vision.error)
+
+    def test_real_geometry_error_is_not_cleared_by_later_successful_input(self):
+        vision,updated=self.measured_vision()
+        def invalid(*args):raise ValueError('controller boot changed')
+        vision.geometry=invalid
+        with self.assertRaisesRegex(ValueError,'boot changed'):vision.process_snapshot(dict(stamp=1.02),now=0.)
+        vision.geometry=lambda *args:(np.eye(4),np.zeros(3),[90]*6)
+        self.assertEqual(vision.process_snapshot(dict(stamp=1.03),now=.02),0)
+        self.assertEqual(updated,[]);self.assertEqual(vision.error,'controller boot changed')
+
+    def test_pending_queue_has_fixed_capacity(self):
+        vision,updated=self.measured_vision()
+        def pending(*args):raise JointSamplePending('wait')
+        vision.geometry=pending
+        for index in range(MAX_PENDING_FRAMES):vision.process_snapshot(dict(stamp=1.01+index*.001),now=.001*index)
+        with self.assertRaisesRegex(ValueError,'overflow'):
+            vision.process_snapshot(dict(stamp=1.03),now=.01)
+        self.assertEqual(updated,[]);self.assertFalse(vision.pending)
+
+    def test_cancelled_generation_cannot_publish_late_geometry_result(self):
+        vision,updated=self.measured_vision()
+        def cancelled(*args):
+            vision.stop()
+            return np.eye(4),np.zeros(3),[90]*6
+        vision.geometry=cancelled
+        self.assertEqual(vision.process_snapshot(dict(stamp=1.02),now=0.),0)
+        self.assertEqual(updated,[]);self.assertFalse(vision.frames);self.assertFalse(vision.pending)

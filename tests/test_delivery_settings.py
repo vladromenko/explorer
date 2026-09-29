@@ -3,12 +3,13 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from delivery_robot import load_settings
+from delivery_robot import load_settings, seal_setup
 
 class SettingsTests(unittest.TestCase):
     def fixture(self,root):
         (root/'config').mkdir();(root/'data').mkdir()
         config=dict(transport_deg=[90]*6,search_deg=[90]*6,search_places=['sock'],destination='basket',
+            map_epoch='accepted-map',place_poses={'sock':dict(x=0,y=0,yaw=0),'basket':dict(x=1,y=0,yaw=0)},
             floor_plane_base=[0,0,1,0],grasp_quaternion_xyzw=[0,0,0,1],approach_height_m=.04,
             lift_height_m=.08,grasp_tcp_offset_m=0,gripper_linkage_rad=-.5,
             drop_zone=dict(center_xyz=[.3,0,.02],radius_m=.1,support_tolerance_m=.01))
@@ -48,3 +49,26 @@ class SettingsTests(unittest.TestCase):
             evidence=root/'config/delivery-acceptance.json';data=json.loads(evidence.read_text())
             data['physical_test_records']['data/arm.json']=hashlib.sha256(path.read_bytes()).hexdigest();evidence.write_text(json.dumps(data))
             with self.assertRaises(ValueError):load_settings(root,'a'*64,'b'*64)
+
+    def test_first_delivery_needs_prerequisites_not_previous_successful_delivery(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);self.fixture(root)
+            evidence=json.loads((root/'config/delivery-acceptance.json').read_text())
+            (root/'config/controller-profile.json').write_text(json.dumps(dict(firmware_source_sha256='a'*64,calibration_sha256='b'*64)))
+            path=root/'data/geometry.json';record=json.loads(path.read_text());record['artifacts']=evidence['artifacts']
+            path.write_text(json.dumps(record));(root/'config/delivery-acceptance.json').unlink()
+            check=seal_setup(root,'a'*64,'b'*64,list(evidence['physical_test_records']),write=False)
+            self.assertFalse(check['saved']);self.assertFalse((root/'config/delivery-acceptance.json').exists())
+            result=seal_setup(root,'a'*64,'b'*64,list(evidence['physical_test_records']))
+            self.assertTrue(result['prerequisites_accepted']);self.assertFalse(result['physical_delivery_verified'])
+            self.assertEqual(load_settings(root,'a'*64,'b'*64)['destination'],'basket')
+
+    def test_sealing_cannot_reuse_logs_after_physical_geometry_edit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);self.fixture(root)
+            evidence=json.loads((root/'config/delivery-acceptance.json').read_text())
+            (root/'config/controller-profile.json').write_text(json.dumps(dict(firmware_source_sha256='a'*64,calibration_sha256='b'*64)))
+            path=root/'data/geometry.json';record=json.loads(path.read_text());record['artifacts']=evidence['artifacts'];path.write_text(json.dumps(record))
+            (root/'config/explorer.urdf').write_text('changed geometry')
+            with self.assertRaisesRegex(ValueError,'прежним настройкам'):
+                seal_setup(root,'a'*64,'b'*64,list(evidence['physical_test_records']))

@@ -43,7 +43,7 @@ def state(calibration, now, raw=None):
     raw = [2000, 2000, 2000, 2000, 1487, 1633] if raw is None else raw
     samples = [dict(c.observe(value), joint=i+1, error=0, device_error=0,
                     acquired_monotonic_ns=now) for i, (c, value) in enumerate(zip(calibration, raw))]
-    return dict(monotonic_ns=now, telemetry_fresh=True, identity={'boot': 123},
+    return dict(monotonic_ns=now, telemetry_fresh=True, identity={'boot': 123,'source_sha256':'a'*64},
                 controller={'session': 11, 'mode': 1}, session_state='active',
                 telemetry_only=False, arm={'joints': samples})
 
@@ -58,6 +58,7 @@ class NativeArmTests(unittest.TestCase):
         content = json.dumps(dict(schema=1, joints=[asdict(c) for c in self.calibration])).encode()
         (self.root/'config/controller-calibration.json').write_bytes(content)
         (self.root/'config/controller-profile.json').write_text(json.dumps(dict(
+            transport='controller_v1',firmware_source_sha256='a'*64,
             calibration_sha256=hashlib.sha256(content).hexdigest(), telemetry_only=False)))
         self.node = Node()
         self.arm = NativeManualArm(self.root, self.node, lambda: Geometry(), Message)
@@ -98,13 +99,33 @@ class NativeArmTests(unittest.TestCase):
         self.arm.ready = True
         current = self.arm.reference()['servo_deg']
         self.arm.profile['telemetry_only'] = True
+        (self.root/'config/controller-profile.json').write_text(json.dumps(self.arm.profile))
         with self.assertRaisesRegex(ValueError, 'телеметрию'):
             self.arm.move(current, current)
         self.arm.profile['telemetry_only'] = False
+        (self.root/'config/controller-profile.json').write_text(json.dumps(self.arm.profile))
         self.write_state([2000, 2000, 3594, 2000, 1487, 1633])
         with self.assertRaisesRegex(ValueError, 'восстановление'):
             self.arm.move(current, current)
         self.assertEqual(self.node.sent, [])
+
+    def test_new_controller_profile_is_seen_without_restarting_web(self):
+        profile=dict(self.arm.profile,firmware_source_sha256='b'*64,telemetry_only=True,
+            blocking_reason_ru='Новая прошивка: проверка на стенде')
+        (self.root/'config/controller-profile.json').write_text(json.dumps(profile))
+        with self.assertRaisesRegex(ValueError,'Ожидаю'):
+            self.arm.reference()
+        value=self.write_state();value['identity']['source_sha256']='b'*64
+        (self.root/'data/controller-state.json').write_text(json.dumps(value))
+        self.assertTrue(self.arm.reference()['measured'])
+        self.assertIn('Новая прошивка',self.arm.status()['blocked_by'])
+        self.assertEqual(self.node.sent,[])
+
+    def test_calibration_change_requires_reloading_coordinates(self):
+        profile=dict(self.arm.profile,calibration_sha256='f'*64)
+        (self.root/'config/controller-profile.json').write_text(json.dumps(profile))
+        with self.assertRaisesRegex(ValueError,'Калибровка'):
+            self.arm.reference()
 
     def test_ack_only_matches_own_source_and_rejection_is_not_reached(self):
         sequence = self.arm._send('ARM_ENABLE')

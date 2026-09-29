@@ -1,5 +1,6 @@
-import unittest,copy
-from missions import readiness,FLAGS
+import unittest,copy,threading,math
+from types import SimpleNamespace
+from missions import Missions,readiness,navigation_attained,FLAGS
 class MissionReadinessTest(unittest.TestCase):
     def ready(self):return dict(at=100,stop_latched=False,mode='AUTONOMOUS',commissioning=dict.fromkeys(FLAGS,True),sensor_age=dict.fromkeys(['imu','odom','scan0','scan1','battery'],0),battery=12,reason='COMMAND EXPIRED')
     def test_each_missing_prerequisite_blocks(self):
@@ -15,3 +16,20 @@ class MissionReadinessTest(unittest.TestCase):
     def test_invalid_sensor_age_blocks(self):
         for age in (-1,float('nan'),float('inf'),None):
             s=self.ready();s['sensor_age']['scan0']=age;self.assertIn('scan0_stale',readiness(s,100))
+
+    def test_base_stop_attempted_even_when_nav2_cancel_throws(self):
+        mission=Missions.__new__(Missions);mission.lock=threading.RLock();calls=[]
+        def failed_cancel():raise ValueError('cancel unavailable')
+        mission.active=dict(id='m',handle=SimpleNamespace(cancel_goal_async=failed_cancel))
+        mission.emit=lambda op,**kw:calls.append(op)
+        mission.record=lambda m,state,details:calls.append(('record',details))
+        with self.assertRaisesRegex(ValueError,'Nav2 cancel'):mission.finish('m','failed',dict(reason='test'))
+        self.assertEqual(calls[0],'cancel_mission')
+        self.assertTrue(calls[1][1]['stop_errors'])
+        self.assertIsNone(mission.active)
+
+    def test_navigation_result_requires_position_and_wrapped_heading(self):
+        self.assertTrue(navigation_attained(dict(x=0,y=0,yaw=-math.pi),0,0,math.pi))
+        self.assertFalse(navigation_attained(dict(x=0,y=0,yaw=.16),0,0,0))
+        self.assertFalse(navigation_attained(dict(x=.16,y=0,yaw=0),0,0,0))
+        self.assertFalse(navigation_attained(dict(x=math.nan,y=0,yaw=0),0,0,0))

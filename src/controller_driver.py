@@ -27,6 +27,7 @@ import serial
 from controller_protocol import ClockMapping, Kind, Parser, Session, arm_payload, base_payload, encode
 from controller_feedback import ArmFeedback, ScanAssembler, decode_status, load_calibration
 from controller_requests import PendingRequests
+from controller_release import select_controller_profile
 
 ROOT = Path(os.environ.get('EXPLORER_ROOT', '/home/vlad/Explorer'))
 
@@ -40,12 +41,6 @@ class ControllerDriver(Node):
         self.expected_source = self.profile['firmware_source_sha256']
         if len(self.expected_source) != 64:
             raise ValueError('exact approved source identity is required')
-        self.serial = serial.Serial(port=None, baudrate=2000000, timeout=0, write_timeout=0,
-                                    exclusive=True)
-        self.serial.dtr = False
-        self.serial.rts = False
-        self.serial.port = self.profile.get('device', '/dev/explorer_mcu')
-        self.serial.open()
         calibration_path = ROOT/'config/controller-calibration.json'
         if hashlib.sha256(calibration_path.read_bytes()).hexdigest() != self.profile['calibration_sha256']:
             raise ValueError('calibration changed since profile approval')
@@ -62,6 +57,12 @@ class ControllerDriver(Node):
         self.fault = None
         self.sensor_health = {}
         self.source_sha256 = None
+        self.serial = None
+        self.connection_generation = 0
+        self.connected_ns = None
+        self.command_not_before_ns = time.monotonic_ns()
+        self.next_connect_ns = 0
+        self.reconnect_delay_ns = 500_000_000
         self.odom_pub = self.create_publisher(Odometry, '/odom_raw', qos_profile_sensor_data)
         self.imu_pub = self.create_publisher(Imu, '/imu/data_raw', qos_profile_sensor_data)
         self.mag_pub = self.create_publisher(MagneticField, '/imu/mag', qos_profile_sensor_data)
@@ -79,11 +80,46 @@ class ControllerDriver(Node):
         self.handshake()
 
     def send(self, packet):
+        if self.serial is None:
+            raise OSError('controller serial port is disconnected')
         if self.serial.write(packet) != len(packet):
             raise IOError('partial serial write: command will not be retried')
 
+    def connect(self, now):
+        if self.serial is not None:
+            return True
+        if now < self.next_connect_ns:
+            return False
+        port = None
+        try:
+            port = serial.Serial(port=None, baudrate=2000000, timeout=0, write_timeout=0,
+                                 exclusive=True)
+            port.dtr = False
+            port.rts = False
+            port.port = self.profile.get('device', '/dev/explorer_mcu')
+            port.open()
+            # Never inherit buffered commands or sensor fragments from a prior
+            # process/connection. No command is retained for retransmission.
+            port.reset_output_buffer()
+            port.reset_input_buffer()
+        except (OSError, serial.SerialException) as exc:
+            if port is not None:
+                try:
+                    port.close()
+                except (OSError, serial.SerialException):
+                    pass
+            self.disconnect(str(exc), now)
+            return False
+        self.serial = port
+        self.connected_ns = now
+        self.command_not_before_ns = now
+        self.fault = 'awaiting fresh controller identity and status'
+        return True
+
     def handshake(self):
         now = time.monotonic_ns()
+        if not self.connect(now):
+            return
         self.challenges = {key: value for key, value in self.challenges.items() if now-value < 100_000_000}
         nonce = secrets.randbits(64)
         self.challenges[nonce] = now
@@ -92,13 +128,42 @@ class ControllerDriver(Node):
         except (OSError, serial.SerialException) as exc:
             self.disconnect(str(exc))
 
-    def disconnect(self, reason):
+    def reset_observations(self, now):
+        self.connection_generation += 1
+        self.parser = Parser()
         self.pending_requests.clear()
         self.session.disconnected()
-        self.fault = reason
+        self.challenges.clear()
+        self.identity = None
+        self.state = {}
+        self.source_sha256 = None
+        self.sensor_health = {}
+        self.last_status_ns = None
+        self.command_not_before_ns = now
         self.arm = ArmFeedback(self.calibration)
         self.last_odom_us = None
         self.scans = [ScanAssembler(), ScanAssembler()]
+
+    def identity_boot(self, boot, now, source=None):
+        if self.session.clock is None:
+            self.command_not_before_ns = now
+        elif self.session.clock.boot != boot or (source is not None and self.source_sha256 not in (None, source)):
+            self.reset_observations(now)
+            self.connected_ns = now
+
+    def disconnect(self, reason, now=None):
+        now = time.monotonic_ns() if now is None else now
+        port, self.serial = self.serial, None
+        if port is not None:
+            try:
+                port.close()
+            except (OSError, serial.SerialException):
+                pass
+        self.reset_observations(now)
+        self.connected_ns = None
+        self.next_connect_ns = now + self.reconnect_delay_ns
+        self.reconnect_delay_ns = min(5_000_000_000, self.reconnect_delay_ns * 2)
+        self.fault = reason
 
     def stamp(self, mcu_us, ttl_ns=500_000_000):
         now = time.monotonic_ns()
@@ -111,7 +176,10 @@ class ControllerDriver(Node):
     def command(self, message):
         request = {}
         try:
-            request = json.loads(message.data)
+            parsed = json.loads(message.data)
+            if not isinstance(parsed, dict):
+                raise ValueError('controller request must be an object')
+            request = parsed
             kind = Kind[request['operation']]
             if kind == Kind.ESTOP:
                 self.send(encode(Kind.ESTOP))
@@ -123,6 +191,8 @@ class ControllerDriver(Node):
             now = time.monotonic_ns()
             if self.last_status_ns is None or now-self.last_status_ns > 200_000_000:
                 raise ValueError('controller telemetry unavailable')
+            if request['source_monotonic_ns'] <= self.command_not_before_ns:
+                raise ValueError('command originated before current controller connection was ready')
             data = b''
             if kind == Kind.BASE:
                 data = base_payload(request['velocity'], request.get('finite_us', 0))
@@ -157,21 +227,34 @@ class ControllerDriver(Node):
             self.result_pub.publish(String(data=json.dumps(dict(
                 source_id=request.get('source_id'), source_sequence=request.get('source_sequence'),
                 accepted=False, reached=False, reason=str(exc)))))
-            if isinstance(exc, (OSError, serial.SerialException)):
+            if isinstance(exc, (OSError, serial.SerialException)) and self.serial is not None:
                 self.disconnect(str(exc))
 
     def poll(self):
         try:
             now = time.monotonic_ns()
+            if self.serial is None:
+                if self.connect(now):
+                    self.handshake()
+                return
+            generation = self.connection_generation
             for kind, payload in self.parser.feed(self.serial.read(8192)):
-                self.receive(kind, payload, now)
-            if self.last_status_ns is not None and now-self.last_status_ns > 250_000_000:
-                self.disconnect('controller status deadline missed')
-                self.last_status_ns = None
+                if self.connection_generation == generation:
+                    self.receive(kind, payload, now)
+                else:
+                    break
         except (ValueError, struct.error) as exc:
             self.fault = str(exc)
         except (OSError, serial.SerialException) as exc:
             self.disconnect(str(exc))
+        # Invalid but continuously arriving packets must not defer the link
+        # deadline. They cannot make old status/clock observations fresh.
+        now = time.monotonic_ns()
+        if self.serial is not None:
+            if self.last_status_ns is not None and now-self.last_status_ns > 250_000_000:
+                self.disconnect('controller status deadline missed', now)
+            elif self.last_status_ns is None and now-self.connected_ns > 2_000_000_000:
+                self.disconnect('controller startup identity/status deadline missed', now)
 
     def receive(self, kind, payload, now):
         if kind == Kind.IDENTITY:
@@ -182,16 +265,24 @@ class ControllerDriver(Node):
             if sent is None:
                 raise ValueError('unsolicited/replayed clock observation')
             source = payload[49:81].hex()
-            if source != self.expected_source or payload[48] != 1 or device != 0x450:
+            if payload[48] != 1 or device != 0x450:
                 self.disconnect('controller build/protocol/chip identity mismatch')
+                return
+            identity=dict(boot=boot,device=device,revision=revision,flash_kib=flash_kib,
+                uid=payload[36:48].hex(),source_sha256=source,reset_flags=struct.unpack_from('<I',payload,84)[0])
+            try:
+                self.profile=select_controller_profile(ROOT,self.profile,identity)
+                self.expected_source=self.profile['firmware_source_sha256']
+            except (OSError,ValueError,KeyError,TypeError) as exc:
+                self.disconnect('controller release selection: '+str(exc))
                 return
             clock = ClockMapping.observation(boot, sent, now, mcu_us)
             if self.session.clock is None or self.session.clock.boot != boot:
                 self.pending_requests.clear()
+            self.identity_boot(boot,now,source)
             self.session.synchronize(clock, self.state.get('highest_session', 0))
             self.source_sha256 = source
-            self.identity = dict(boot=boot, device=device, revision=revision, flash_kib=flash_kib,
-                                 uid=payload[36:48].hex(), source_sha256=source, reset_flags=struct.unpack_from('<I', payload, 84)[0])
+            self.identity = identity
             self.fault = None
         elif self.session.clock is not None:
             if kind == Kind.SENSOR_DIAGNOSTICS:
@@ -209,6 +300,9 @@ class ControllerDriver(Node):
                     self.disconnect('MCU rebooted')
                     return
                 self.stamp(state['acquired_us'])
+                if self.last_status_ns is None:
+                    self.command_not_before_ns = now
+                self.reconnect_delay_ns = 500_000_000
                 self.last_status_ns = now
                 self.state = state
                 self.session.highest = max(self.session.highest, state['highest_session'])
@@ -351,7 +445,8 @@ def main():
             driver.send(encode(Kind.ESTOP))
         except (OSError, serial.SerialException):
             pass
-        driver.serial.close()
+        if driver.serial is not None:
+            driver.serial.close()
         driver.destroy_node()
         rclpy.try_shutdown()
 
