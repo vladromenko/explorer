@@ -100,6 +100,7 @@ def heavy_jobs():
     if any(j.get('state') in ('queued','exporting','training','validating') for j in learning_jobs.status()['jobs']):jobs.append('train')
     return jobs
 profiles=ResourceProfiles(ROOT,heavy_jobs)
+from appearance import MODES as APPEARANCE_MODES,read as read_appearance,write as write_appearance
 
 @app.get('/api/resources/profile')
 def resource_profile():return profiles.status()
@@ -107,6 +108,16 @@ def resource_profile():return profiles.status()
 class ProfileRequest(BaseModel):mode:str
 @app.post('/api/resources/profile')
 def choose_profile(c:ProfileRequest):return map_operation(profiles.select,c.mode)
+
+class AppearanceRequest(BaseModel):
+    mode:str
+    brightness:float|None=None
+
+@app.get('/api/appearance')
+def appearance_status():return dict(**read_appearance(ROOT),modes=list(APPEARANCE_MODES))
+
+@app.post('/api/appearance')
+def appearance_update(c:AppearanceRequest):return map_operation(write_appearance,ROOT,c.mode,c.brightness)
 
 def read_state(name,max_age=3):
     try:
@@ -309,6 +320,7 @@ def mobile_remote_status():
 @app.get('/api/status')
 def status():
     s=read_state('status.json')
+    s['appearance']=read_appearance(ROOT)
     s['controller']=read_state('controller-state.json',2)
     s['perception']=read_state('perception.json',2)
     s['mapping']=read_state('map.json',15)

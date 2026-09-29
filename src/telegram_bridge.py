@@ -20,6 +20,7 @@ HELP='''Explorer: /status — питание, нагрузка, режим и д
 /find sock — поиск на текущем кадре; /places — сохранённые места;
 /go имя — поездка; /survey имя1,имя2 — осмотр маршрута;
 /explore — исследовать доступные границы карты; /mobile — телефонная панель;
+/lights режим — подсветка: auto, off, headlights, work, search, success, error, gradient;
 /skills — функции и обучение;
 /ask вопрос — локальный помощник.
 Поездки требуют готового шасси и выбранного автономного режима в панели.'''
@@ -78,6 +79,11 @@ def command(text):
     if name=='/explore':return 'missions',dict(kind='explore',x=None,y=None,yaw=0.)
     if name=='/camera':return 'camera',None
     if name=='/mobile':return 'mobile',None
+    if name=='/lights':
+        allowed=('auto','off','headlights','work','search','success','error','water','marquee','breathe','gradient','sparkle','battery')
+        if not argument:return 'appearance',None
+        if argument not in allowed:raise ValueError('Режимы: '+', '.join(allowed))
+        return 'appearance',dict(mode=argument)
     if name=='/where' and argument:
         from urllib.parse import urlencode
         return 'memory?'+urlencode({'label':argument}),None
@@ -180,6 +186,9 @@ class TelegramBridge:
             self.reply(item['chat_id'],format_experiment_catalog(result['experiments']),
                 {'inline_keyboard':[[self.callback_button(item['chat_id'],e)] for e in result['experiments']]})
             return
+        if path=='appearance':
+            result=self.api(path,payload)
+            self.reply(item['chat_id'],'Передняя подсветка: '+result['rgb_mode']+'\nКоманда: /lights auto|off|headlights|work|search|success|error|gradient');return
         if path=='skills':
             self.reply(item['chat_id'],'Функции: карта и frontier exploration; поездки к сохранённым местам; поиск предметов GroundingDINO/YOLO; память «где видел»; ручное управление шасси и 6 суставами; запись полного показа подъехать→взять→перевезти→положить; офлайн LeRobot ACT после 10+ успешных показов; эксперименты /experiments. Автономный навык включается только после проверки модели.')
             return
@@ -227,7 +236,7 @@ class TelegramBridge:
         if self.telegram('getWebhookInfo',{}).get('url'):raise ValueError('Existing webhook; no changes made')
         names={'/status':'Состояние','/camera':'Камера','/experiments':'Эксперименты','/memory':'Память',
                '/skills':'Функции и обучение','/explore':'Исследовать комнату','/mobile':'Телефонная панель',
-               '/learn':'Обучение','/results':'Результаты','/stop':'Остановить'}
+               '/learn':'Обучение','/lights':'Передняя подсветка','/results':'Результаты','/stop':'Остановить'}
         self.telegram('setMyCommands',{'commands':[{'command':k[1:],'description':v} for k,v in names.items()]})
         labels={v:k for k,v in names.items()}
         labels['Телефон']='/mobile'

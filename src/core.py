@@ -28,6 +28,7 @@ from source_freshness import SourceFreshness
 from lidar_observation import summarize as summarize_scan
 from controller_control import BaseTransport
 from factory_zero_cadence import StationaryZeroCadence
+from appearance import read as read_appearance,messages as appearance_messages
 
 ROOT = Path(os.environ.get('EXPLORER_ROOT', '/home/vlad/Explorer'))
 
@@ -124,8 +125,10 @@ class Core(Node):
         self.last_tick = time.monotonic()
         self.create_timer(.02, self.tick)
         self.create_timer(.5, self.write_status)
-        # Vendor ColorRGBA.a selects an effect: 100 = off, 101 = changing colours.
-        self.create_timer(10., self.refresh_lights)
+        # Core is the only /rgb publisher. Vendor a=100..106 selects effects;
+        # a=255 applies an RGB colour to every WS2812 LED.
+        self.last_light_key=None;self.last_light_refresh=-1e9
+        self.create_timer(.25,self.refresh_lights)
 
     def refresh_graduated_capabilities(self):
         """Hot-apply only evidence-derived capability flags.
@@ -170,11 +173,14 @@ class Core(Node):
         if before!=self.snapshot():self.event(initiator,reason,before)
 
     def refresh_lights(self):
-        try:
-            effect=json.loads((ROOT/'config/appearance.json').read_text())['rgb_effect']
-            if type(effect) is not int or not 100<=effect<=107:effect=100
-        except (OSError,ValueError,KeyError,TypeError):effect=100
-        self.rgb_pub.publish(ColorRGBA(a=float(effect)))
+        now=time.monotonic();config=read_appearance(ROOT)
+        status=dict(power_state=self.power_state.get('state','UNKNOWN'),velocity=self.gate.output,
+                    mission=self.session.mission,arm_active=now<self.arm_active_until)
+        mode,frames=appearance_messages(config,status,now)
+        key=(mode,tuple(tuple(sorted(frame.items())) for frame in frames))
+        if key==self.last_light_key and now-self.last_light_refresh<8:return
+        for frame in frames:self.rgb_pub.publish(ColorRGBA(**frame))
+        self.last_light_key=key;self.last_light_refresh=now
 
     def touch(self, key):
         self.seen[key] = time.monotonic()
