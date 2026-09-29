@@ -719,8 +719,7 @@ def manual_prepare(c:ArmHome):
         from arm_preparation import stop_base_before_prepare
         stop_base_before_prepare(ROOT,stop_all)
         manual_arm.prepare_geometry()
-        manual_arm.accept_reference([90]*6,True)
-        return dict(manual_arm.status(),motion_sent=False,reference_source='operator_observed_reference')
+        return dict(manual_arm.home_reference(True),**manual_arm.status())
     except (ValueError,OSError,subprocess.TimeoutExpired) as exc:raise HTTPException(409,str(exc))
     finally:teaching.lock.release()
 

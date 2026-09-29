@@ -21,6 +21,68 @@ class ManualArm:
         self.gamepad_permit=lambda:False
         self.stop_revision=0
         self.active_runtime_ms=0
+        try:self.startup_config=json.loads((self.root/'config/factory-arm-startup.json').read_text())
+        except (OSError,ValueError):self.startup_config={}
+        if self.startup_config.get('enabled') is True:
+            threading.Thread(target=self._automatic_startup_home,daemon=True).start()
+
+    def _automatic_startup_home(self):
+        """Establish a known factory pose once near a full Jetson boot.
+
+        A later web-service restart must not move the arm unexpectedly.
+        """
+        try:
+            delay=float(self.startup_config.get('delay_after_web_start_s',8))
+            window=float(self.startup_config.get('startup_window_s',180))
+            time.sleep(max(1,min(delay,30)))
+            uptime=float(Path('/proc/uptime').read_text().split()[0])
+            if not 0<=uptime<=window:return
+            deadline=time.monotonic()+30
+            while not self.pub.get_subscription_count() and time.monotonic()<deadline:time.sleep(.25)
+            self.home_reference(False,'automatic_factory_startup')
+        except Exception as exc:
+            self.error='Автоподготовка руки не выполнена: '+str(exc)
+
+    def home_reference(self,observing,source='operator_factory_home'):
+        """Command the known factory 90-degree pose; never claim measurement."""
+        if source!='automatic_factory_startup' and observing is not True:
+            raise ValueError('Подтвердите наблюдение и свободное пространство вокруг руки')
+        pose=self.startup_config.get('pose_deg',[90]*6)
+        runtime_ms=self.startup_config.get('motion_time_ms',4000)
+        if (len(pose)!=6 or any(type(v) is not int or not lo<=v<=hi for v,(lo,hi) in zip(pose,HARD_LIMITS))
+                or type(runtime_ms) is not int or not 1000<=runtime_ms<=5000):
+            raise ValueError('Неверная настройка исходной позы robotio')
+        if not self.lock.acquire(False):raise ValueError('Рука занята')
+        record=None
+        try:
+            state=json.loads((self.root/'data/status.json').read_text())
+            stationary_status(state,time.time())
+            if source=='automatic_factory_startup' and self.startup_config.get('requires_latched_stop',True) and state.get('stop_latched') is not True:
+                raise ValueError('Для автоподготовки нужен включённый STOP')
+            if not self.pub.get_subscription_count():raise ValueError('Контроллер руки не подключён')
+            for shape in (0.,-.2,-.4,-.6,-.8):
+                if not self.model().path(pose[:5],pose[:5],shape)['valid']:
+                    raise ValueError('Исходная поза пересекает модель робота или пол')
+            message=ArmJoints(time=runtime_ms)
+            for index,value in enumerate(pose,1):setattr(message,'joint'+str(index),value)
+            record=dict(at=time.time(),servo_deg=list(pose),boot_id=self.boot,ends_monotonic=time.monotonic()+runtime_ms/1000,
+                        runtime_ms=runtime_ms,source=source,measured=False,attained=False,publish_count=1,
+                        startup_reference=True,command_source='automatic' if source=='automatic_factory_startup' else 'operator')
+            self.write(record,'command_in_progress');self.pub.publish(message)
+            if not self.pub.wait_for_all_acked(Duration(seconds=1)):
+                raise ValueError('Нет подтверждения доставки исходной команды')
+            while time.monotonic()<record['ends_monotonic']+.15:
+                stationary_status(json.loads((self.root/'data/status.json').read_text()),time.time());time.sleep(.025)
+            record.update(dds_acknowledged=True,command_completed=True)
+            self.write(record,'command_elapsed_observation_required');self.error=None
+            result=dict(record,motion_sent=True,reference_source=source,attainment_measured=False)
+            path=self.root/'data/arm-startup.json';temporary=path.with_suffix('.tmp')
+            temporary.write_text(json.dumps(result));temporary.replace(path)
+            return result
+        except Exception:
+            if record:self.write(record,'monitor_failed_state_unknown')
+            raise
+        finally:self.lock.release()
 
     def reference(self):
         stationary_status(json.loads((self.root/'data/status.json').read_text()),time.time())
@@ -43,7 +105,10 @@ class ManualArm:
         return dict(ready=self.ready,blocked_by=blocked,servo_deg=state.get('servo_deg'),
                     estimated_only=True,busy=self.lock.locked(),error=self.error,
                     step_deg=10,runtime_ms=None,continuous_motion=True,timed_path_supported=True,
-                    controller_protocol='factory_micro_ros',reference_source=state.get('source'))
+                    controller_protocol='factory_micro_ros',reference_source=state.get('source'),
+                    automatic_startup_home=self.startup_config.get('enabled') is True,
+                    startup_pose_deg=self.startup_config.get('pose_deg',[90]*6),
+                    torque_disable_available=False)
 
     def accept_reference(self,pose,observed):
         """Register a physically confirmed factory pose without moving servos."""

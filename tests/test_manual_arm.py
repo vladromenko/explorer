@@ -85,6 +85,19 @@ class ManualArmTests(unittest.TestCase):
         self.assertFalse(result['motion_sent']);self.assertFalse(result['measured'])
         self.assertEqual(self.arm.reference()['servo_deg'],[90]*6)
 
+    def test_factory_home_commands_known_pose_without_claiming_measurement(self):
+        result=self.arm.home_reference(True)
+        message=self.pub.publish.call_args.args[0]
+        self.assertEqual([getattr(message,'joint'+str(i)) for i in range(1,7)],[90]*6)
+        self.assertEqual(message.time,4000)
+        self.assertTrue(result['motion_sent'])
+        self.assertFalse(result['attainment_measured'])
+        self.assertEqual(self.arm.reference()['servo_deg'],[90]*6)
+
+    def test_factory_home_requires_observer_when_manual(self):
+        with self.assertRaises(ValueError):self.arm.home_reference(False)
+        self.pub.publish.assert_not_called()
+
     def test_timed_cancel_sends_no_following_target(self):
         commands=[dict(at=0.,end=.05,pose=self.goal,runtime_ms=50),
                   dict(at=.05,end=.10,pose=self.start,runtime_ms=50)]
