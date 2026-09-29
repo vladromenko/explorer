@@ -1,5 +1,5 @@
 import unittest
-from telegram_bridge import authorize,command
+from telegram_bridge import authorize,command,format_status,format_experiment_catalog
 
 class TelegramTests(unittest.TestCase):
     def update(self):return {'message':{'chat':{'id':42,'type':'private'},'from':{'id':42,'is_bot':False},'date':100,'text':'/go kitchen'}}
@@ -18,3 +18,15 @@ class TelegramTests(unittest.TestCase):
         for value in ('/exec rm file','/drive 1 1 1','/clear_stop','/arm 90 90'):
             with self.assertRaises(ValueError):command(value)
         self.assertEqual(command('что видно?')[0],'agent')
+
+    def test_status_contains_power_compute_sensors_and_autonomy(self):
+        state={'mode':'MANUAL','stop_latched':True,'reason':'STOP','battery':11.8,
+               'battery_gauge':{'available':True,'percent':55},'sensor_age':{'odom':.1,'scan0':.2,'scan1':2},
+               'perception':{'stale':False},'controller':{'stale':False},
+               'power_telemetry':{'state':'IDLE','battery_voltage_v':11.8,'resources':{'cpu_percent':25,'gpu_percent':4,'ram_available_mb':3500,'temperatures_c':{'cpu':51}}}}
+        text=format_status(state,{'accepted':['localization'],'items':[{'state':'accepted'},{'state':'training','name':'Захват','next_action':'Показать'}]})
+        for word in ('11.80 В','CPU 25%','GPU 4%','RAM','51.0°C','Датчики','Автономность','Следующее'):self.assertIn(word,text)
+
+    def test_experiment_catalog_explains_effect(self):
+        text=format_experiment_catalog([{'id':'E01','name':'Положение','implementation':'Читает состояние, не двигает'}])
+        self.assertIn('без движения',text);self.assertIn('Читает состояние',text)

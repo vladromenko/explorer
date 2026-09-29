@@ -15,7 +15,7 @@ from pathlib import Path
 from lerobot_bridge import write_json
 from telegram_pairing import Pairing
 
-HELP='''Explorer: /status — состояние; /stop — остановить;
+HELP='''Explorer: /status — питание, нагрузка, режим и датчики; /stop — остановить;
 /objects — что видно; /where предмет — последние наблюдения;
 /find sock — поиск на текущем кадре; /places — сохранённые места;
 /go имя — поездка; /survey имя1,имя2 — осмотр маршрута;
@@ -23,6 +23,33 @@ HELP='''Explorer: /status — состояние; /stop — остановить
 /skills — функции и обучение;
 /ask вопрос — локальный помощник.
 Поездки требуют готового шасси и выбранного автономного режима в панели.'''
+
+def format_status(value,graduation=None):
+    power=value.get('power_telemetry',{});resources=power.get('resources',{})
+    voltage=power.get('battery_voltage_v',value.get('battery'));gauge=value.get('battery_gauge',{})
+    temperatures=resources.get('temperatures_c',{});temperature=max(temperatures.values()) if temperatures else None
+    sensor=value.get('sensor_age',{});fresh=sum(type(v) in (int,float) and 0<=v<1 for v in sensor.values())
+    lines=['Explorer: '+('STOP' if value.get('stop_latched') else 'движение разрешено')+' · '+str(value.get('mode','—'))]
+    approximate=gauge.get('percent')
+    lines.append('Питание: '+(('%.2f В'%voltage) if type(voltage) in (int,float) else 'нет данных')+
+                 (' · V≈% '+str(round(approximate)) if type(approximate) in (int,float) else '')+' · '+str(power.get('state','UNKNOWN')))
+    lines.append('Jetson: CPU '+(('%.0f%%'%resources['cpu_percent']) if type(resources.get('cpu_percent')) in (int,float) else '—')+
+                 ' · GPU '+(('%.0f%%'%resources['gpu_percent']) if type(resources.get('gpu_percent')) in (int,float) else '—')+
+                 ' · RAM свободно '+(('%.0f МБ'%resources['ram_available_mb']) if type(resources.get('ram_available_mb')) in (int,float) else '—')+
+                 ' · t° '+(('%.1f°C'%temperature) if temperature is not None else '—'))
+    lines.append('Датчики свежее 1 с: '+str(fresh)+'/'+str(len(sensor))+' · камера '+('свежая' if not value.get('perception',{}).get('stale',True) else 'нет свежего кадра'))
+    controller=value.get('controller',{});lines.append('Контроллер: '+('на связи' if not controller.get('stale',True) else 'нет свежей связи')+' · причина: '+str(value.get('reason','—')))
+    if graduation:
+        accepted=set(graduation.get('accepted',[]));lines.append('Автономность: '+str(len(accepted))+'/'+str(len(graduation.get('items',[])))+' допусков · '+(', '.join(sorted(accepted)) or 'пока нет'))
+        pending=next((x for x in graduation.get('items',[]) if x.get('state')!='accepted'),None)
+        if pending:lines.append('Следующее: '+pending['name']+' — '+pending['next_action'])
+    return '\n'.join(lines)
+
+def format_experiment_catalog(experiments):
+    lines=['Эксперименты выполняют анализ без движения. Нажатие запускает один observe-тест:']
+    for item in experiments:
+        lines.append(item['id']+' · '+item['name']+' — '+item['implementation'])
+    return '\n'.join(lines)
 
 
 def authorize(update,config,now):
@@ -109,7 +136,7 @@ class TelegramBridge:
 
     def reply(self,chat,text,markup=None):
         keyboard=markup or {'keyboard':[[{'text':x} for x in row] for row in
-            [('Состояние','Камера'),('Эксперименты','Память'),('Обучение','Результаты'),('Остановить',)]],
+            [('Состояние','Камера'),('Телефон','Эксперименты'),('Память','Обучение'),('Результаты','Остановить')]],
             'resize_keyboard':True}
         self.telegram('sendMessage',dict(chat_id=chat,text=text[:3900],reply_markup=keyboard,
             link_preview_options={'is_disabled':True}),timeout=8)
@@ -118,8 +145,8 @@ class TelegramBridge:
         key=secrets.token_urlsafe(12)
         self.callbacks={k:v for k,v in self.callbacks.items() if time.time()<v['expires']}
         if len(self.callbacks)>=100:self.callbacks.clear()
-        self.callbacks[key]=dict(chat=chat,experiment=experiment,expires=time.time()+60,generation=self.generation)
-        return {'text':experiment+' · без движения','callback_data':key}
+        self.callbacks[key]=dict(chat=chat,experiment=experiment['id'],expires=time.time()+120,generation=self.generation)
+        return {'text':experiment['id']+' · '+experiment['name'][:42],'callback_data':key}
 
     def execute(self,item):
         if item.get('generation',self.generation)!=self.generation:return
@@ -134,24 +161,33 @@ class TelegramBridge:
         path,payload=command(item['text'])
         if path is None:self.reply(item['chat_id'],HELP);return
         if path=='camera':
-            self.reply(item['chat_id'],'Камера доступна в домашней сети: http://explorer.local:8080 — вкладка «Камера и поездки».');return
+            from remote_access import status
+            remote=status(self.root);token=self.api_token
+            urls=['Домашняя сеть: http://explorer.local:8080/#'+token]
+            if remote.get('local_url'):urls.append('По IP: '+remote['local_url'].replace('/mobile','/')+'#'+token)
+            if remote.get('tailscale_url'):urls.append('Через Tailscale: '+remote['tailscale_url'].replace('/mobile','/')+'#'+token)
+            self.reply(item['chat_id'],'Камера и полная панель:\n'+'\n'.join(urls));return
         if path=='mobile':
             from remote_access import status
             remote=status(self.root)
-            text=('Телефонная панель: '+remote['url']+'\nОткройте её на телефоне с включённым Tailscale.'
-                  if remote['connected'] else 'Tailscale робота ещё не авторизован. Локальная панель: http://explorer.local:8080/mobile')
+            urls=['Дома: http://explorer.local:8080/mobile#'+self.api_token]
+            if remote.get('local_url'):urls.append('По локальному IP: '+remote['local_url']+'#'+self.api_token)
+            if remote.get('tailscale_url'):urls.append('Вне дома через Tailscale: '+remote['tailscale_url']+'#'+self.api_token)
+            text='Телефонное управление и запись обучения:\n'+'\n'.join(urls)+'\nПанель содержит шасси, руку, захват, камеру и запись полного показа.'
             self.reply(item['chat_id'],text);return
         if path=='experiments':
             result=self.api(path,None)
-            self.reply(item['chat_id'],'Выберите тест наблюдения. Кнопки действуют 60 секунд; повторное нажатие не повторяет запуск.',
-                {'inline_keyboard':[[self.callback_button(item['chat_id'],e['id'])] for e in result['experiments']]})
+            self.reply(item['chat_id'],format_experiment_catalog(result['experiments']),
+                {'inline_keyboard':[[self.callback_button(item['chat_id'],e)] for e in result['experiments']]})
             return
         if path=='skills':
             self.reply(item['chat_id'],'Функции: карта и frontier exploration; поездки к сохранённым местам; поиск предметов GroundingDINO/YOLO; память «где видел»; ручное управление шасси и 6 суставами; запись полного показа подъехать→взять→перевезти→положить; офлайн LeRobot ACT после 10+ успешных показов; эксперименты /experiments. Автономный навык включается только после проверки модели.')
             return
         result=self.api('status' if path=='objects' else path,payload)
         if path=='status':
-            text='Батарея: '+str(round(result.get('battery',0) or 0,2))+' В. '+str(result.get('reason','Нет состояния'))
+            try:graduation=self.api('autonomy/graduation',None)
+            except (OSError,ValueError):graduation=None
+            text=format_status(result,graduation)
         elif path=='objects':
             perception=result.get('perception',{})
             if perception.get('stale',True):text='Нет свежего изображения камеры.'
@@ -160,7 +196,9 @@ class TelegramBridge:
         elif path=='places':text='Сохранённые места: '+(', '.join(p['name'] for p in result) or 'пока нет')
         elif path=='experiments/results':text='Последние результаты:\n'+'\n'.join(r['experiment']+' · '+r['state']+' · '+str(r.get('summary','')) for r in result[:6])
         elif path=='experiments/memory':text='Память предметов:\n'+'\n'.join(o['label']+' · '+o['id'][:8] for o in result['objects'][:15])
-        elif path=='teaching':text='Обучение доступно в веб-панели «Рука и обучение». Успешных показов: '+str(result['teaching'].get('successful',0))
+        elif path=='teaching':
+            graduation=self.api('autonomy/graduation',None)
+            text='Обучение доступно в телефонной панели (/mobile). Успешных показов руки: '+str(result['teaching'].get('successful',0))+'; полных мобильных: '+str(result['mobile'].get('successful',0))+'\n'+'\n'.join(x['name']+': '+('открыто' if x['state']=='accepted' else x['next_action']) for x in graduation['items'])
         elif path=='agent':text=result.get('answer','Нет ответа')
         elif path=='control':text='Команда STOP передана. При физической неисправности связи нужна кнопка питания.'
         elif path in ('places/go','agents/survey','missions'):
@@ -192,6 +230,7 @@ class TelegramBridge:
                '/learn':'Обучение','/results':'Результаты','/stop':'Остановить'}
         self.telegram('setMyCommands',{'commands':[{'command':k[1:],'description':v} for k,v in names.items()]})
         labels={v:k for k,v in names.items()}
+        labels['Телефон']='/mobile'
         threading.Thread(target=self.worker,daemon=True).start()
         while True:
             try:
