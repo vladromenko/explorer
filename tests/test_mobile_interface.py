@@ -7,6 +7,9 @@ def test_phone_panel_is_separate_and_has_finite_arm_and_releasing_drive():
     page=(ROOT/'src/mobile.html').read_text()
     assert "arm/jog" in page and "manual_release" in page and "teaching/mobile/start" in page
     assert "visibilitychange" in page and "lastFrame" in page
+    assert "session=sessionId()" in page
+    assert "typeof window.crypto.randomUUID==='function'" in page
+    assert ").trim()" in page
 
 def test_training_goals_are_unique_and_bounded():
     data=json.loads((ROOT/'config/mobile-training-goals.json').read_text())
