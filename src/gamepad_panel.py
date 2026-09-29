@@ -51,7 +51,8 @@ class GamepadPanel:
                 drive_blocked_by=self.drive_readiness(),drive_velocity=self.drive_vector,
                 operator_chassis_accepted=self.config.get('operator_chassis_accepted') is True,
                 continuous_motion_enabled=bool(self.config.get('continuous_motion_enabled') and
-                    (self.config.get('radio_loss_verified') or self.config.get('operator_chassis_accepted'))),precision_step_deg=self.config['arm_step_deg'])
+                    (self.config.get('radio_loss_verified') or self.config.get('operator_chassis_accepted'))),
+                drive_profile=self.config.get('drive_profile','normal'),precision_step_deg=self.config['arm_step_deg'])
 
     def heartbeat(self,enabled):
         with self.lock:
@@ -145,7 +146,7 @@ class GamepadPanel:
         held=self.config['buttons']['l1'] in self.keys
         if self.mode=='DRIVE' and now<self.lease and held:
             self.drive_reasons=self.drive_readiness()
-            self.drive_vector=velocity(self.axes,self.config)
+            self.drive_vector=velocity(self.axes,self.config,self.config.get('drive_profile','normal'))
             if not self.drive_reasons and self.drive is not None:
                 self.drive(self.drive_vector);self.drive_active=True
             elif self.drive_active:
