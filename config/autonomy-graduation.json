@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "localization": {
+    "minimum_returns": 6,
+    "minimum_headings": 3,
+    "maximum_translation_error_m": 0.15,
+    "maximum_median_translation_error_m": 0.08,
+    "maximum_yaw_error_deg": 10.0,
+    "maximum_median_yaw_error_deg": 5.0
+  },
+  "visual_grasp": {
+    "minimum_aperture_calibrations": 1,
+    "minimum_complete_demonstrations": 30,
+    "minimum_failures_or_interventions": 5,
+    "minimum_verified_lifts": 12,
+    "minimum_verified_places": 5,
+    "minimum_object_conditions": 3,
+    "minimum_recent_success_rate": 0.8
+  },
+  "policy": {
+    "minimum_held_out_fraction": 0.2,
+    "minimum_supervised_trials": 10,
+    "minimum_verified_successes": 8,
+    "maximum_unsafe_trials": 0
+  },
+  "delivery": {
+    "minimum_verified_cycles": 3,
+    "required_stages": ["search", "navigate", "inspect", "align", "grasp", "verify", "transport", "place"]
+  }
+}

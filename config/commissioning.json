@@ -19,5 +19,8 @@
   "localization_verified": false,
   "link_recovery_verified": false,
   "arm_feedback_measured": false,
-  "gripper_calibrated": false
+  "gripper_calibrated": false,
+  "visual_closed_loop_arm_verified": false,
+  "learned_policy_verified": false,
+  "autonomous_delivery_verified": false
 }

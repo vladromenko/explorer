@@ -32,7 +32,7 @@ class CalibrationStatusTests(unittest.TestCase):
         self.assertTrue(available['gamepad_base_arm'])
         self.assertTrue(available['stationary_camera_arm_geometry'])
         delivery=next(item for item in result['blocked'] if item['id']=='pick_and_deliver')
-        self.assertEqual(delivery['blocked_by'],['localization','arm_feedback','gripper'])
+        self.assertEqual(delivery['blocked_by'],['localization','visual_grasp','policy','delivery_cycle'])
         self.assertTrue(result['robot_live'])
 
     def test_missing_evidence_does_not_unlock(self):

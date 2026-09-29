@@ -158,7 +158,11 @@ def validate(folder,check_budget=True):
             baseline.extend(np.abs(previous-expected).reshape(-1).tolist())
     if not errors or not np.isfinite(errors).all():raise ValueError('Проверка не дала корректных результатов')
     mobile=json.loads((folder/'job.json').read_text()).get('dataset_kind')=='mobile_manipulation_9dof'
-    result=dict(samples=len(ds),mean_absolute_error=float(np.mean(errors)),
+    split=json.loads((folder/'split.json').read_text())
+    total=len(split['train'])+len(split['validation'])
+    result=dict(samples=len(ds),held_out_episodes=len(split['validation']),
+                held_out_fraction=len(split['validation'])/total,
+                mean_absolute_error=float(np.mean(errors)),
                 p95_absolute_error=float(np.percentile(errors,95)),
                 hold_position_baseline_mae=float(np.mean(baseline)),units='mixed_degrees_and_body_velocity' if mobile else 'degrees',
                 improves_hold_baseline=bool(np.mean(errors)<np.mean(baseline)),

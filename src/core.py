@@ -56,6 +56,7 @@ class Core(Node):
         self.config = json.loads((ROOT/'config/commissioning.json').read_text())
         self.gate = SafetyGate(self.config)
         self.config_sha256=hashlib.sha256((ROOT/'config/commissioning.json').read_bytes()).hexdigest()
+        self.create_timer(2.,self.refresh_graduated_capabilities)
         self.events=TransitionLog(ROOT/'data/motion-transitions.jsonl')
         self.session=MotionSession()
         self.nav_not_before=0.
@@ -125,6 +126,24 @@ class Core(Node):
         self.create_timer(.5, self.write_status)
         # Vendor ColorRGBA.a selects an effect: 100 = off, 101 = changing colours.
         self.create_timer(10., self.refresh_lights)
+
+    def refresh_graduated_capabilities(self):
+        """Hot-apply only evidence-derived capability flags.
+
+        All motion limits and hardware commissioning fields remain immutable for
+        this process.  This prevents the curriculum service from becoming a
+        general configuration bypass.
+        """
+        keys=('localization_verified','gripper_calibrated','visual_closed_loop_arm_verified',
+              'learned_policy_verified','autonomous_delivery_verified')
+        try:
+            raw=(ROOT/'config/commissioning.json').read_bytes();candidate=json.loads(raw)
+            old_other={k:v for k,v in self.config.items() if k not in keys}
+            new_other={k:v for k,v in candidate.items() if k not in keys}
+            if old_other!=new_other:return
+            for key in keys:self.config[key]=candidate.get(key,False) is True
+            self.config_sha256=hashlib.sha256(raw).hexdigest()
+        except (OSError,ValueError,TypeError):pass
 
     def snapshot(self):
         return dict(mode=self.gate.mode,stop_latched=self.gate.estop,

@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
+from sensor_msgs.msg import LaserScan
 from map_tools import MapTools
 from missions import Missions
 from fastapi import FastAPI, Request, HTTPException
@@ -30,11 +31,17 @@ rclpy.init()
 node=Node('explorer_web')
 pub=node.create_publisher(String,'/explorer/request',1)
 maps=MapTools(node)
+from localization_exercise import LocalizationExercise
+localization_exercise=LocalizationExercise(ROOT,maps.pose)
+node.create_subscription(LaserScan,'/scan0',lambda message:localization_exercise.scan('scan0',message),1)
+node.create_subscription(LaserScan,'/scan1',lambda message:localization_exercise.scan('scan1',message),1)
 missions=Missions(node,maps)
 from semantic_world import SemanticWorld,active_view,guarded_closure
 from research_audit import audit as research_audit
 from calibration_status import status as calibration_status
+from autonomy_graduation import AutonomyGraduation
 semantic_world=SemanticWorld(ROOT)
+autonomy_graduation=AutonomyGraduation(ROOT)
 arm_model=None
 arm_model_lock=threading.Lock()
 arm_planner=None
@@ -425,6 +432,20 @@ def research_status():
 def calibrations_status():
     """Evidence scopes, including capabilities unlocked by each acceptance."""
     return calibration_status(ROOT)
+
+@app.get('/api/autonomy/graduation')
+def autonomy_graduation_status():
+    """Current evidence counters, next physical exercise and automatic unlocks."""
+    return autonomy_graduation.status()
+
+class LocalizationReturn(BaseModel):
+    heading:str
+
+@app.post('/api/autonomy/localization/begin')
+def localization_begin():return map_operation(localization_exercise.begin)
+
+@app.post('/api/autonomy/localization/return')
+def localization_return(c:LocalizationReturn):return map_operation(localization_exercise.capture,c.heading)
 
 class ResearchRuntime(BaseModel):
     continual_memory:bool

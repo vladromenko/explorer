@@ -46,8 +46,8 @@ def status(root, now=None):
     blocked=[
         dict(id='global_object_memory',name='Достоверная 3D-память объектов на карте',blocked_by=['localization']),
         dict(id='autonomous_exploration',name='Автономное исследование и поиск по квартире',blocked_by=['localization']),
-        dict(id='closed_loop_grasp',name='Захват с подтверждением положения и удержания',blocked_by=['arm_feedback','gripper']),
-        dict(id='pick_and_deliver',name='Полный автономный pick-and-deliver',blocked_by=['localization','arm_feedback','gripper']),
+        dict(id='closed_loop_grasp',name='Захват с визуальным подтверждением положения и удержания',blocked_by=['visual_grasp']),
+        dict(id='pick_and_deliver',name='Полный автономный pick-and-deliver',blocked_by=['localization','visual_grasp','policy','delivery_cycle']),
     ]
     return dict(at=now,updated_at=acceptance.get('updated_at'),robot_live=fresh,
                 lidar_live=bool(lidar and type(lidar.get('at')) in (int,float) and 0<=now-lidar['at']<2),
