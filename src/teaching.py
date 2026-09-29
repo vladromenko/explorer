@@ -43,6 +43,7 @@ class TeachingController:
         self.lock=threading.Lock();self.active=None;self.error=None
         self.move=None;self.stop_revision=lambda:0
         self.measured_reference=None
+        self.arm_reference=None
         # A restart never resumes recording or motion.
         for episode in self.store.episodes():
             if episode.get('state')=='recording':
@@ -54,6 +55,7 @@ class TeachingController:
         temporary=folder/'episode.tmp';temporary.write_text(json.dumps(episode));temporary.replace(folder/'episode.json')
 
     def pose(self):
+        if self.arm_reference is not None:return self.arm_reference()['servo_deg']
         state=json.loads((self.root/'data/status.json').read_text());stationary_status(state,time.time())
         if self.measured_reference is not None:
             return self.measured_reference()['servo_deg']
@@ -89,7 +91,8 @@ class TeachingController:
             pose,image=self.observation()
             episode=dict(id=uuid.uuid4().hex,created=time.time(),name=name[:80],state='recording',
                          outcome='unknown',label_source=None,source='operator_demonstration',
-                         start_deg=pose,steps=[],joint_positions_measured=self.measured_reference is not None)
+                         start_deg=pose,steps=[],joint_positions_measured=self.arm_reference is None and self.measured_reference is not None,
+                         joint_state_source='command_estimate' if self.arm_reference is not None else 'legacy')
             self.save(episode)
             cv2.imwrite(str(self.store.root/episode['id']/'start.jpg'),image)
             self.active=episode;self.error=None
@@ -99,8 +102,8 @@ class TeachingController:
     def jog(self,joint,delta,observing,deadline=None):
         if observing is not True:raise ValueError('Подтвердите присутствие рядом с роботом')
         if self.active:return self.step(joint,delta,deadline)
-        if type(joint) is not int or not 1<=joint<=6 or type(delta) is not int or delta not in (-2,2):
-            raise ValueError('Разрешён шаг одного сустава на 2°')
+        if type(joint) is not int or not 1<=joint<=6 or type(delta) is not int or delta not in (-10,-5,-3,-2,2,3,5,10):
+            raise ValueError('Разрешён шаг одного сустава на 2, 3, 5 или 10°')
         if not self.lock.acquire(blocking=False):raise ValueError('Предыдущий шаг ещё выполняется')
         try:
             if self.move is None:raise ValueError('Постоянный контроллер руки не готов')
@@ -108,7 +111,7 @@ class TeachingController:
             return self.move(pose,goal,deadline)
         finally:self.lock.release()
 
-    def cartesian(self,model,axis,direction,observing):
+    def cartesian(self,model,axis,direction,observing,deadline=None):
         if observing is not True:raise ValueError('Подтвердите присутствие рядом с роботом')
         if not self.lock.acquire(blocking=False):raise ValueError('Предыдущий шаг ещё выполняется')
         try:
@@ -117,13 +120,13 @@ class TeachingController:
             from cartesian_jog import propose
             revision=self.stop_revision()
             pose=self.pose();proposal=propose(model,pose,axis,direction)
-            result=self.move(pose,proposal['goal_deg'],expected_stop_revision=revision)
+            result=self.move(pose,proposal['goal_deg'],deadline=deadline,expected_stop_revision=revision)
             return dict(proposal,executed=True,command=result,attainment_verified=result.get('attained') is True)
         finally:self.lock.release()
 
     def step(self,joint,delta,deadline=None):
-        if type(joint) is not int or not 1<=joint<=6 or type(delta) is not int or delta not in (-2,2):
-            raise ValueError('Разрешён один сустав и шаг 2 градуса')
+        if type(joint) is not int or not 1<=joint<=6 or type(delta) is not int or delta not in (-10,-5,-3,-2,2,3,5,10):
+            raise ValueError('Разрешён один сустав и шаг 2, 3, 5 или 10°')
         if not self.lock.acquire(blocking=False):raise ValueError('Предыдущий шаг ещё выполняется')
         try:
             if not self.active:raise ValueError('Сначала начните показ')
@@ -135,12 +138,15 @@ class TeachingController:
             result=self.move(pose,goal,deadline)
             (folder/f'{index:04d}-command.log').write_text(json.dumps(result))
             after_pose,after_image=self.observation()
-            matched=np.allclose(after_pose,goal,atol=.5,rtol=0) if self.measured_reference is not None else after_pose==goal
-            if not matched:raise ValueError('Измеренное положение не совпало с целью показа')
+            matched=np.allclose(after_pose,goal,atol=.5,rtol=0)
+            if not matched:raise ValueError('Состояние руки не совпало с целью показа')
             after=f'{index:04d}-after.jpg';cv2.imwrite(str(folder/after),after_image)
             self.active['steps'].append(dict(at=time.time(),observation_at=observed_at,start_deg=pose,goal_deg=goal,
-                before_image=before,after_image=after,measured=self.measured_reference is not None,
-                measured_after_deg=after_pose,actuator_attainment_verified=result.get('attained') is True))
+                before_image=before,after_image=after,measured=result.get('measured') is True,
+                measured_after_deg=after_pose if result.get('measured') else None,
+                q_estimated_deg=after_pose if not result.get('measured') else None,
+                state_source=result.get('source'),action=dict(arm_command=goal,gripper_command=goal[5]),
+                actuator_attainment_verified=result.get('attained') is True))
             self.save(self.active);return self.status()
         except (OSError,ValueError,subprocess.TimeoutExpired) as exc:
             self.error=str(exc)

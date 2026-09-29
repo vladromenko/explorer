@@ -6,6 +6,7 @@
 UART_HandleTypeDef board_uart[PORT_COUNT];
 volatile uint32_t board_rx_overruns[PORT_COUNT],board_uart_errors[PORT_COUNT];
 volatile uint32_t board_tx_completed[PORT_COUNT];
+volatile uint64_t board_tx_completed_us[PORT_COUNT];
 static uint64_t now,busy_until,write_settled_at;
 static uint8_t rx[2048];
 static uint64_t rx_at[2048];
@@ -15,6 +16,7 @@ static uint64_t first_query[6];
 static uint8_t last_sync[38];
 static uint16_t last_sync_length;
 static bool tx_active,hang_tx,fail_write;
+static bool complete_on_irq_restore;
 static ec_controller_t *live;
 static unsigned fault_seen;
 static uint8_t last_report[6][30];
@@ -22,6 +24,15 @@ enum response_mode { NORMAL,ABSENT,DROP_ONCE,WRONG_ID,WRONG_HEADER,BAD_CHECKSUM,
 static enum response_mode mode[6];
 
 uint64_t board_time_us(void) { return now; }
+void mock_restore_irq(uint32_t value) {
+    (void)value;
+    if(complete_on_irq_restore) {
+        complete_on_irq_restore=false;
+        board_uart[PORT_ARM].gState=HAL_UART_STATE_READY;
+        board_tx_completed_us[PORT_ARM]=now;
+        ++board_tx_completed[PORT_ARM]; tx_active=false;
+    }
+}
 static void enqueue(const uint8_t *bytes,unsigned length,uint64_t at) {
     assert(rx_length+length<=sizeof(rx));
     for(unsigned i=0;i<length;++i) { rx[rx_length]=bytes[i]; rx_at[rx_length++]=at; }
@@ -98,6 +109,7 @@ static void advance(ec_controller_t *c,unsigned microseconds) {
         now+=100;
         if(tx_active && !hang_tx && now>=busy_until) {
             board_uart[PORT_ARM].gState=HAL_UART_STATE_READY;
+            board_tx_completed_us[PORT_ARM]=now;
             ++board_tx_completed[PORT_ARM]; tx_active=false;
         }
         for(unsigned j=0;j<6;++j) {
@@ -113,11 +125,12 @@ static void advance(ec_controller_t *c,unsigned microseconds) {
 static void reset(ec_controller_t *c) {
     now=1000; busy_until=0; write_settled_at=0;
     memset(board_uart,0,sizeof(board_uart)); memset((void*)board_tx_completed,0,sizeof(board_tx_completed));
+    memset((void*)board_tx_completed_us,0,sizeof(board_tx_completed_us));
     memset((void*)board_uart_errors,0,sizeof(board_uart_errors)); memset((void*)board_rx_overruns,0,sizeof(board_rx_overruns));
     memset(mode,0,sizeof(mode)); memset(queries,0,sizeof(queries)); memset(good,0,sizeof(good)); memset(bad,0,sizeof(bad));
     memset(first_query,0,sizeof(first_query)); memset(last_report,0,sizeof(last_report));
     rx_read=rx_length=sync_count=partial_count=target_count=commit_attempts=inject_commit=fault_seen=0;
-    tx_active=hang_tx=fail_write=false; last_sync_length=0; live=c;
+    tx_active=hang_tx=fail_write=complete_on_irq_restore=false; last_sync_length=0; live=c;
     assert(ec_init(c,1,now)==EX_OK);
     assert(ex_base_begin(&c->base,1,1,now)==EX_OK);
     servo_bus_init();
@@ -231,7 +244,46 @@ static void test_uart_abort_and_hang(void) {
     fail_write=false; until_write(&c,1); advance(&c,4000);
     assert(servo_sent_generation==c.arm_generation);
 }
+static void test_completion_observed_after_poll_delay(void) {
+    ec_controller_t c; warm(&c); enable(&c); until_write(&c,1);
+    /* The UART interrupt finished normally, but main was not scheduled for
+     * 25 ms (below the board's 30 ms main-liveness limit). */
+    tx_active=false; board_uart[PORT_ARM].gState=HAL_UART_STATE_READY;
+    board_tx_completed_us[PORT_ARM]=busy_until;
+    ++board_tx_completed[PORT_ARM];
+    now+=25000;
+    ec_controller_t snapshot=c; servo_bus_poll(&snapshot);
+    assert(servo_write_fault_generation==0);
+    assert(servo_sent_generation==c.arm_generation);
+    /* Timely poll is not assumed: a genuinely late TC must still be rejected
+     * when both the deadline and the callback precede the next main poll. */
+    warm(&c); enable(&c); until_write(&c,1);
+    tx_active=false; board_uart[PORT_ARM].gState=HAL_UART_STATE_READY;
+    board_tx_completed_us[PORT_ARM]=now+21000;
+    ++board_tx_completed[PORT_ARM]; now+=25000;
+    snapshot=c; servo_bus_poll(&snapshot);
+    assert(servo_write_fault_generation==1 && servo_sent_generation==0);
+    /* Old or unrelated completions cannot be attributed to this frame. */
+    warm(&c); enable(&c); until_write(&c,1);
+    tx_active=false; board_uart[PORT_ARM].gState=HAL_UART_STATE_READY;
+    board_tx_completed_us[PORT_ARM]=busy_until;
+    board_tx_completed[PORT_ARM]+=2; now+=25000;
+    snapshot=c; servo_bus_poll(&snapshot);
+    assert(servo_write_fault_generation==1 && servo_sent_generation==0);
+}
+static void test_tc_between_snapshot_and_ready_check(void) {
+    ec_controller_t c; warm(&c); enable(&c); until_write(&c,1);
+    now=busy_until; complete_on_irq_restore=true;
+    ec_controller_t snapshot=c; servo_bus_poll(&snapshot);
+    /* TC arrived after the atomic snapshot. READY must come from that same
+     * snapshot, otherwise this legitimate completion looks like an abort. */
+    assert(!complete_on_irq_restore && servo_write_fault_generation==0);
+    servo_bus_poll(&snapshot);
+    assert(servo_write_fault_generation==0 && servo_sent_generation==c.arm_generation);
+}
 int main(void) {
+    test_tc_between_snapshot_and_ready_check();
+    test_completion_observed_after_poll_delay();
     test_startup_and_stream(); test_retry_age_and_bad_frames(); test_late_and_overlapping_replies();
     test_completion_and_stale_snapshot(); test_cancel_priority_and_partial_holds(); test_uart_abort_and_hang();
     puts("servo dispatcher fault injection: deadlines, bounded retry age, parser resync, final commit guard, TC completion, cancellation priority, partial hold, UART abort/hang: PASS");

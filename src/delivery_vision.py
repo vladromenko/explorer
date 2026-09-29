@@ -57,6 +57,29 @@ class JointHistory:
             return result
 
 
+class CommandHistory:
+    """Exposure-time command estimate; never interpolate an unsent future goal."""
+    def __init__(self):
+        self.lock=threading.Lock();self.samples=deque(maxlen=512);self.epoch=None
+    def add(self,state):
+        with self.lock:
+            arm=state.get('arm') or {};ref=state.get('manual_reference') or {}
+            epoch=((state.get('identity') or {}).get('boot'),ref.get('session'),ref.get('reference_generation'))
+            if epoch!=self.epoch or not arm.get('reference_valid') or not arm.get('estimated'):
+                self.samples.clear();self.epoch=epoch
+            if arm.get('reference_valid') and arm.get('estimated'):
+                values=arm.get('servo_deg');stamp=state.get('monotonic_ns',0)/1e9
+                if not values or len(values)!=6 or not all(math.isfinite(v) for v in values):
+                    raise ValueError('Incomplete command estimate')
+                if not self.samples or stamp>self.samples[-1][0]:self.samples.append((stamp,list(values)))
+    def at(self,when,boot):
+        with self.lock:
+            if self.epoch is None or self.epoch[0]!=boot:raise ValueError('Command reference boot changed')
+            rows=[row for row in self.samples if 0<=when-row[0]<=.15]
+            if not rows:raise JointSamplePending('No command state at camera exposure')
+            return list(rows[-1][1])
+
+
 def reacquire_candidate(reference, current, bbox):
     """New object hypothesis in a verified static view, NOT a continued track.
 
@@ -101,6 +124,8 @@ class FeatureObject:
         self.gray=cv2.cvtColor(rgb,cv2.COLOR_BGR2GRAY)
         self.points=cv2.goodFeaturesToTrack(self.gray,100,.02,3,mask=mask)
         if self.points is None or len(self.points)<10:raise ValueError('Object has insufficient visible tracking texture')
+        spread=np.ptp(self.points[:,0],axis=0)
+        self.initial_scale=float(max(1.,math.sqrt(max(1.,spread[0]*spread[1]))))
         self.initial=len(self.points);self.stamp=float(sample['stamp']);self.object_id=uuid.uuid4().hex
         self.frame=str(sample['frame']);self.ended=False
     def update(self, sample):
@@ -128,30 +153,42 @@ class FeatureObject:
         xyz=np.column_stack([rays*z[:,None],z]);center=np.median(xyz,axis=0)
         if np.percentile(np.linalg.norm(xyz-center,axis=1),90)>.15:
             self.ended=True;raise ValueError('Tracked depth no longer forms a small object')
+        spread=np.ptp(points[:,0],axis=0);scale=float(math.sqrt(max(1.,spread[0]*spread[1]))/self.initial_scale)
         self.gray,self.points,self.stamp=gray,points,stamp
-        return dict(object_id=self.object_id,point_camera=center,association_fraction=fraction)
+        return dict(object_id=self.object_id,point_camera=center,association_fraction=fraction,object_scale=scale)
 
 
 class MeasuredVision:
     def __init__(self, root, node, arm, model, maps):
         from std_msgs.msg import String
         self.root,self.arm,self.model,self.maps=root,arm,model,maps
-        self.history=JointHistory();self.lock=threading.RLock();self.track=None;self.frames=deque(maxlen=400)
+        self.factory_mode=getattr(arm,'factory_timed',False) is True
+        command_mode=self.factory_mode or getattr(arm,'profile',{}).get('manual_reference_version')==1
+        self.command_mode=command_mode
+        self.history=CommandHistory() if command_mode else JointHistory()
+        self.lock=threading.RLock();self.track=None;self.frames=deque(maxlen=400)
         self.error=None;self.last_stamp=0.;self.settings=None;self.generation=0
         self.pending=deque();self.enqueued_stamp=0.;self.waiting_for_joints=None
         def sample(message):
             try:self.history.add(json.loads(message.data))
             except (KeyError,ValueError,TypeError):pass
-        self.subscription=node.create_subscription(String,'/explorer/servo_sample',sample,100)
+        self.subscription=node.create_subscription(String,'/explorer/controller_state' if command_mode else '/explorer/servo_sample',sample,100)
         threading.Thread(target=self.worker,daemon=True).start()
     def snapshot(self):
         with np.load(self.root/'data/rgbd-snapshot.npz',allow_pickle=False) as raw:sample=dict(raw)
         if not 0<=time.time()-float(sample['stamp'])<.4:raise ValueError('RGB-D frame is stale')
         return sample
     def geometry(self, sample, settings):
-        state=self.arm._state();boot=(state.get('identity') or {}).get('boot')
-        exposure=float(sample['stamp'])-(state['at']-state['monotonic_ns']/1e9)
-        angles=self.history.at(exposure,boot)
+        if getattr(self,'factory_mode',False):
+            state=self.arm.reference();angles=state.get('servo_deg')
+            settled=float(state['at'])+float(state.get('runtime_ms',0))/1000+.12
+            if float(sample['stamp'])<settled:raise JointSamplePending('Camera exposure predates settled factory command estimate')
+            if not angles or len(angles)!=6 or state.get('phase')!='command_elapsed_observation_required':
+                raise ValueError('Factory arm command estimate is not stable')
+        else:
+            state=self.arm._state();boot=(state.get('identity') or {}).get('boot')
+            exposure=float(sample['stamp'])-(state['at']-state['monotonic_ns']/1e9)
+            angles=self.history.at(exposure,boot)
         model=self.model()
         with model.lock:
             model.set_state(angles[:5],settings['gripper_linkage_rad'])
@@ -202,10 +239,15 @@ class MeasuredVision:
                     value=dict(at=float(queued['stamp']),object_id=observation['object_id'],confidence=observation['association_fraction'],
                         confidence_kind='feature_retention_not_semantic_probability',
                         association_fraction=observation['association_fraction'],identity_association_verified=True,
-                        depth_validated=True,camera_pose_measured=True,frame='base_footprint',
+                        depth_validated=True,camera_pose_measured=not getattr(self,'command_mode',False),
+                        camera_pose_validated_for_execution=bool(settings.get('handeye_execution_authorized')),
+                        camera_pose_validation_record=settings.get('handeye_physical_validation_record'),
+                        camera_pose_source='command_estimate' if getattr(self,'command_mode',False) else 'servo_measurement',frame='base_footprint',
                         object_xyz=obj.tolist(),tcp_xyz=tcp.tolist(),base_xyyaw=[pose[k] for k in ('x','y','yaw')],
+                        object_scale=observation.get('object_scale'),object_tcp_distance_m=float(np.linalg.norm(obj-tcp)),
                         floor_clearance_m=float(obj@plane[:3]+plane[3]),
-                        gripper_open_measured=abs(angles[5]-settings['open_deg'])<.5)
+                        gripper_open_measured=not getattr(self,'command_mode',False) and abs(angles[5]-settings['open_deg'])<.5,
+                        gripper_open_estimated=getattr(self,'command_mode',False) and abs(angles[5]-settings['open_deg'])<.5)
                     self.frames.append(value);self.last_stamp=float(queued['stamp']);self.pending.popleft()
                     self.waiting_for_joints=None;processed+=1
             except JointSamplePending as exc:

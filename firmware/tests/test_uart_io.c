@@ -60,6 +60,7 @@ int main(void) {
     board_uart[PORT_ARM].gState=HAL_UART_STATE_READY;
     HAL_UART_TxCpltCallback(&board_uart[PORT_ARM]);
     assert(board_tx_completed[PORT_ARM]==1);
+    assert(board_tx_completed_us[PORT_ARM]==now);
     now=100000; board_io_poll(); assert(aborts==1 && tx_requests==2 && mock_primask==0);
     /* Preserve an already-masked caller's state; do not reopen interrupts. */
     mock_primask=1; board_io_poll(); assert(mock_primask==1);

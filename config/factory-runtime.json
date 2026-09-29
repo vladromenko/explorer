@@ -1,0 +1,28 @@
+{
+  "transport": "micro_ros",
+  "node": "robotio",
+  "image_sha256": "dadbf34b5bff6d36033e6b1994ddced5d723bec5cd7bd695117f223b59351764",
+  "identity_source": "operator_flash_record",
+  "arm_state_source": "command_estimate",
+  "manual_reference_deg": [
+    90,
+    90,
+    90,
+    90,
+    90,
+    90
+  ],
+  "command_gap_stop_test_passed": true,
+  "link_recovery_test_passed": false,
+  "evidence": "data/factory-acceptance-20260929",
+  "auto_agent_restart_enabled": false,
+  "known_issues": [
+    "watchdog_1_0_starves_battery_sampling",
+    "link_recovery_not_accepted"
+  ],
+  "battery_sampling_verified": false,
+  "idle_zero_cadence": true,
+  "further_firmware_writes_authorized": false,
+  "idle_battery_refresh_verified": true,
+  "idle_battery_refresh_evidence": "data/factory-acceptance-20260929/idle-battery-refresh.json"
+}

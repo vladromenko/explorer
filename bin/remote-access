@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root=/home/vlad/Explorer
+cli="$root/vendor/tailscale/tailscale"
+socket="$root/data/tailscale/tailscaled.sock"
+case "${1:-status}" in
+  login)
+    "$cli" --socket="$socket" up --hostname=explorer-robot --accept-dns=false
+    ;;
+  status)
+    "$cli" --socket="$socket" status
+    ;;
+  json)
+    "$cli" --socket="$socket" status --json
+    ;;
+  url)
+    "$cli" --socket="$socket" status --json | python3 -c 'import json,sys; d=json.load(sys.stdin); n=d.get("Self",{}).get("DNSName","").rstrip("."); print(("http://"+n+":8080/mobile") if n else "Tailscale ещё не подключён")'
+    ;;
+  logout)
+    "$cli" --socket="$socket" logout
+    ;;
+  *)
+    echo "Использование: remote-access login|status|url|logout" >&2
+    exit 2
+    ;;
+esac

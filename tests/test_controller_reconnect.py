@@ -17,9 +17,10 @@ import unittest
 from unittest.mock import Mock
 
 from controller_feedback import ArmFeedback, ScanAssembler, load_calibration, vendor_calibration
-from controller_protocol import ClockMapping, Kind, Parser, Session, arm_payload, base_payload, decode, encode
+from controller_protocol import ClockMapping, Kind, Parser, Session, arm_payload, base_payload, decode, encode, RESULT_NAMES
 from controller_requests import PendingRequests
 from controller_release import select_controller_profile
+from controller_arm_commissioning import arm_commissioning_allowed
 
 
 class FakeNode:
@@ -105,9 +106,10 @@ class DriverReconnectTests(unittest.TestCase):
         self.ns = dict(Node=FakeNode, ROOT=self.root, json=json, hashlib=hashlib, math=math,
             Path=Path, secrets=secrets, struct=struct, time=SimpleNamespace(monotonic_ns=lambda: self.now),
             serial=SimpleNamespace(Serial=factory, SerialException=OSError),
-            Parser=Parser, Session=Session, ClockMapping=ClockMapping, Kind=Kind, encode=encode,
+            Parser=Parser, Session=Session, ClockMapping=ClockMapping, Kind=Kind, encode=encode, RESULT_NAMES=RESULT_NAMES,
             ArmFeedback=ArmFeedback, ScanAssembler=ScanAssembler, load_calibration=load_calibration,
             select_controller_profile=select_controller_profile,
+            arm_commissioning_allowed=arm_commissioning_allowed,
             PendingRequests=PendingRequests, base_payload=base_payload, arm_payload=arm_payload,
             decode_status=lambda payload: self.status, qos_profile_sensor_data=None,
             **{name: SimpleNamespace for name in ('Odometry', 'Imu', 'MagneticField', 'Float32',

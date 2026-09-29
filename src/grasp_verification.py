@@ -2,6 +2,12 @@
 import math
 import numpy as np
 
+def validated_camera_pose(frame):
+    return frame.get('camera_pose_measured') is True or (
+        frame.get('camera_pose_source')=='command_estimate' and
+        frame.get('camera_pose_validated_for_execution') is True and
+        bool(frame.get('camera_pose_validation_record')))
+
 
 def verify_lift(before, after, calibration_validated=False):
     evidence=dict(verifier='rgbd_lift_v1',calibration_validated=calibration_validated,
@@ -20,8 +26,8 @@ def verify_lift(before, after, calibration_validated=False):
             return unknown('Object identity not stable')
         if any(not f.get('depth_validated',False) for f in frames):return unknown('Invalid depth association')
         if any(f.get('identity_association_verified') is not True or f.get('frame')!='base_footprint' or
-               f.get('camera_pose_measured') is not True for f in frames):
-            return unknown('Object association and measured camera-motion compensation required')
+               not validated_camera_pose(f) for f in frames):
+            return unknown('Object association and validated camera-motion compensation required')
         stamps=[f['at'] for f in frames]
         if any(b<=a for a,b in zip(stamps,stamps[1:])) or stamps[-1]-stamps[0]>30:
             return unknown('Invalid observation timing')
@@ -51,7 +57,7 @@ def verify_place(before, after, zone, calibration_validated=False):
         return unknown('Calibrated geometry and three observations on both sides required')
     try:
         frames=before+after
-        if any(f.get('identity_association_verified') is not True or f.get('camera_pose_measured') is not True or
+        if any(f.get('identity_association_verified') is not True or not validated_camera_pose(f) or
                f.get('depth_validated') is not True or f.get('frame')!='base_footprint' for f in frames):
             return unknown('Unverified tracking or camera geometry')
         if len({f['object_id'] for f in frames})!=1:return unknown('Object identity changed')

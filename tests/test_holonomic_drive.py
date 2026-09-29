@@ -18,10 +18,13 @@ class HolonomicTests(unittest.TestCase):
             with self.assertRaises(ValueError):velocity({'1':v},self.config)
     def test_receiver_is_not_radio_evidence(self):
         state={'at':10,'stop_latched':False,'commissioning':dict(base_commissioned=True,mcu_watchdog_verified=True,lidar_tf_validated=True)}
+        self.config['operator_chassis_accepted']=False
         self.assertTrue(blocked_by(state,self.config,10.1))
         self.config.update(radio_loss_verified=True,continuous_motion_enabled=True)
         self.assertEqual(blocked_by(state,self.config,10.1),[])
         self.assertTrue(blocked_by(state,self.config,12))
+        self.config.update(operator_chassis_accepted=True,radio_loss_verified=False)
+        self.assertEqual(blocked_by(state,self.config,10.1),[])
 
 class GamepadIntegrationTests(unittest.TestCase):
     def test_evdev_drive_is_gated_and_panel_loss_stops(self):
@@ -31,6 +34,7 @@ class GamepadIntegrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory,patch('gamepad_panel.threading.Thread'):
             root=Path(directory);(root/'config').mkdir();(root/'data').mkdir()
             config=yaml.safe_load((Path(__file__).parents[1]/'config/gamepad.yaml').read_text())
+            config['operator_chassis_accepted']=False
             (root/'config/gamepad.yaml').write_text(yaml.safe_dump(config))
             state={'at':time.time(),'stop_latched':False,'commissioning':dict(base_commissioned=True,mcu_watchdog_verified=True,lidar_tf_validated=True)}
             (root/'data/status.json').write_text(json.dumps(state))

@@ -11,13 +11,13 @@ ex_result_t ec_init(ec_controller_t *c,uint64_t boot,uint64_t now) {
     const ex_base_config_t cfg={LEASE_US,30000,.7,.7,4.2};
     return ex_base_init(&c->base,&cfg,boot,now);
 }
-static void cancel_arm(ec_controller_t *c) {
+static void cancel_arm(ec_controller_t *c, ex_result_t reason) {
     if(c->arm_enabled || c->arm_pending) {
-        c->arm_cancel=true; ++c->arm_cancel_generation;
+        c->arm_cancel=true; ++c->arm_cancel_generation; c->arm_stop_reason=reason;
     }
     c->arm_enabled=false; c->arm_pending=false;
 }
-void ec_cancel_arm(ec_controller_t *c) { if(c) { cancel_arm(c); } }
+void ec_cancel_arm(ec_controller_t *c, ex_result_t reason) { if(c) { cancel_arm(c,reason); } }
 static bool measured(const ec_controller_t *c,uint64_t now) {
     for(unsigned i=0;i<6;++i) {
         if(!c->measured_valid[i] || now<c->measured_us[i] ||
@@ -60,7 +60,7 @@ static ex_result_t recovery_target(const ec_controller_t *c,const double q[6],ui
 }
 static ex_result_t dispatch(ec_controller_t *c,const ew_frame_t *f,uint64_t now) {
     if(f->type==EW_ESTOP && f->length==0) {
-        ex_base_estop(&c->base); cancel_arm(c); return EX_OK;
+        ex_base_estop(&c->base); cancel_arm(c,EX_LATCHED); return EX_OK;
     }
     if(f->length<40) { return EX_FRAME; }
     const uint8_t *p=f->payload;
@@ -74,7 +74,7 @@ static ex_result_t dispatch(ec_controller_t *c,const ew_frame_t *f,uint64_t now)
         ex_result_t r;
         if(f->type==EW_CLEAR) {
             r=ex_base_clear_fault(&c->base,now);
-            if(r==EX_OK) { c->base.highest_session_id=session; cancel_arm(c); }
+            if(r==EX_OK) { c->base.highest_session_id=session; cancel_arm(c,EX_OK); }
         } else {
             if(c->arm_enabled || c->arm_pending || c->arm_cancel) { return EX_NOT_READY; }
             if(c->base.mode==EX_BASE_ACTIVE && !c->base.command_present) {
@@ -98,9 +98,9 @@ static ex_result_t dispatch(ec_controller_t *c,const ew_frame_t *f,uint64_t now)
     } else if(f->type==EW_HOLD && f->length==40) {
         r=ex_base_hold(&c->base,now);
     } else if(f->type==EW_CANCEL && f->length==40) {
-        r=ex_base_cancel(&c->base,boot,session,now); cancel_arm(c);
+        r=ex_base_cancel(&c->base,boot,session,now); cancel_arm(c,EX_OK);
     } else if(f->type==EW_ARM_CANCEL && f->length==40) {
-        cancel_arm(c); r=EX_OK;
+        cancel_arm(c,EX_OK); r=EX_OK;
     } else if((f->type==EW_ARM_ENABLE || f->type==EW_RECOVERY_ENABLE) && f->length==40) {
         if(c->arm_enabled || c->arm_pending || c->arm_cancel || !measured(c,now)) { return EX_NOT_READY; }
         bool recovery=f->type==EW_RECOVERY_ENABLE;
@@ -114,7 +114,7 @@ static ex_result_t dispatch(ec_controller_t *c,const ew_frame_t *f,uint64_t now)
         }
         memcpy(c->arm_raw,c->measured_raw,sizeof(c->arm_raw));
         c->arm_expires_us=expiry; c->arm_enabled=true;
-        c->arm_recovery=recovery;
+        c->arm_recovery=recovery; c->arm_stop_reason=EX_OK;
         /* Align software target only. No boot/enable motion or torque write. */
         r=EX_OK;
     } else if(f->type==EW_CALIBRATION && f->length==232) {
@@ -154,7 +154,7 @@ static ex_result_t dispatch(ec_controller_t *c,const ew_frame_t *f,uint64_t now)
         c->beep=p[40]!=0; r=EX_OK;
     } else if((f->type==EW_ARM || f->type==EW_ARM_RECOVER) && f->length==66) {
         if(!c->arm_enabled || c->arm_cancel || !measured(c,now)) { return EX_NOT_READY; }
-        if(now>=c->arm_expires_us) { cancel_arm(c); return EX_EXPIRED; }
+        if(now>=c->arm_expires_us) { cancel_arm(c,EX_EXPIRED); return EX_EXPIRED; }
         const uint16_t runtime=ew_u16(p+64);
         /* Runtime 0 is vendor-defined immediate target; rate acceptance is separate. */
         if(runtime!=0) { return EX_RANGE; }
@@ -188,8 +188,9 @@ ex_result_t ec_dispatch(ec_controller_t *c,const ew_frame_t *f,uint64_t now) {
 ex_result_t ec_tick(ec_controller_t *c,uint64_t now,ex_twist_t *v) {
     if(!c || !v) { return EX_ARGUMENT; }
     ex_result_t r=ex_base_tick(&c->base,now,v);
-    if(c->base.mode==EX_BASE_FAULT || (c->arm_enabled &&
-       (now>=c->arm_expires_us || !measured(c,now)))) { cancel_arm(c); }
+    if(c->base.mode==EX_BASE_FAULT) { cancel_arm(c,c->base.fault); }
+    else if(c->arm_enabled && now>=c->arm_expires_us) { cancel_arm(c,EX_EXPIRED); }
+    else if(c->arm_enabled && !measured(c,now)) { cancel_arm(c,EX_STALE); }
     return r;
 }
 void ec_measure(ec_controller_t *c,unsigned i,uint16_t raw,bool valid,uint64_t now) {

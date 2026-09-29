@@ -31,11 +31,33 @@ node=Node('explorer_web')
 pub=node.create_publisher(String,'/explorer/request',1)
 maps=MapTools(node)
 missions=Missions(node,maps)
+from semantic_world import SemanticWorld,active_view,guarded_closure
+from research_audit import audit as research_audit
+from calibration_status import status as calibration_status
+semantic_world=SemanticWorld(ROOT)
 arm_model=None
 arm_model_lock=threading.Lock()
 arm_planner=None
 arm_planner_lock=threading.Lock()
 threading.Thread(target=rclpy.spin,args=(node,),daemon=True).start()
+
+def semantic_world_loop():
+    """Persist each fresh frame independently of an open browser."""
+    while True:
+        try:
+            runtime=json.loads((ROOT/'config/research-runtime.json').read_text())
+            if runtime.get('continual_memory') is True:
+                perception=json.loads((ROOT/'data/perception.json').read_text())
+                if 0<=time.time()-perception.get('image_stamp',0)<3:
+                    try:pose=maps.pose()
+                    except (OSError,ValueError,KeyError):pose=None
+                    try:epoch=maps.epoch()
+                    except (OSError,ValueError,KeyError):epoch='unknown'
+                    semantic_world.ingest(perception,pose,epoch)
+        except (OSError,ValueError,KeyError,TypeError):pass
+        time.sleep(.25)
+
+threading.Thread(target=semantic_world_loop,daemon=True).start()
 agent_lock=threading.Lock()
 command_lock=threading.Lock()
 command_sequence={}
@@ -123,7 +145,8 @@ gamepad_panel=GamepadPanel(ROOT,teaching,stop_all,lambda values:emit('drive',vel
 
 @app.get('/api/teaching')
 def teaching_status():
-    return dict(teaching=teaching.status(),learning=learning_jobs.status(),gamepad=gamepad_panel.status())
+    return dict(teaching=teaching.status(),mobile=mobile_demonstrations.status(),
+                learning=learning_jobs.status(),gamepad=gamepad_panel.status())
 
 class TeachingStart(BaseModel):
     name:str=Field(min_length=3,max_length=80)
@@ -147,6 +170,12 @@ class PanelLease(BaseModel):
 class MobileStage(BaseModel):
     stage:str
 
+class MobileTeachingStart(TeachingStart):
+    object_label:str=Field(default='',max_length=80)
+    object_class:str='unknown'
+    size_class:str='medium'
+    destination:str=Field(default='',max_length=80)
+
 class MobileLease(BaseModel):
     session:str=Field(min_length=32,max_length=32)
     observing:bool=False
@@ -155,7 +184,8 @@ class MobileLease(BaseModel):
 def mobile_status():return mobile_demonstrations.status()
 
 @app.post('/api/teaching/mobile/start')
-def mobile_start(c:TeachingStart):return map_operation(mobile_demonstrations.start,c.name,c.observing)
+def mobile_start(c:MobileTeachingStart):return map_operation(mobile_demonstrations.start,c.name,c.observing,
+    c.object_label,c.object_class,c.size_class,c.destination)
 
 @app.post('/api/teaching/mobile/stage')
 def mobile_stage(c:MobileStage):return map_operation(mobile_demonstrations.stage,c.stage)
@@ -179,6 +209,11 @@ def finish_teaching(c:TeachingFinish):return map_operation(teaching.finish,c.out
 def train_policy(c:TrainingStart):
     if policy_preview.lock.locked() or policy_execution.lock.locked() or trajectory_execution.lock.locked():raise HTTPException(409,'Дождитесь завершения работы модели')
     return map_operation(profiles.admit,'train',learning_jobs.start,c.steps,c.task)
+
+@app.post('/api/learning/train-mobile')
+def train_mobile_policy(c:TrainingStart):
+    if policy_preview.lock.locked() or policy_execution.lock.locked() or trajectory_execution.lock.locked():raise HTTPException(409,'Дождитесь завершения работы модели')
+    return map_operation(profiles.admit,'train',learning_jobs.start_mobile,c.steps,c.task)
 
 class PolicyTask(BaseModel):
     task:str=Field(min_length=3,max_length=80)
@@ -231,9 +266,18 @@ def delivery_guide():return Response((ROOT/'docs/DELIVERY-IMPLEMENTATION.ru.md')
 @app.get('/guide')
 def operator_guide():return HTMLResponse((ROOT/'docs/operator-guide.html').read_text())
 
+@app.get('/training-guide')
+def training_guide():return Response((ROOT/'docs/TRAINING-GUIDE.ru.md').read_text(),media_type='text/plain; charset=utf-8')
+
+@app.get('/mobile')
+def mobile_interface():return HTMLResponse((ROOT/'src/mobile.html').read_text())
+
+@app.get('/mobile-guide')
+def mobile_guide():return Response((ROOT/'docs/MOBILE-REMOTE.ru.md').read_text(),media_type='text/plain; charset=utf-8')
+
 @app.middleware('http')
 async def auth(request:Request,call_next):
-    if request.url.path not in ('/','/guide','/delivery-guide','/lab.js'):
+    if request.url.path not in ('/','/mobile','/mobile-guide','/guide','/training-guide','/delivery-guide','/lab.js'):
         supplied=request.headers.get('authorization','').removeprefix('Bearer ')
         if not secrets.compare_digest(supplied,TOKEN):
             from fastapi.responses import JSONResponse
@@ -246,6 +290,14 @@ async def auth(request:Request,call_next):
 
 @app.get('/')
 def index():return HTMLResponse((ROOT/'src/index.html').read_text())
+
+@app.get('/api/mobile/goals')
+def mobile_goals():return json.loads((ROOT/'config/mobile-training-goals.json').read_text())
+
+@app.get('/api/mobile/remote-status')
+def mobile_remote_status():
+    from remote_access import status
+    return status(ROOT)
 
 @app.get('/api/status')
 def status():
@@ -352,6 +404,55 @@ def experiment_result(run_id:str):return map_operation(experiments.get,run_id)
 @app.get('/api/experiments/memory')
 def experience_objects(query:str=''):
     return dict(objects=experiments.memory.objects(query[:80]),curriculum=experiments.memory.curriculum())
+
+@app.get('/api/world')
+def semantic_world_status():return semantic_world.status()
+
+@app.get('/api/world/query')
+def semantic_world_query(label:str=''):
+    if not 1<=len(label)<=80:raise HTTPException(400,'Укажите название предмета')
+    return map_operation(semantic_world.query,label)
+
+@app.get('/api/research/audit')
+def research_status():
+    result=research_audit(ROOT,semantic_world,read_state('perception.json',3),read_state('status.json',2),
+                          missions.status(),globals().get('delivery_task').status() if globals().get('delivery_task') else {},
+                          learning_jobs.status())
+    result['runtime']=json.loads((ROOT/'config/research-runtime.json').read_text())
+    return result
+
+@app.get('/api/calibrations')
+def calibrations_status():
+    """Evidence scopes, including capabilities unlocked by each acceptance."""
+    return calibration_status(ROOT)
+
+class ResearchRuntime(BaseModel):
+    continual_memory:bool
+    active_perception_shadow:bool
+    guarded_gripper_shadow:bool
+
+@app.post('/api/research/runtime')
+def research_runtime(c:ResearchRuntime):
+    path=ROOT/'config/research-runtime.json';temporary=path.with_suffix('.tmp')
+    temporary.write_text(json.dumps(c.model_dump(),indent=2));temporary.replace(path)
+    return c.model_dump()
+
+@app.get('/api/active-perception')
+def active_perception_status():
+    runtime=json.loads((ROOT/'config/research-runtime.json').read_text())
+    if runtime.get('active_perception_shadow') is not True:return dict(enabled=False)
+    status=read_state('status.json',2)
+    return active_view(read_state('perception.json',3),semantic_world.status(),status.get('commissioning',{}))
+
+class GuardedClosureRequest(BaseModel):
+    observations:list[dict]=Field(min_length=2,max_length=20)
+    soft:bool=True
+
+@app.post('/api/gripper/guarded-closure')
+def gripper_guarded_closure(c:GuardedClosureRequest):
+    runtime=json.loads((ROOT/'config/research-runtime.json').read_text())
+    if runtime.get('guarded_gripper_shadow') is not True:raise HTTPException(409,'Теневой контроллер захвата выключен')
+    return map_operation(guarded_closure,c.observations,c.soft)
 
 class MemoryUpdate(BaseModel):
     operation:str
@@ -471,7 +572,8 @@ manual_arm=ManualArm(ROOT,node,reference_arm)
 teaching.move=manual_arm.move
 teaching.stop_revision=lambda:manual_arm.stop_revision
 if getattr(manual_arm,'native',False) is True:
-    teaching.measured_reference=manual_arm.reference
+    if manual_arm.profile.get('manual_reference_version')==1:teaching.arm_reference=manual_arm.reference
+    else:teaching.measured_reference=manual_arm.reference
 from policy_execution import PolicyExecution
 policy_execution=PolicyExecution(ROOT,learning_jobs,teaching,manual_arm,policy_preview)
 
@@ -495,7 +597,41 @@ def policy_execution_lease(c:PolicyExecutionLease):return map_operation(policy_e
 @app.post('/api/learning/execute/stop')
 def policy_execution_stop():return policy_execution.stop()
 
-manual_arm.gamepad_permit=lambda:gamepad_panel.mode=='ARM' and time.monotonic()<gamepad_panel.lease and gamepad_panel.config['buttons']['l1'] in gamepad_panel.keys
+gamepad_panel.bind_arm(manual_arm,reference_arm)
+
+class ReferenceAction(BaseModel):
+    operation:str
+    supported:bool=False
+
+@app.get('/api/arm/reference')
+def reference_status():
+    if not getattr(manual_arm,'native',False):
+        return dict(manual_arm.status(),manual_reference_mode=False,factory_reference_mode=True,
+                    firmware='robotio_factory',reference_pose=[90]*6)
+    state=read_state('controller-state.json')
+    ref=state.get('manual_reference') or {}
+    from command_arm_state import describe, execution_state
+    if state.get('stale'):state['telemetry_fresh']=False
+    return dict(execution_state(describe(state,manual_arm.calibration,time.monotonic_ns(),manual_arm.profile),ROOT),
+                manual_reference_mode=manual_arm.profile.get('manual_reference_version')==1,
+                firmware=(state.get('identity') or {}).get('source_sha256'))
+
+@app.post('/api/arm/reference')
+def reference_action(c:ReferenceAction):
+    if c.operation not in ('begin','capture'):raise HTTPException(400,'Неизвестный этап')
+    if not c.supported:raise HTTPException(409,'Сначала поддержите руку и подтвердите это')
+    if getattr(manual_arm,'profile',{}).get('manual_reference_version')!=1:
+        raise HTTPException(409,'Нужна прошивка с ручной исходной позой')
+    if not teaching.lock.acquire(False):raise HTTPException(409,'Рука занята')
+    try:
+        gamepad_panel.heartbeat(False)
+        result=subprocess.run([str(ROOT/'bin/explorer'),'arm','calibrate',c.operation,'--supported'],
+                              cwd=ROOT,capture_output=True,text=True,timeout=15)
+        if result.returncode:raise HTTPException(409,(result.stderr or result.stdout)[-1200:])
+        manual_arm.error=None
+        return reference_status()
+    except subprocess.TimeoutExpired:raise HTTPException(409,'Истёк срок инициализации; проверьте состояние руки')
+    finally:teaching.lock.release()
 
 def warm_arm_model():
     try:manual_arm.prepare_geometry()
@@ -513,6 +649,33 @@ class ArmJog(BaseModel):
 class ArmHome(BaseModel):
     observing:bool=False
     space_clear:bool=False
+
+class FactoryReference(BaseModel):
+    pose:list[int]=Field(min_length=6,max_length=6)
+    observing:bool=False
+
+@app.post('/api/arm/factory-reference')
+def factory_reference(c:FactoryReference):
+    if getattr(manual_arm,'native',False):raise HTTPException(409,'Эта операция только для заводского robotio')
+    if not teaching.lock.acquire(False):raise HTTPException(409,'Рука занята')
+    try:return map_operation(manual_arm.accept_reference,c.pose,c.observing)
+    finally:teaching.lock.release()
+
+@app.post('/api/arm/return-reference')
+def return_reference(c:ArmHome):
+    if c.observing is not True:raise HTTPException(409,'Подтвердите наблюдение за рукой')
+    def execute():
+        manual_arm.reference()
+        if not getattr(manual_arm,'native',False):
+            plan=trajectory_execution.plan([90]*6)
+            return trajectory_execution.start(plan['plan_id'],True,finite=True)
+        ref=manual_arm._state().get('manual_reference') or {}
+        raw=ref.get('raw_reference',[])
+        if len(raw)!=6:raise ValueError('Нет исходной позы всех шести приводов')
+        goal=[r*cal.physical_degrees_per_tick+cal.physical_degrees_at_raw_zero for r,cal in zip(raw,manual_arm.calibration)]
+        plan=trajectory_execution.plan(goal)
+        return trajectory_execution.start(plan['plan_id'],True,finite=True)
+    return map_operation(execute)
 
 @app.post('/api/arm/jog')
 def manual_jog(c:ArmJog):return map_operation(teaching.jog,c.joint,c.delta,c.observing)
@@ -552,17 +715,12 @@ def manual_prepare(c:ArmHome):
             # fixed HOME pose or publishes to the removed legacy actuator topic.
             state=manual_arm.prepare_geometry()
             if state.get('blocked_by'):raise ValueError(state['blocked_by'])
-            return dict(state,homing_performed=False,measured_reference=True)
+            return dict(state,homing_performed=False,measured_reference=state.get('measured') is True)
         from arm_preparation import stop_base_before_prepare
         stop_base_before_prepare(ROOT,stop_all)
         manual_arm.prepare_geometry()
-        result=subprocess.run(['/bin/bash',str(ROOT/'bin/teach-step.sh'),'--observed-clear',
-                               '--pose','90','125','3','0','90','30','--runtime-ms','5000'],
-                              capture_output=True,text=True,timeout=25)
-        if result.returncode:
-            reason=result.stderr.strip().splitlines()[-1] if result.stderr.strip() else 'нет ответа процесса подготовки'
-            raise ValueError('Подготовка не подтверждена: '+reason)
-        return dict(manual_arm.status(),operator_observation_required=True)
+        manual_arm.accept_reference([90]*6,True)
+        return dict(manual_arm.status(),motion_sent=False,reference_source='operator_observed_reference')
     except (ValueError,OSError,subprocess.TimeoutExpired) as exc:raise HTTPException(409,str(exc))
     finally:teaching.lock.release()
 
@@ -607,7 +765,7 @@ from delivery_robot import DeliveryRobot
 from delivery_vision import MeasuredVision
 measured_vision=MeasuredVision(ROOT,node,manual_arm,reference_arm,maps)
 delivery_robot=DeliveryRobot(ROOT,missions,manual_arm,trajectory_execution,object_finder,measured_vision,reference_arm)
-delivery_task=DeliveryTask(ROOT,delivery_robot)
+delivery_task=DeliveryTask(ROOT,delivery_robot,semantic_world)
 missions.compound_guard=delivery_robot.permit
 
 from robot_readiness import status as robot_readiness
@@ -667,7 +825,7 @@ TOOLS=[{'type':'function','function':{'name':name,'description':desc,'parameters
     ('survey_places','Visit an explicit ordered list of saved places and record camera/lidar observations. Only for an explicit request to inspect these places; never invent place names.',{'type':'object','properties':{'places':{'type':'array','items':{'type':'string'},'minItems':1,'maxItems':12}},'required':['places'],'additionalProperties':False}),
     ('get_survey','Read the latest visited-place observations; robot location is not object location.',{'type':'object','properties':{},'additionalProperties':False}),
     ('get_object_search','Read the latest on-demand object search, including capture timestamp. Positions are camera-relative and cannot authorize a grasp.',{'type':'object','properties':{},'additionalProperties':False}),
-    ('locate_object','Recall observations; coordinates are camera-relative, not map locations',{'type':'object','properties':{'label':{'type':'string'}},'required':['label'],'additionalProperties':False}),
+    ('locate_object','Recall the last semantic observation. observer_pose is where the robot saw it; entity.position is present only for a validated map-frame object point.',{'type':'object','properties':{'label':{'type':'string'}},'required':['label'],'additionalProperties':False}),
     ('inspect_scene','Inspect one fresh image for objects outside the fixed detector vocabulary, such as socks, or clarify uncertain detections. Slow; use only when needed.',{'type':'object','properties':{'question':{'type':'string'}},'required':['question'],'additionalProperties':False}),
     ('list_places','Read explicitly saved named places and whether they belong to the current map',{'type':'object','properties':{},'additionalProperties':False}),
     ('return_home','Navigate to the saved home place only when explicitly requested. Fails if home is unset, map differs, or navigation is not commissioned.',{'type':'object','properties':{},'additionalProperties':False}),
@@ -701,7 +859,7 @@ def tool(name,args,budget=None):
     if name=='list_visible_objects' and args=={}:
         state=read_state('perception.json',2)
         return {'error':'Camera detections stale'} if state['stale'] else dict(image_stamp=state.get('image_stamp'),objects=state.get('objects',[])[:8],coordinates='camera frame; not calibrated to base/map')
-    if name=='locate_object' and set(args)=={'label'} and isinstance(args['label'],str):return memory(args['label'])[:6]
+    if name=='locate_object' and set(args)=={'label'} and isinstance(args['label'],str):return semantic_world.query(args['label'])
     if name=='inspect_scene' and set(args)=={'question'} and isinstance(args['question'],str):return inspect_scene(args['question'][:500],budget)
     if name=='stop_robot' and args=={}:
         stop_all()

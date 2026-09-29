@@ -8,6 +8,8 @@ extern UART_HandleTypeDef board_uart[PORT_COUNT];
 extern volatile uint32_t board_rx_overruns[PORT_COUNT];
 extern volatile uint32_t board_uart_errors[PORT_COUNT];
 extern volatile uint32_t board_tx_completed[PORT_COUNT];
+/* Read timestamp and generation together with interrupts masked on Cortex-M7. */
+extern volatile uint64_t board_tx_completed_us[PORT_COUNT];
 void board_io_poll(void);
 HAL_StatusTypeDef board_uart_receive_start(unsigned port);
 void board_init(void);

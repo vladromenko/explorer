@@ -14,6 +14,7 @@ class TelegramTests(unittest.TestCase):
         self.assertEqual(command('/stop'),('control',{'op':'stop'}))
         self.assertEqual(command('/go kitchen'),('places/go',{'name':'kitchen'}))
         self.assertEqual(command('/survey kitchen, door'),('agents/survey',{'places':['kitchen','door'],'narrate':False}))
+        self.assertEqual(command('/mobile'),('mobile',None))
         for value in ('/exec rm file','/drive 1 1 1','/clear_stop','/arm 90 90'):
             with self.assertRaises(ValueError):command(value)
         self.assertEqual(command('что видно?')[0],'agent')

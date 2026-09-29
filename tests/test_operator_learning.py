@@ -34,7 +34,7 @@ class OperatorLearningTests(unittest.TestCase):
         panel.decide(5,128,3,10)
         self.assertIsNone(panel.decide(5,0,3,10))
         panel.decide(310,1,1,10);panel.decide(5,128,3,10)
-        self.assertEqual(panel.decide(5,0,3,10),(1,2))
+        self.assertEqual(panel.decide(5,0,3,10),(1,5))
         self.assertIsNone(panel.decide(5,0,3,10))
         panel.decide(5,128,3,12)
         self.assertIsNone(panel.decide(5,0,3,12))
@@ -42,7 +42,8 @@ class OperatorLearningTests(unittest.TestCase):
     def test_gamepad_proposals_have_no_actuator_path(self):
         panel=self.panel();panel.perform(2,-2)
         self.assertFalse(panel.proposal['executed'])
-        self.assertFalse(panel.status()['continuous_motion_enabled'])
+        self.assertTrue(panel.status()['continuous_motion_enabled'])
+        self.assertTrue(panel.status()['operator_chassis_accepted'])
         self.assertFalse(panel.status()['radio_link_verified'])
 
     def test_low_or_stale_power_rejects_learning(self):

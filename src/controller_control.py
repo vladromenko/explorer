@@ -34,7 +34,7 @@ class BaseTransport:
     def start(self, now_ns):
         if not self.state.get('telemetry_fresh'):
             raise ValueError('Нет свежей связи со STM32')
-        if self.state.get('telemetry_only', True):
+        if self.state.get('base_telemetry_only',self.state.get('telemetry_only', True)):
             raise ValueError('Приёмка STM32: доступна только телеметрия')
         current=self.state.get('session_state')
         if current == 'fault':

@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "goals": [
+    {"id":"sock_to_basket","name":"Собрать носки в корзину","object":"носок","object_class":"soft_cloth","size_class":"medium","destination":"корзина для белья","curriculum":"Сначала один хорошо видимый носок, затем разные цвета, складки и положения."},
+    {"id":"towel_to_basket","name":"Убрать небольшое полотенце","object":"небольшое полотенце","object_class":"soft_cloth","size_class":"large","destination":"корзина для белья","curriculum":"Показывайте захват за край и перенос без волочения по полу."},
+    {"id":"toy_to_box","name":"Собрать лёгкие игрушки","object":"лёгкая игрушка","object_class":"rigid","size_class":"medium","destination":"коробка","curriculum":"Используйте предметы без острых частей, массой до 150 г."},
+    {"id":"paper_to_bin","name":"Собрать скомканную бумагу","object":"бумажный комок","object_class":"deformable","size_class":"medium","destination":"корзина для бумаги","curriculum":"Меняйте размер комка и показывайте минимальное достаточное сжатие."},
+    {"id":"packet_delivery","name":"Принести лёгкий закрытый пакет","object":"закрытый пакет","object_class":"slippery","size_class":"medium","destination":"точка передачи","curriculum":"Показывайте повторный захват, если пакет визуально проскальзывает."},
+    {"id":"remote_to_tray","name":"Положить пульт в лоток","object":"пульт","object_class":"rigid","size_class":"medium","destination":"лоток","curriculum":"Начинайте на свободном полу; не берите пульт за кнопки или торцы с разъёмами."}
+  ],
+  "excluded": ["горячее", "жидкости в открытой таре", "острое", "стекло", "лекарства", "животные", "предметы тяжелее 150 г"]
+}

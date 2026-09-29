@@ -8,7 +8,8 @@ import signal
 import yaml
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import qos_profile_sensor_data, QoSProfile
+from rclpy.duration import Duration
 from rclpy.signals import SignalHandlerOptions
 from geometry_msgs.msg import Twist, TwistStamped
 from sensor_msgs.msg import Imu, LaserScan, Joy
@@ -26,6 +27,7 @@ from transition_log import TransitionLog
 from source_freshness import SourceFreshness
 from lidar_observation import summarize as summarize_scan
 from controller_control import BaseTransport
+from factory_zero_cadence import StationaryZeroCadence
 
 ROOT = Path(os.environ.get('EXPLORER_ROOT', '/home/vlad/Explorer'))
 
@@ -90,8 +92,14 @@ class Core(Node):
         self.last_probe_result=None
         self.probe_token = None
         self.autonomy_lease = -1e9
-        self.pub = self.create_publisher(Twist, '/cmd_vel', 1)
+        self.pub = self.create_publisher(Twist, '/cmd_vel', QoSProfile(depth=1,lifespan=Duration(seconds=.15)))
         self.native = None
+        self.factory_zero_cadence = None
+        try:
+            factory=json.loads((ROOT/'config/factory-runtime.json').read_text())
+            if factory.get('idle_zero_cadence') is True and not (ROOT/'config/controller-profile.json').exists():
+                self.factory_zero_cadence=StationaryZeroCadence()
+        except (OSError,ValueError):pass
         if (ROOT/'config/controller-profile.json').exists():
             self.native_pub = self.create_publisher(String, '/explorer/controller_request', 10)
             self.native = BaseTransport(lambda request:self.native_pub.publish(String(data=json.dumps(request))))
@@ -196,7 +204,7 @@ class Core(Node):
     def arm_measurement_cb(self, msg):
         data = json.loads(msg.data)
         self.arm_measurements = data
-        if data.get('all_fresh'):
+        if data.get('all_fresh') or data.get('reference_valid') and data.get('estimated'):
             self.touch('arm')
         # Preserve signed measurements and raw evidence separately from the
         # legacy command-angle array; never make old callers infer calibration.
@@ -363,11 +371,15 @@ class Core(Node):
         else:
             healthy = healthy and self.config['lidar_tf_validated']
             velocity, self.reason = self.gate.tick(now, now-self.last_tick, healthy, collision)
-        if arm_execution_pending:
+        command_arm=self.native and (self.native.state.get('arm') or {}).get('estimated_only') is True
+        if arm_execution_pending and not command_arm:
             if self.probe:self.probe.cancel('ARM EXECUTION ACTIVE')
             self.gate.hold()
             velocity = [0., 0., 0.]
             self.reason = 'ARM EXECUTION ACTIVE'
+        elif arm_execution_pending and command_arm and velocity is not None:
+            velocity=[max(-limit,min(limit,value)) for value,limit in zip(velocity,[.05,.05,.15])]
+            self.gate.output=list(velocity)
         signature=(self.reason,self.gate.mode,self.gate.estop,self.session.mission)
         if signature!=getattr(self,'last_signature',None):
             self.event('velocity_gate',self.reason,before);self.last_signature=signature
@@ -382,7 +394,9 @@ class Core(Node):
             if self.native:
                 self.native.velocity(velocity, int(source_at*1e9), time.monotonic_ns())
             else:
-                self.pub.publish(msg)
+                cadence=getattr(self,'factory_zero_cadence',None)
+                if cadence is None or cadence.publish_due(velocity,self.stationary_since,now):
+                    self.pub.publish(msg)
         self.heartbeat.publish(UInt64(data=time.monotonic_ns()))
 
     def write_status(self):
@@ -421,6 +435,7 @@ class Core(Node):
                       velocity=self.gate.output, sensor_age={k:round(now-v,3) for k,v in self.seen.items()},
                       lidar=self.scans, arm_feedback=self.arm_feedback, commissioning=self.config,
                       arm_measurements=self.arm_measurements,
+                      arm_state=self.arm_measurements if self.native else None,
                       arm_feedback_transport=self.arm_feedback_transport,
                       arm_command_state=arm_state,
                       last_request=self.last_result)

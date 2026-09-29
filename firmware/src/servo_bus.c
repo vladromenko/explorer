@@ -12,6 +12,8 @@ volatile uint32_t servo_measure_generation;
 uint64_t servo_sent_generation;
 volatile uint32_t servo_cancel_completed_generation;
 volatile uint32_t servo_write_fault_generation;
+ex_result_t servo_last_write_error;
+static ex_result_t last_build_error;
 static unsigned joint,read_retries;
 static uint8_t reply[8],used;
 static uint64_t deadline,next_request,next_write,next_hold,read_acquired_us;
@@ -20,7 +22,7 @@ static uint32_t last_uart_errors,last_overruns,seen_cancel_generation;
 
 enum write_kind { WRITE_NONE,WRITE_TARGET,WRITE_PARTIAL_HOLD,WRITE_FULL_HOLD };
 static enum write_kind writing;
-static uint64_t writing_generation,write_deadline,write_quiet_until;
+static uint64_t writing_generation,write_started,write_deadline,write_quiet_until;
 static uint32_t writing_cancel_generation,writing_completion;
 static bool write_failed;
 
@@ -28,11 +30,12 @@ void servo_bus_init(void) {
     memset(servo_measurements,0,sizeof(servo_measurements));
     servo_measure_generation=0; servo_sent_generation=0; servo_cancel_completed_generation=0;
     servo_write_fault_generation=0;
+    servo_last_write_error=EX_OK; last_build_error=EX_OK;
     joint=0; read_retries=0; used=0; memset(reply,0,sizeof(reply));
     deadline=0; next_request=0; next_write=0; next_hold=0; read_acquired_us=0;
     waiting=false; last_uart_errors=board_uart_errors[PORT_ARM];
     last_overruns=board_rx_overruns[PORT_ARM]; seen_cancel_generation=0;
-    writing=WRITE_NONE; writing_generation=0; write_deadline=0; write_quiet_until=0;
+    writing=WRITE_NONE; writing_generation=0; write_started=0; write_deadline=0; write_quiet_until=0;
     writing_cancel_generation=0; writing_completion=0; write_failed=false;
 }
 
@@ -67,6 +70,7 @@ static void write_fault(ex_result_t error) {
     }
     ++servo_measure_generation;
     ++servo_write_fault_generation;
+    servo_last_write_error=error;
     __set_PRIMASK(saved);
 }
 
@@ -81,18 +85,29 @@ static void retry_read_or_report(ex_result_t error) {
 
 static bool finish_write(uint64_t now) {
     if(writing!=WRITE_NONE) {
-        if(now>=write_deadline && !write_failed) {
-            write_failed=true; write_fault(EX_STALE);
-        }
-        if(board_tx_completed[PORT_ARM]!=writing_completion) {
+        uint32_t saved=__get_PRIMASK(); __disable_irq();
+        const uint32_t completed=board_tx_completed[PORT_ARM];
+        const uint64_t completed_us=board_tx_completed_us[PORT_ARM];
+        const bool ready=board_uart[PORT_ARM].gState==HAL_UART_STATE_READY;
+        __set_PRIMASK(saved);
+        if(completed!=writing_completion) {
+            /* A late main poll must not turn a timely TC into a timeout.
+             * Conversely, a late TC is still a fault, even if no poll ran
+             * at the deadline. Queue acceptance is never used as completion. */
+            if(!write_failed && (completed!=writing_completion+1u ||
+               completed_us<write_started || completed_us>=write_deadline || completed_us>now)) {
+                write_failed=true; write_fault(EX_STALE);
+            }
             if(!write_failed) {
-                uint32_t saved=__get_PRIMASK(); __disable_irq();
+                saved=__get_PRIMASK(); __disable_irq();
                 if(writing==WRITE_TARGET) { servo_sent_generation=writing_generation; }
                 if(writing==WRITE_FULL_HOLD) { servo_cancel_completed_generation=writing_cancel_generation; }
                 __set_PRIMASK(saved);
             }
-            writing=WRITE_NONE; write_quiet_until=now+SERVO_WRITE_QUIET_US;
-        } else if(board_uart[PORT_ARM].gState==HAL_UART_STATE_READY) {
+            writing=WRITE_NONE; write_quiet_until=completed_us+SERVO_WRITE_QUIET_US;
+        } else if(now>=write_deadline && !write_failed) {
+            write_failed=true; write_fault(EX_STALE);
+        } else if(ready) {
             if(!write_failed) { write_fault(EX_FRAME); }
             writing=WRITE_NONE; write_quiet_until=now+SERVO_WRITE_QUIET_US;
         }
@@ -112,7 +127,7 @@ static bool start_write(const ec_controller_t *s,const uint8_t *frame,uint16_t l
     if(!servo_bus_commit(s,frame,length,cancel)) { return false; }
     writing=kind; writing_generation=s->arm_generation;
     writing_cancel_generation=s->arm_cancel_generation; writing_completion=completion;
-    write_deadline=board_time_us()+WRITE_TIMEOUT_US; write_failed=false;
+    write_started=now; write_deadline=now+WRITE_TIMEOUT_US; write_failed=false;
     return true;
 }
 
@@ -208,6 +223,7 @@ void servo_bus_poll(const ec_controller_t *s) {
                 }
             }
             ex_result_t r=ex_servo_make_sync(s->arm_raw,allowed,0,0,0,frame);
+            last_build_error=r;
             if(r==EX_OK && start_write(s,frame,sizeof(frame),WRITE_TARGET)) { next_write=now+20000; }
         }
         /* Drain fully before new reads so buffered old bytes cannot become
@@ -220,4 +236,26 @@ void servo_bus_poll(const ec_controller_t *s) {
             }
         }
     }
+}
+
+void servo_bus_diagnostics(const ec_controller_t *s,uint8_t out[SERVO_DIAGNOSTIC_BYTES]) {
+    /* Main and ISR-owned values must form one snapshot. This is telemetry,
+     * not an acknowledgement of target-register contents or reached pose. */
+    uint32_t saved=__get_PRIMASK(); __disable_irq();
+    memset(out,0,SERVO_DIAGNOSTIC_BYTES);
+    ew_put64(out,board_time_us()); ew_put64(out+8,s->arm_generation);
+    ew_put64(out+16,servo_sent_generation); ew_put64(out+24,s->arm_expires_us);
+    ew_put64(out+32,write_started); ew_put64(out+40,board_tx_completed_us[PORT_ARM]);
+    ew_put64(out+48,write_deadline); ew_put32(out+56,board_uart_errors[PORT_ARM]);
+    ew_put32(out+60,board_rx_overruns[PORT_ARM]); ew_put32(out+64,servo_write_fault_generation);
+    ew_put32(out+68,board_tx_completed[PORT_ARM]); out[72]=(uint8_t)s->arm_stop_reason;
+    out[73]=(uint8_t)servo_last_write_error; out[74]=(uint8_t)last_build_error;
+    out[75]=(uint8_t)writing; out[76]=(uint8_t)waiting; out[77]=(uint8_t)(joint+1u);
+    out[78]=(uint8_t)read_retries;
+    for(unsigned i=0;i<6;++i) {
+        if(servo_measurements[i].valid) { out[79]|=(uint8_t)(1u<<i); }
+        ew_put16(out+88+2*i,s->arm_raw[i]);
+    }
+    ew_put64(out+80,deadline);
+    __set_PRIMASK(saved);
 }

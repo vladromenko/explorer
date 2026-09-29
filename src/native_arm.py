@@ -49,7 +49,7 @@ def measured_reference(state, calibration, now_ns, *, expected_boot=None, expect
                 outside_soft_limits=outside, measured=True, attained=False, source='stm32_uart3_readback')
 
 
-class NativeManualArm:
+class LegacyNativeManualArm:
     native = True
 
     def __init__(self, root, node, model, message_type=None):
@@ -198,7 +198,7 @@ class NativeManualArm:
 
     def _positions(self, physical):
         if len(physical) != 6 or any(type(x) not in (int, float) or not math.isfinite(x) for x in physical):
-            raise ValueError('Нужны шесть конечных измеренных углов')
+            raise ValueError('Нужны шесть конечных углов')
         positions = []
         for c, angle in zip(self.calibration, physical):
             raw = (angle-c.physical_degrees_at_raw_zero)/c.physical_degrees_per_tick
@@ -241,7 +241,7 @@ class NativeManualArm:
                 arrays.append([[row[index] for index in order]+[start[5] if field == 'positions' else 0.] for row in rows])
             positions, velocities, accelerations = arrays
             if len(times) < 2 or not np.allclose(positions[0], start, atol=math.radians(.5), rtol=0):
-                raise ValueError('Начало пути MoveIt не совпадает с измерением')
+                raise ValueError('Начало пути MoveIt не совпадает с текущей опорной позой')
             if not np.allclose(positions[-1][:5], target[:5], atol=math.radians(.1), rtol=0):
                 raise ValueError('Конец пути MoveIt не совпадает с запрошенной позой')
             if abs(target[5]-start[5]) > 1e-6:
@@ -383,5 +383,10 @@ class NativeManualArm:
             finally:
                 self.lock.release()
 
+
+from manual_reference_arm import ReferenceArmMixin
+
+class NativeManualArm(ReferenceArmMixin, LegacyNativeManualArm):
+    pass
 
 ManualArm = NativeManualArm

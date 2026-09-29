@@ -8,6 +8,7 @@
 UART_HandleTypeDef board_uart[PORT_COUNT];
 volatile uint32_t board_rx_overruns[PORT_COUNT], board_uart_errors[PORT_COUNT];
 volatile uint32_t board_tx_completed[PORT_COUNT];
+volatile uint64_t board_tx_completed_us[PORT_COUNT];
 static uint64_t tx_deadline[PORT_COUNT];
 static uint8_t rx_byte[PORT_COUNT],rx[PORT_COUNT][RX_SIZE],tx[PORT_COUNT][TX_SIZE];
 static volatile uint16_t rx_write[PORT_COUNT],rx_read[PORT_COUNT];
@@ -47,7 +48,11 @@ void board_io_poll(void) {
 }
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *u) {
     unsigned i=(unsigned)(u-board_uart);
-    if(i<PORT_COUNT) { ++board_tx_completed[i]; }
+    if(i<PORT_COUNT) {
+        /* ISR observation of TC, not a hardware timestamp of the last bit. */
+        board_tx_completed_us[i]=board_time_us();
+        __DMB(); ++board_tx_completed[i];
+    }
 }
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *u) {
     unsigned i=(unsigned)(u-board_uart);

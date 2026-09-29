@@ -135,3 +135,24 @@ class VisionTests(unittest.TestCase):
         vision.geometry=cancelled
         self.assertEqual(vision.process_snapshot(dict(stamp=1.02),now=0.),0)
         self.assertEqual(updated,[]);self.assertFalse(vision.frames);self.assertFalse(vision.pending)
+
+    def test_command_estimate_is_never_labeled_camera_or_gripper_measurement(self):
+        vision,_=self.measured_vision();vision.command_mode=True
+        vision.process_snapshot(dict(stamp=1.02),now=0.)
+        frame=vision.frames[-1]
+        self.assertFalse(frame['camera_pose_measured'])
+        self.assertFalse(frame['gripper_open_measured'])
+        self.assertTrue(frame['gripper_open_estimated'])
+        self.assertEqual(frame['camera_pose_source'],'command_estimate')
+
+    def test_factory_geometry_uses_only_settled_command_estimate(self):
+        vision=MeasuredVision.__new__(MeasuredVision);vision.factory_mode=True
+        vision.arm=SimpleNamespace(reference=lambda:dict(at=10.,runtime_ms=1000,servo_deg=[90]*6,
+            phase='command_elapsed_observation_required'))
+        model=SimpleNamespace(lock=threading.Lock(),state=SimpleNamespace(get_global_link_transform=lambda name:np.eye(4)),
+                              set_state=lambda *args:None)
+        vision.model=lambda:model
+        settings=dict(gripper_linkage_rad=0.,camera_to_mount=np.eye(4))
+        with self.assertRaises(JointSamplePending):vision.geometry(dict(stamp=11.05),settings)
+        transform,tcp,angles=vision.geometry(dict(stamp=11.2),settings)
+        np.testing.assert_allclose(transform,np.eye(4));self.assertEqual(angles,[90]*6)

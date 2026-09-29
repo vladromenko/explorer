@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "accepted_at": "2026-09-30T00:20:00+03:00",
+  "execution_authorized": true,
+  "reference_mount": "arm4",
+  "camera_frame": "camera_color_optical_frame",
+  "camera_to_mount_reference": [
+    [
+      0.016549137236173187,
+      0.9996176887008756,
+      0.022149548379142354,
+      -0.05080040639920698
+    ],
+    [
+      -0.9997658064323368,
+      0.016852423269582546,
+      -0.013576749192736612,
+      0.008390836326068152
+    ],
+    [
+      -0.013944832212667187,
+      -0.021919677612468377,
+      0.9996624777340108,
+      0.0796749412518667
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "joint_state_source": "command_estimate",
+  "measured_joint_positions": false,
+  "physical_validation_record": "data/handeye-validations/20260930-001104/result.json",
+  "physical_validation_sha256": "45d3ee22ca4686d460e9b8ab1df2c41897930bb6713394fd91ce562c6a3c3375",
+  "translation_error_max_m": 0.0056209455429707365,
+  "rotation_error_max_deg": 1.6836993123876307,
+  "validated_joints": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "scope": "stationary_frames_after_completed_factory_robotio_commands",
+  "limitations": [
+    "servo position is a command estimate",
+    "do not compensate images captured while the arm command is executing"
+  ]
+}

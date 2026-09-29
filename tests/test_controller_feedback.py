@@ -1,12 +1,26 @@
 import math
 import struct
 import unittest
-from controller_feedback import ArmFeedback, Calibration, ScanAssembler, vendor_calibration, decode_status
+from controller_feedback import ArmFeedback, Calibration, ScanAssembler, vendor_calibration, decode_status, decode_arm_diagnostics
 from controller_protocol import ClockMapping
 from arm_feedback import decode_position, describe
 
 
 class ControllerFeedbackTests(unittest.TestCase):
+    def test_arm_stop_evidence_is_distinct_from_acceptance_and_arrival(self):
+        packet=struct.pack('<7Q4I8BQ6H', 100000,4,3,150000,90000,93000,110000,
+                           2,1,1,7,14,14,0,0,1,3,2,63,120000,*([2000]*6))
+        diagnostic=decode_arm_diagnostics(packet)
+        self.assertEqual(diagnostic['target_generation'],4)
+        self.assertEqual(diagnostic['sent_generation'],3)
+        self.assertEqual(diagnostic['stop_reason'],14)
+        self.assertEqual(diagnostic['uart_completed_us'],93000)
+        self.assertEqual(diagnostic['target_raw'],[2000]*6)
+        self.assertNotIn('reached',diagnostic)
+        with self.assertRaises(ValueError):decode_arm_diagnostics(packet[:-1])
+        bad=bytearray(packet);bad[79]=128
+        with self.assertRaises(ValueError):decode_arm_diagnostics(bad)
+
     def test_uart_fault_counters_are_visible_without_changing_status_layout(self):
         packet=bytearray(216)
         for i,motor in enumerate((1,3,2,4)):

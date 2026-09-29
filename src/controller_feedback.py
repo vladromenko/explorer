@@ -162,6 +162,25 @@ def decode_status(payload):
                 highest_session=struct.unpack_from('<Q', payload, 196)[0])
 
 
+def decode_arm_diagnostics(payload):
+    """Wire and cancellation evidence; never a claim of mechanical arrival."""
+    if len(payload) != 100:
+        raise ValueError('incompatible arm diagnostics layout')
+    values = struct.unpack_from('<7Q4I8BQ6H', payload)
+    times = ('acquired_us', 'target_generation', 'sent_generation', 'expires_us',
+             'write_started_us', 'uart_completed_us', 'write_deadline_us')
+    counters = ('uart_errors', 'rx_overruns', 'write_fault_generation', 'tx_completed')
+    flags = ('stop_reason', 'write_error', 'build_error', 'writing',
+             'waiting', 'read_joint', 'read_retries', 'valid_mask')
+    result = dict(zip(times+counters+flags+('read_deadline_us',), values[:20]))
+    if (result['writing'] > 3 or result['waiting'] > 1 or
+        not 1 <= result['read_joint'] <= 6 or result['read_retries'] > 2 or
+        result['valid_mask'] > 63):
+        raise ValueError('invalid arm diagnostics state')
+    result['target_raw'] = list(values[20:])
+    return result
+
+
 class ArmFeedback:
     def __init__(self, calibration=None):
         self.calibration = calibration or vendor_calibration()
@@ -176,6 +195,7 @@ class ArmFeedback:
             raise ValueError('unknown servo')
         sample = dict(joint=joint, error=error, device_error=device, raw_valid=False,
                       position_valid=False, acquired_monotonic_ns=None,
+                      event_mcu_us=event_us, measurement_mcu_us=acquired_us, reported_raw=raw,
                       reply_hex=payload[21:29].hex(), reply_header2=payload[29])
         clock.source_host_ns(event_us, now_ns, 500_000_000)
         if error == 0:

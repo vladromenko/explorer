@@ -68,6 +68,30 @@ class LearningJobs:
             return record
         finally:self.lock.release()
 
+    def start_mobile(self,steps,task):
+        if type(steps) is not int or steps not in (1000,5000,20000):raise ValueError('Неизвестная длительность обучения')
+        from mobile_demonstrations import STAGES
+        source=self.root/'data/mobile-demonstrations';episodes=[]
+        for path in sorted(source.glob('*/episode.json')):
+            episode=json.loads(path.read_text())
+            if (episode.get('name')==task and episode.get('state')=='complete' and episode.get('outcome')=='success' and
+                    episode.get('label_source')=='operator' and set(episode.get('stages',[]))==set(STAGES) and episode.get('samples',0)>=20):episodes.append(episode)
+        if len(episodes)<10:raise ValueError('Сначала запишите минимум 10 успешных полных показов; рекомендуется 30–100')
+        if not self.status()['backend'].get('ready'):raise ValueError('Среда LeRobot ещё не прошла проверку')
+        training_budget(self.root)
+        if not self.lock.acquire(blocking=False):raise ValueError('Обучение уже выполняется')
+        try:
+            active=subprocess.run(['systemctl','--user','is-active','explorer-train.service'],capture_output=True,text=True)
+            if active.stdout.strip() in ('active','activating','deactivating'):raise ValueError('Обучение уже выполняется')
+            ident=time.strftime('%Y%m%d-%H%M%S')+'-'+uuid.uuid4().hex[:8];folder=self.folder/ident;folder.mkdir()
+            record=dict(id=ident,at=time.time(),state='queued',steps=steps,episodes=[e['id'] for e in episodes],
+                task=task,framework='lerobot',policy='act',dataset_kind='mobile_manipulation_9dof',executed=False,
+                automatic_execution=False)
+            write_json(folder/'job.json',record);write_json(self.root/'data/learning-request.json',dict(job=ident))
+            subprocess.run(['systemctl','--user','start','explorer-train.service'],check=True,timeout=8)
+            return record
+        finally:self.lock.release()
+
     def stop(self):
         subprocess.run(['systemctl','--user','stop','explorer-train.service'],check=True,timeout=10)
         return {'stopped':True,'robot_motion':False}

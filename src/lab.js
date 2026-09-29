@@ -47,6 +47,11 @@
     el('telegram-status').textContent=pendingOwner?'Проверьте аккаунт: @'+pendingOwner.username+' · ID '+pendingOwner.user_id:
       s.paired?'Владелец привязан · @'+s.username:s.connected?'Бот @'+s.username+' подключён, ждёт привязки':r.token_configured?'Бот запускается или проверяет связь':'Токен ещё не настроен';
   }catch(e){el('telegram-status').textContent=e.message;}}
+  async function research(){try{const r=await request('research/audit'),w=r.runtime;
+    el('research-memory').checked=w.continual_memory;el('research-view').checked=w.active_perception_shadow;el('research-grip').checked=w.guarded_gripper_shadow;
+    el('research-summary').textContent=`Готово: ${r.summary.DONE} · частично: ${r.summary.PARTIAL} · отсутствует: ${r.summary.MISSING} · эпизодов мира: ${r.items[0].metrics.episodes||0} · 3D-сущностей: ${r.items[0].metrics.validated_3d_entities||0}`;
+    el('research-items').replaceChildren();for(const item of r.items){const row=document.createElement('p');row.textContent=`${item.state} · ${item.id}. ${item.name}`+(item.blockers.length?' · '+item.blockers.join('; '):'');el('research-items').append(row);}
+  }catch(e){el('research-summary').textContent=e.message;}}
   async function mount(){try{
     const markup=await(await api('lab.html')).text();const holder=document.createElement('div');holder.innerHTML=markup;
     document.querySelector('main').append(holder.firstElementChild);
@@ -59,6 +64,8 @@
     const profile=await request('resources/profile');el('resource-profile').value=profile.mode;
     el('resource-message').textContent=profile.limits;
     el('resource-apply').onclick=async()=>{try{const r=await request('resources/profile',{mode:el('resource-profile').value});el('resource-message').textContent='Профиль: '+r.label;}catch(e){el('resource-message').textContent=e.message;}};
+    el('research-save').onclick=async()=>{try{await request('research/runtime',{continual_memory:el('research-memory').checked,active_perception_shadow:el('research-view').checked,guarded_gripper_shadow:el('research-grip').checked});await research();}catch(e){el('research-summary').textContent=e.message;}};
+    await research();
     el('lab-capture').onclick=async()=>{try{capture=await request('experiments/capture',{});firstCorner=null;roi=null;
       const response=await api('experiments/capture/'+capture.id);const url=URL.createObjectURL(await response.blob());const img=new Image();
       img.onload=()=>{const canvas=el('lab-roi');canvas.width=capture.width;canvas.height=capture.height;canvas.getContext('2d').drawImage(img,0,0);URL.revokeObjectURL(url);};img.src=url;
@@ -75,10 +82,13 @@
     el('lab-cancel').onclick=async()=>{try{await request('experiments/cancel',{});el('lab-message').textContent='Анализ отменён. Команды движения этот режим не отправляет.';}catch(e){showError(e);}};
     el('lab-export').onclick=()=>{if(last){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(last,null,2)],{type:'application/json'}));a.download='Explorer-'+last.experiment+'-'+last.id+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}};
     el('memory-add').onclick=async()=>{try{await request('experiments/memory',{operation:'add',label:el('memory-label').value,evidence:{reason:'Явное добавление владельцем'}});await memory();el('memory-message').textContent='Сохранён отдельный предмет.';}catch(e){el('memory-message').textContent=e.message;}};
+    el('world-query-run').onclick=async()=>{try{const q=encodeURIComponent(el('world-query').value),r=await request('world/query?label='+q),last=r.last_seen;
+      el('world-query-result').textContent=last?(last.observer_pose?`Последнее предположение детектора: позиция наблюдения x=${last.observer_pose.x.toFixed(2)}, y=${last.observer_pose.y.toFixed(2)}${last.observer_pose.provisional?' (локализация предварительная)':''} · ${new Date(last.seen*1000).toLocaleString()}`:`Детектор предполагал объект ${new Date(last.seen*1000).toLocaleString()}, но поза наблюдателя неизвестна`):'В памяти такого наблюдения нет';
+    }catch(e){el('world-query-result').textContent=e.message;}};
     el('experience-save').onclick=async()=>{try{await request('experiments/label',{task:el('experience-task').value,condition:el('experience-condition').value,outcome:el('experience-outcome').value,reason:el('experience-reason').value});el('experience-message').textContent='Оценка сохранена. Откройте E18, чтобы увидеть очередь исправлений.';}catch(e){el('experience-message').textContent=e.message;}};
     el('telegram-pair').onclick=async()=>{try{const r=await request('telegram/pairing',{});el('telegram-code').textContent=r.command;await telegram();}catch(e){el('telegram-status').textContent=e.message;}};
     el('telegram-confirm').onclick=async()=>{if(pendingOwner)try{await request('telegram/confirm',{user_id:pendingOwner.user_id});el('telegram-code').textContent='';await telegram();}catch(e){el('telegram-status').textContent=e.message;}};
-    setInterval(()=>{if(document.body.dataset.view==='lab')telegram();},2500);
+    setInterval(()=>{if(document.body.dataset.view==='lab'){telegram();research();}},2500);
   }catch(e){if(!el('lab'))setTimeout(mount,3000);}}
   mount();
 })();

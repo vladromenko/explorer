@@ -9,6 +9,7 @@ enum { HAL_UART_STATE_READY, HAL_UART_STATE_BUSY };
 typedef struct { unsigned gState,RxState; struct { uint32_t BaudRate; } Init; } UART_HandleTypeDef;
 extern UART_HandleTypeDef board_uart[PORT_COUNT];
 extern volatile uint32_t board_rx_overruns[PORT_COUNT],board_uart_errors[PORT_COUNT],board_tx_completed[PORT_COUNT];
+extern volatile uint64_t board_tx_completed_us[PORT_COUNT];
 extern uint32_t mock_primask;
 static inline uint32_t __get_PRIMASK(void) { return mock_primask; }
 static inline void __disable_irq(void) { mock_primask=1; }

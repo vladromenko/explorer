@@ -18,6 +18,16 @@ def decode_position(packet, expected_id, reply_header2=0xf5):
 
 def describe(state, graph=None, now=None):
     now = time.time() if now is None else now
+    arm=state.get('arm_state') or state.get('arm_measurements') or {}
+    if arm.get('estimated_only'):
+        fresh=not state.get('stale') and 0<=now-state.get('at',0)<1 and arm.get('reference_valid')
+        values=arm.get('servo_deg') if fresh else None
+        return dict(measured=dict(available=False,values=None,reason='COMMAND_ONLY_BY_DESIGN'),
+            estimated=dict(values=values,source=arm.get('state_source') if fresh else 'unknown'),
+            joints=[dict(id=i+1,estimated_deg=values[i] if values else None,measured_deg=None) for i in range(6)],
+            state_source=arm.get('state_source') if fresh else 'unknown',phase=arm.get('phase'),
+            command_echo_is_measurement=False,force_measured=False,
+            next_step=arm.get('blocked_by') or 'Положение расчётное, контролируйте движение визуально.')
     command = state.get('arm_command_state', {})
     stamp = command.get('at')
     age = now-stamp if isinstance(stamp, (int, float)) and math.isfinite(stamp) else None

@@ -7,6 +7,14 @@ def frame(t,obj,tcp,clearance):
                 object_xyz=[.3,0,obj],tcp_xyz=[.3,0,tcp],floor_clearance_m=clearance,base_xyyaw=[0,0,0])
 
 class OutcomeTests(unittest.TestCase):
+    def test_physically_validated_command_pose_is_accepted_without_claiming_measurement(self):
+        before=[frame(t,.03,.07,0) for t in (0,.5,1)]
+        after=[frame(t,.09,.13,.06) for t in (3,3.5,4)]
+        for item in before+after:
+            item.update(camera_pose_measured=False,camera_pose_source='command_estimate',
+                        camera_pose_validated_for_execution=True,camera_pose_validation_record='physical.json')
+        self.assertEqual(verify_lift(before,after,True)['outcome'],'success')
+
     def test_lift_and_failure_require_measured_object_motion(self):
         before=[frame(t,.03,.07,0) for t in (0,.5,1)]
         held=[frame(t,.09,.13,.06) for t in (3,3.5,4)]

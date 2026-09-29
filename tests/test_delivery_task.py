@@ -4,7 +4,7 @@ import tempfile
 import threading
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock,patch
 
 from delivery_task import DeliveryTask
 
@@ -37,8 +37,8 @@ class Robot:
         self.calls.append(('verify_place',))
         return {'outcome':self.place_outcome}
     def __getattr__(self, name):
-        if name not in ('approach','hold','reobserve','pregrasp','observe','grasp',
-                        'lift','transport','carry','support','release','withdraw'):
+        if name not in ('approach','hold','inspect','reobserve','align','pregrasp','observe','grasp',
+                        'lift','regrasp','transport','carry','support','release','withdraw'):
             raise AttributeError(name)
         def operation(*args):
             self.calls.append((name,))
@@ -67,6 +67,20 @@ class DeliveryTaskTests(unittest.TestCase):
         self.assertFalse(self.task.last['delivered'])
         self.assertIn('unknown',self.task.last['reason'])
         self.assertFalse(self.task.status()['busy'])
+
+    def test_visual_failure_gets_one_regrasp_before_transport(self):
+        outcomes=iter(({'outcome':'failure'},{'outcome':'success'}))
+        self.robot.verify_hold=lambda before:(self.robot.calls.append(('verify_hold',)) or next(outcomes))
+        _,run=self.queued();run();names=[call[0] for call in self.robot.calls]
+        self.assertEqual(names.count('regrasp'),1)
+        self.assertIn('carry',names);self.assertTrue(self.task.last['delivered'])
+
+    def test_every_skill_outcome_updates_world_memory(self):
+        world=Mock();self.task=DeliveryTask(self.root,self.robot,world)
+        _,run=self.queued();run()
+        calls=[call.args for call in world.record_action.call_args_list]
+        self.assertIn(('delivery','find','started'),calls)
+        self.assertTrue(any(c[:3]==('delivery','verify_place','succeeded') for c in calls))
 
     def test_cancel_invalidates_late_result_and_reserves_worker_until_cleanup(self):
         def delayed_result():

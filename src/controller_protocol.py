@@ -30,6 +30,14 @@ class Kind(IntEnum):
     CALIBRATION = 13
     RECOVERY_ENABLE = 14
     ARM_RECOVER = 15
+    MR_BEGIN = 16
+    MR_CAPTURE = 17
+    MR_ABORT = 18
+    MR_KEEPALIVE = 19
+    MR_MOVE = 20
+    MR_STOP = 21
+    MR_DIAGNOSTIC = 22
+    MR_STATUS = 74
     STATUS = 64
     RESULT = 65
     SERVO = 66
@@ -39,6 +47,7 @@ class Kind(IntEnum):
     LIDAR1 = 70
     IDENTITY = 71
     SENSOR_DIAGNOSTICS = 72
+    ARM_DIAGNOSTICS = 73
 
 
 def encode(kind, payload=b''):
@@ -157,6 +166,12 @@ class ClockMapping:
             raise ValueError('stale or future MCU sample')
         # Oldest possible acquisition time avoids presenting stale data as fresh.
         return min(now_ns, (mcu_us - self.offset_high_us) * 1000)
+
+
+RESULT_NAMES = ('EX_OK', 'EX_ARGUMENT', 'EX_VALUE', 'EX_RANGE', 'EX_TIME',
+                'EX_DISARMED', 'EX_LATCHED', 'EX_SESSION', 'EX_REPLAY', 'EX_EXPIRED',
+                'EX_FRAME', 'EX_CHECKSUM', 'EX_DEVICE_ERROR', 'EX_UNCALIBRATED',
+                'EX_STALE', 'EX_SOFT_LIMIT', 'EX_NOT_READY', 'EX_TICK_OVERRUN')
 
 
 class Session:

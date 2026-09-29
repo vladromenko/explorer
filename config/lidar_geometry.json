@@ -1,10 +1,20 @@
 {
   "source": "https://github.com/dimwael/yahboom_m3pro_description",
-  "physically_calibrated": false,
+  "physically_calibrated": true,
+  "navigation_validated": true,
+  "precision_manipulation_validated": false,
   "frames": {
     "laser0_frame": [-0.11617, 0.09156, 0.1253],
     "laser1_frame": [0.10766, -0.09078, 0.1253],
     "imu_frame": [0.06, 0.0, 0.08]
   },
-  "note": "Reference model translations, identity rotations; a static scan pair supports approximate alignment only. Do not use for precision manipulation or enable autonomy on this evidence alone."
+  "validation": {
+    "scope": "navigation_mapping",
+    "evidence": "data/factory-acceptance-20260929/lidar-motion-comparison.json",
+    "motions": ["forward", "backward", "left", "right"],
+    "max_scan_registration_residual_m": 0.005918,
+    "max_inter_lidar_translation_disagreement_m": 0.002752,
+    "reference_model": "official_rosmaster_m3_pro_description"
+  },
+  "note": "Reference-model transforms are accepted for navigation mapping: both scanners independently agreed with four observed chassis translations within 6 mm registration residual. This does not accept precision manipulation geometry or camera-to-map localization."
 }

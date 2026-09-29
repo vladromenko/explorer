@@ -1,3 +1,4 @@
+import fcntl
 import json
 from pathlib import Path
 import tempfile
@@ -23,7 +24,7 @@ class ManualArmTests(unittest.TestCase):
     def save(self):(self.root/'data/arm-state.json').write_text(json.dumps(self.state))
 
     def test_rejects_large_step_before_publication(self):
-        with self.assertRaises(ValueError):self.arm.move(self.start,[100,125,3,0,90,30])
+        with self.assertRaises(ValueError):self.arm.move(self.start,[110,125,3,0,90,30])
         self.pub.publish.assert_not_called()
 
     def test_expired_gamepad_decision_never_moves(self):
@@ -75,7 +76,35 @@ class ManualArmTests(unittest.TestCase):
     def test_single_finite_position_command_and_honest_state(self):
         result=self.arm.move(self.start,self.goal)
         self.pub.publish.assert_called_once()
-        self.assertEqual(self.pub.publish.call_args.args[0].time,150)
+        self.assertEqual(self.pub.publish.call_args.args[0].time,200)
         self.assertFalse(result['measured']);self.assertFalse(result['attained'])
+
+    def test_observed_reference_never_publishes_or_claims_measurement(self):
+        result=self.arm.accept_reference([90]*6,True)
+        self.pub.publish.assert_not_called()
+        self.assertFalse(result['motion_sent']);self.assertFalse(result['measured'])
+        self.assertEqual(self.arm.reference()['servo_deg'],[90]*6)
+
+    def test_timed_cancel_sends_no_following_target(self):
+        commands=[dict(at=0.,end=.05,pose=self.goal,runtime_ms=50),
+                  dict(at=.05,end=.10,pose=self.start,runtime_ms=50)]
+        path=dict(commands=commands,duration=.10,source_sha256='test',full_moveit_path_retained=True)
+        def permit():
+            if self.pub.publish.call_count:raise ValueError('STOP')
+        with patch('factory_trajectory.compile_path',return_value=path):
+            with self.assertRaisesRegex(ValueError,'STOP'):
+                self.arm.execute_path(self.start,self.start,{},permit,self.arm.stop_revision)
+        self.pub.publish.assert_called_once()
+        state=json.loads((self.root/'data/arm-state.json').read_text())
+        self.assertFalse(state['attained']);self.assertFalse(state['command_completed'])
+        self.assertTrue(state['cancelled'])
+
+    def test_timed_path_rejects_other_process_owner(self):
+        with (self.root/'data/arm-commissioning.lock').open('a') as owner:
+            fcntl.flock(owner,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            with self.assertRaises(BlockingIOError):
+                self.arm.execute_path(self.start,self.goal,None,lambda:None,self.arm.stop_revision)
+        self.pub.publish.assert_not_called()
+        self.assertFalse(self.arm.lock.locked())
 
 if __name__=='__main__':unittest.main()

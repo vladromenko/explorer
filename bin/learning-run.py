@@ -54,6 +54,34 @@ def export_dataset(episodes,source,destination,repo_id):
                joint_state_source='commanded_not_measured',clock='decision_index',
                physical_sample_rate_hz=None,autonomous_replay_allowed=False))
 
+def export_mobile_dataset(episodes,source,destination,repo_id):
+    import cv2
+    import numpy as np
+    from lerobot.datasets import LeRobotDataset
+    names=['base','shoulder','elbow','wrist_pitch','wrist_roll','gripper','vx','vy','wz']
+    features={'observation.state':{'dtype':'float32','shape':(9,),'names':names},
+        'action':{'dtype':'float32','shape':(9,),'names':names},
+        'observation.images.wrist':{'dtype':'image','shape':(240,320,3),'names':['height','width','channels']}}
+    ds=LeRobotDataset.create(repo_id=repo_id,root=destination,fps=2,features=features,
+        robot_type='rosmaster_m3pro_mobile_manipulation_commanded',use_videos=False)
+    provenance=[]
+    for episode in episodes:
+        rows=[json.loads(line) for line in (source/episode['id']/'samples.jsonl').read_text().splitlines() if line.strip()]
+        if len(rows)<20:raise ValueError('Mobile episode has too few synchronized samples')
+        for current,future in zip(rows,rows[1:]):
+            state=np.asarray(current['command'],dtype=np.float32);action=np.asarray(future['command'],dtype=np.float32)
+            if state.shape!=(9,) or action.shape!=(9,) or not np.isfinite(state).all() or not np.isfinite(action).all():
+                raise ValueError('Invalid mobile command sample')
+            image=cv2.imread(str(source/episode['id']/current['image']))
+            if image is None:raise ValueError('Missing mobile demonstration image')
+            image=cv2.cvtColor(cv2.resize(image,(320,240)),cv2.COLOR_BGR2RGB)
+            ds.add_frame({'observation.state':state,'action':action,'observation.images.wrist':image,
+                'task':episode['name']+' / '+current['stage']})
+        ds.save_episode();provenance.append(episode)
+    ds.finalize();write_json(destination/'explorer-provenance.json',dict(episodes=provenance,
+        format='explorer_mobile_episode_v2',joint_state_source='commanded_not_measured',fps=2,
+        automatic_execution_allowed=False))
+
 def run():
     request=json.loads((ROOT/'data/learning-request.json').read_text())
     ident=request['job']
@@ -65,15 +93,17 @@ def run():
     signal.signal(signal.SIGTERM,stop)
     try:
         training_budget();state['state']='exporting';write_json(folder/'job.json',state)
-        source=ROOT/'data/demonstrations'
+        mobile=state.get('dataset_kind')=='mobile_manipulation_9dof'
+        source=ROOT/('data/mobile-demonstrations' if mobile else 'data/demonstrations')
         episodes=[json.loads((source/e/'episode.json').read_text()) for e in state['episodes']]
+        expected_source='operator_mobile_demonstration' if mobile else 'operator_demonstration'
         if len(episodes)<10 or any(e['outcome']!='success' or e['label_source']!='operator' or
-                                  e['state']!='complete' or e['name']!=state['task'] or
-                                  e['source']!='operator_demonstration' for e in episodes):
+                                  e['state']!='complete' or e['name']!=state['task'] or e['source']!=expected_source for e in episodes):
             raise ValueError('Demonstrations changed or were not verified by their operator')
         heldout=max(2,len(episodes)//5)
-        export_dataset(episodes[:-heldout],source,folder/'train','explorer/train')
-        export_dataset(episodes[-heldout:],source,folder/'validation','explorer/validation')
+        exporter=export_mobile_dataset if mobile else export_dataset
+        exporter(episodes[:-heldout],source,folder/'train','explorer/train')
+        exporter(episodes[-heldout:],source,folder/'validation','explorer/validation')
         write_json(folder/'split.json',dict(train=[e['id'] for e in episodes[:-heldout]],
                    validation=[e['id'] for e in episodes[-heldout:]]))
         config=dict(dataset=dict(repo_id='explorer/train',root=str(folder/'train'),video_backend='pyav'),
@@ -127,9 +157,10 @@ def validate(folder,check_budget=True):
             errors.extend(np.abs(actual-expected).reshape(-1).tolist())
             baseline.extend(np.abs(previous-expected).reshape(-1).tolist())
     if not errors or not np.isfinite(errors).all():raise ValueError('Проверка не дала корректных результатов')
-    result=dict(samples=len(ds),mean_error_deg=float(np.mean(errors)),
-                p95_error_deg=float(np.percentile(errors,95)),
-                hold_position_baseline_mae_deg=float(np.mean(baseline)),
+    mobile=json.loads((folder/'job.json').read_text()).get('dataset_kind')=='mobile_manipulation_9dof'
+    result=dict(samples=len(ds),mean_absolute_error=float(np.mean(errors)),
+                p95_absolute_error=float(np.percentile(errors,95)),
+                hold_position_baseline_mae=float(np.mean(baseline)),units='mixed_degrees_and_body_velocity' if mobile else 'degrees',
                 improves_hold_baseline=bool(np.mean(errors)<np.mean(baseline)),
                 measured_joint_ground_truth=False,physical_success_evaluated=False,
                 automatic_execution_allowed=False)

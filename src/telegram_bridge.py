@@ -19,6 +19,8 @@ HELP='''Explorer: /status — состояние; /stop — остановить
 /objects — что видно; /where предмет — последние наблюдения;
 /find sock — поиск на текущем кадре; /places — сохранённые места;
 /go имя — поездка; /survey имя1,имя2 — осмотр маршрута;
+/explore — исследовать доступные границы карты; /mobile — телефонная панель;
+/skills — функции и обучение;
 /ask вопрос — локальный помощник.
 Поездки требуют готового шасси и выбранного автономного режима в панели.'''
 
@@ -45,7 +47,10 @@ def command(text):
     if name=='/memory':return 'experiments/memory',None
     if name=='/learn':return 'teaching',None
     if name=='/results':return 'experiments/results',None
+    if name=='/skills':return 'skills',None
+    if name=='/explore':return 'missions',dict(kind='explore',x=None,y=None,yaw=0.)
     if name=='/camera':return 'camera',None
+    if name=='/mobile':return 'mobile',None
     if name=='/where' and argument:
         from urllib.parse import urlencode
         return 'memory?'+urlencode({'label':argument}),None
@@ -130,10 +135,19 @@ class TelegramBridge:
         if path is None:self.reply(item['chat_id'],HELP);return
         if path=='camera':
             self.reply(item['chat_id'],'Камера доступна в домашней сети: http://explorer.local:8080 — вкладка «Камера и поездки».');return
+        if path=='mobile':
+            from remote_access import status
+            remote=status(self.root)
+            text=('Телефонная панель: '+remote['url']+'\nОткройте её на телефоне с включённым Tailscale.'
+                  if remote['connected'] else 'Tailscale робота ещё не авторизован. Локальная панель: http://explorer.local:8080/mobile')
+            self.reply(item['chat_id'],text);return
         if path=='experiments':
             result=self.api(path,None)
             self.reply(item['chat_id'],'Выберите тест наблюдения. Кнопки действуют 60 секунд; повторное нажатие не повторяет запуск.',
                 {'inline_keyboard':[[self.callback_button(item['chat_id'],e['id'])] for e in result['experiments']]})
+            return
+        if path=='skills':
+            self.reply(item['chat_id'],'Функции: карта и frontier exploration; поездки к сохранённым местам; поиск предметов GroundingDINO/YOLO; память «где видел»; ручное управление шасси и 6 суставами; запись полного показа подъехать→взять→перевезти→положить; офлайн LeRobot ACT после 10+ успешных показов; эксперименты /experiments. Автономный навык включается только после проверки модели.')
             return
         result=self.api('status' if path=='objects' else path,payload)
         if path=='status':
@@ -149,7 +163,7 @@ class TelegramBridge:
         elif path=='teaching':text='Обучение доступно в веб-панели «Рука и обучение». Успешных показов: '+str(result['teaching'].get('successful',0))
         elif path=='agent':text=result.get('answer','Нет ответа')
         elif path=='control':text='Команда STOP передана. При физической неисправности связи нужна кнопка питания.'
-        elif path in ('places/go','agents/survey'):
+        elif path in ('places/go','agents/survey','missions'):
             text='Задание принято: '+str(result.get('id'))+'. Завершение ещё не подтверждено.'
         else:text=json.dumps(result,ensure_ascii=False)[:3800]
         self.reply(item['chat_id'],text)
@@ -174,6 +188,7 @@ class TelegramBridge:
         if me['id']!=self.config.get('bot_id',8850343219):raise ValueError('Unexpected bot ID')
         if self.telegram('getWebhookInfo',{}).get('url'):raise ValueError('Existing webhook; no changes made')
         names={'/status':'Состояние','/camera':'Камера','/experiments':'Эксперименты','/memory':'Память',
+               '/skills':'Функции и обучение','/explore':'Исследовать комнату','/mobile':'Телефонная панель',
                '/learn':'Обучение','/results':'Результаты','/stop':'Остановить'}
         self.telegram('setMyCommands',{'commands':[{'command':k[1:],'description':v} for k,v in names.items()]})
         labels={v:k for k,v in names.items()}

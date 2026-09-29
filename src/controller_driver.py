@@ -24,10 +24,13 @@ from std_msgs.msg import Float32, String
 from builtin_interfaces.msg import Time
 import serial
 
-from controller_protocol import ClockMapping, Kind, Parser, Session, arm_payload, base_payload, encode
-from controller_feedback import ArmFeedback, ScanAssembler, decode_status, load_calibration
+from controller_protocol import ClockMapping, Kind, Parser, Session, arm_payload, base_payload, encode, RESULT_NAMES
+from controller_feedback import ArmFeedback, ScanAssembler, decode_status, decode_arm_diagnostics, load_calibration
 from controller_requests import PendingRequests
 from controller_release import select_controller_profile
+from controller_arm_commissioning import arm_commissioning_allowed
+from manual_reference_host import decode_reference, effective_calibration, manual_request_allowed
+from command_arm_state import describe as command_arm_state, execution_state
 
 ROOT = Path(os.environ.get('EXPLORER_ROOT', '/home/vlad/Explorer'))
 
@@ -47,6 +50,7 @@ class ControllerDriver(Node):
         self.calibration = load_calibration(calibration_path)
         self.parser, self.session, self.arm = Parser(), Session(), ArmFeedback(self.calibration)
         self.pending_requests = PendingRequests()
+        self.reference_epoch=None
         self.scans = [ScanAssembler(), ScanAssembler()]
         self.challenges = {}
         self.identity = None
@@ -56,6 +60,7 @@ class ControllerDriver(Node):
         self.pose = [0., 0., 0.]
         self.fault = None
         self.sensor_health = {}
+        self.manual_reference = None
         self.source_sha256 = None
         self.serial = None
         self.connection_generation = 0
@@ -69,6 +74,7 @@ class ControllerDriver(Node):
         self.battery_pub = self.create_publisher(Float32, '/battery', qos_profile_sensor_data)
         self.scan_pub = [self.create_publisher(LaserScan, '/scan'+str(i), qos_profile_sensor_data) for i in range(2)]
         self.joint_pub = self.create_publisher(JointState, '/joint_states', qos_profile_sensor_data)
+        self.actuator_pub = self.create_publisher(JointState, '/explorer/actuator_states', qos_profile_sensor_data)
         self.state_pub = self.create_publisher(String, '/explorer/controller_state', 10)
         self.result_pub = self.create_publisher(String, '/explorer/controller_result', 10)
         self.arm_pub = self.create_publisher(String, '/explorer/arm_measurements', 10)
@@ -76,7 +82,7 @@ class ControllerDriver(Node):
         self.create_subscription(String, '/explorer/controller_request', self.command, 10)
         self.create_timer(.005, self.poll)
         self.create_timer(.5, self.handshake)
-        self.create_timer(.1, self.publish_state)
+        self.create_timer(.05, self.publish_state)
         self.handshake()
 
     def send(self, packet):
@@ -138,6 +144,7 @@ class ControllerDriver(Node):
         self.state = {}
         self.source_sha256 = None
         self.sensor_health = {}
+        self.manual_reference = None
         self.last_status_ns = None
         self.command_not_before_ns = now
         self.arm = ArmFeedback(self.calibration)
@@ -181,18 +188,30 @@ class ControllerDriver(Node):
                 raise ValueError('controller request must be an object')
             request = parsed
             kind = Kind[request['operation']]
+            if self.profile.get('manual_reference_version')==1 and kind in (Kind.RECOVERY_ENABLE,Kind.ARM_RECOVER):
+                raise ValueError('CommandOnly: используйте ручную исходную позу, readback recovery отсутствует')
             if kind == Kind.ESTOP:
                 self.send(encode(Kind.ESTOP))
                 self.pending_requests.clear()
                 self.session.state = 'fault'
                 return
-            if self.profile.get('telemetry_only', True):
-                raise ValueError('controller commissioning: telemetry only')
             now = time.monotonic_ns()
+            manual_authorized = False
+            if self.profile.get('manual_reference_version') == 1:
+                manual_authorized = manual_request_allowed(ROOT, self.profile, self.identity, self.state, request, now)
+            restricted=self.profile.get('base_telemetry_only',self.profile.get('telemetry_only',True)) if kind==Kind.BASE or request.get('source_id')=='explorer_control' else self.profile.get('telemetry_only',True)
+            if restricted and not manual_authorized and not arm_commissioning_allowed(
+                ROOT, self.profile, self.identity, self.state, self.arm.samples,
+                self.calibration, request, now):
+                raise ValueError('controller commissioning: telemetry only')
             if self.last_status_ns is None or now-self.last_status_ns > 200_000_000:
                 raise ValueError('controller telemetry unavailable')
             if request['source_monotonic_ns'] <= self.command_not_before_ns:
                 raise ValueError('command originated before current controller connection was ready')
+            if self.profile.get('manual_reference_version') == 1 and kind in (
+                Kind.ARM, Kind.ARM_ENABLE, Kind.CALIBRATION, Kind.MR_BEGIN, Kind.MR_CAPTURE, Kind.MR_MOVE, Kind.MR_KEEPALIVE
+            ) and not manual_authorized:
+                raise ValueError('Режим ручной опорной установки требует штатного операторского пути')
             data = b''
             if kind == Kind.BASE:
                 data = base_payload(request['velocity'], request.get('finite_us', 0))
@@ -201,11 +220,25 @@ class ControllerDriver(Node):
                 if len(position) != 6:
                     raise ValueError('all six actuator positions required')
                 if kind == Kind.ARM:
-                    position = [calibration.target_position(q)
-                                for calibration, q in zip(self.arm.calibration, position)]
+                    if self.profile.get('manual_reference_version') == 1:
+                        for c, q in zip(self.arm.calibration, position):
+                            c.target_raw(q)
+                        # Preserve sub-tick continuous coordinates for velocity/
+                        # acceleration checks; MCU alone quantizes the target.
+                    else:
+                        position = [calibration.target_position(q)
+                                    for calibration, q in zip(self.arm.calibration, position)]
                 data = arm_payload(position)
             elif kind == Kind.CALIBRATION:
-                data = b''.join(cal.payload() for cal in self.arm.calibration)
+                data = b''.join(cal.payload() for cal in self.calibration)
+            elif kind == Kind.MR_MOVE:
+                positions = request['position_rad']
+                duration = float(request.get('duration_s', 1.0))
+                if len(positions) != 6 or not all(math.isfinite(x) for x in positions) or not 0 <= duration <= 60:
+                    raise ValueError('Некорректная конечная команда руки')
+                for c, q in zip(self.arm.calibration, positions):
+                    c.target_raw(q)
+                data = struct.pack('<7f', *positions, duration)
             elif kind == Kind.RGB:
                 data = bytes(request['rgb'])
                 if len(data) != 3:
@@ -214,7 +247,8 @@ class ControllerDriver(Node):
                 if type(request['enabled']) is not bool:
                     raise ValueError('beeper state must be boolean')
                 data = bytes([request['enabled']])
-            elif kind not in (Kind.OPEN, Kind.HOLD, Kind.CANCEL, Kind.CLEAR, Kind.ARM_ENABLE, Kind.ARM_CANCEL, Kind.RECOVERY_ENABLE):
+            elif kind not in (Kind.OPEN, Kind.HOLD, Kind.CANCEL, Kind.CLEAR, Kind.ARM_ENABLE, Kind.ARM_CANCEL, Kind.RECOVERY_ENABLE, Kind.MR_BEGIN, Kind.MR_CAPTURE,
+                                Kind.MR_ABORT, Kind.MR_KEEPALIVE, Kind.MR_STOP, Kind.MR_DIAGNOSTIC):
                 raise ValueError('unsupported command')
             packet = self.session.prepare(kind, request['source_monotonic_ns'], request['expires_monotonic_ns'],
                                           now, data, source_id=request['source_id'],
@@ -226,6 +260,7 @@ class ControllerDriver(Node):
         except (ValueError, KeyError, TypeError, OverflowError, OSError, serial.SerialException) as exc:
             self.result_pub.publish(String(data=json.dumps(dict(
                 source_id=request.get('source_id'), source_sequence=request.get('source_sequence'),
+                operation=request.get('operation'), error=None, rejection_stage='jetson_validation',
                 accepted=False, reached=False, reason=str(exc)))))
             if isinstance(exc, (OSError, serial.SerialException)) and self.serial is not None:
                 self.disconnect(str(exc))
@@ -285,7 +320,44 @@ class ControllerDriver(Node):
             self.identity = identity
             self.fault = None
         elif self.session.clock is not None:
-            if kind == Kind.SENSOR_DIAGNOSTICS:
+            if kind == Kind.MR_STATUS:
+                ref = decode_reference(payload, now)
+                if ref['boot'] != self.session.clock.boot:
+                    raise ValueError('Ручная привязка принадлежит другой загрузке')
+                self.stamp(ref['acquired_us'])
+                self.manual_reference = ref
+                if ref['reference_valid']:
+                    epoch=(ref['boot'],ref['session'],tuple(ref['raw_reference']))
+                    if self.reference_epoch is None or self.reference_epoch[0]!=epoch:
+                        self.reference_epoch=(epoch,ref['generation'])
+                    ref['reference_generation']=self.reference_epoch[1]
+                else:self.reference_epoch=None
+                if ref['reference_valid']:
+                    revised = effective_calibration(self.calibration, ref)
+                    if self.arm.calibration != revised:
+                        # Do not relabel old samples after rebasing the coordinate system.
+                        # Their raw history remains in servo_sample logs; fresh diagnostic
+                        # reads populate this new calibration without synthetic timestamps.
+                        self.arm = ArmFeedback(revised)
+                    contract=command_arm_state(dict(identity=self.identity,manual_reference=ref,controller=self.state,
+                        telemetry_fresh=self.last_status_ns is not None and now-self.last_status_ns<250_000_000,
+                        session_state=self.session.state,fault=self.fault),self.calibration,now,self.profile)
+                    if contract['reference_valid']:
+                        msg = JointState()
+                        msg.header.stamp = self.stamp(ref['acquired_us'])
+                        msg.name = ['arm'+str(i)+'_Joint' for i in range(1, 6)]
+                        msg.position = contract['q_estimated'][:5]
+                        self.joint_pub.publish(msg)
+                        msg.name=['servo'+str(i) for i in range(1,7)]
+                        msg.position=contract['q_estimated']
+                        self.actuator_pub.publish(msg)
+                else:
+                    self.arm.calibration = self.calibration
+            elif kind == Kind.ARM_DIAGNOSTICS:
+                diagnostic = decode_arm_diagnostics(payload)
+                self.stamp(diagnostic['acquired_us'])
+                self.sensor_health['arm_bus'] = dict(diagnostic, received_ns=now)
+            elif kind == Kind.SENSOR_DIAGNOSTICS:
                 if len(payload) != 64:
                     raise ValueError('bad sensor diagnostics record')
                 self.sensor_health['startup'] = dict(received_ns=now,
@@ -322,15 +394,24 @@ class ControllerDriver(Node):
                     session=self.session.session, sequence=sequence, operation=operation,
                     acquired_us=acquired, now_ns=now)
                 if source is not None:
-                    self.session.result(Kind(operation), sequence, result)
+                    # A rejected manual arm request is not a latched BASE fault.
+                    # Keep the transport session usable for explicit STOP/retry.
+                    # Real MCU fault/mode changes and OPEN/CLEAR keep old handling.
+                    benign_manual_rejection = (self.profile.get('manual_reference_version') == 1 and
+                        result != 0 and mode == 1 and fault == 0 and self.session.state == 'active' and
+                        operation not in (int(Kind.OPEN), int(Kind.CLEAR)))
+                    if not benign_manual_rejection:
+                        self.session.result(Kind(operation), sequence, result)
                 self.result_pub.publish(String(data=json.dumps(dict(sequence=sequence, operation=operation,
+                    acquired_us=acquired, rejection_stage='stm32' if result else None,
+                    reason=RESULT_NAMES[result] if result < len(RESULT_NAMES) else 'unknown_controller_result',
                     accepted=result == 0, error=result, mode=mode, fault=fault, reached=False,
                     matched_request=source is not None,
                     **(source or dict(source_id=None, source_sequence=None))))))
             elif kind == Kind.SERVO:
                 sample = self.arm.consume(payload, self.session.clock, now)
                 self.servo_sample_pub.publish(String(data=json.dumps(dict(sample, boot_id=self.session.clock.boot),allow_nan=False)))
-                if sample['position_valid'] and sample['joint'] <= 5:
+                if sample['position_valid'] and sample['joint'] <= 5 and self.profile.get('manual_reference_version') != 1:
                     msg = JointState()
                     msg.header.stamp = self.stamp(struct.unpack_from('<Q', payload, 13)[0], 250_000_000)
                     msg.name = ['arm'+str(sample['joint'])+'_Joint']
@@ -417,12 +498,18 @@ class ControllerDriver(Node):
         now = time.monotonic_ns()
         self.pending_requests.expire(now)
         arm = self.arm.snapshot(now)
-        self.arm_pub.publish(String(data=json.dumps(arm, allow_nan=False)))
         state = dict(at=time.time(), monotonic_ns=now, identity=self.identity,
-                     telemetry_only=self.profile.get('telemetry_only', True), sensors=self.sensor_health,
+                     telemetry_only=self.profile.get('telemetry_only', True),
+                     base_telemetry_only=self.profile.get('base_telemetry_only',self.profile.get('telemetry_only',True)),sensors=self.sensor_health,
                      session_state=self.session.state, fault=self.fault, controller=self.state,
                      telemetry_fresh=self.last_status_ns is not None and now-self.last_status_ns < 250_000_000,
-                     parser_errors=self.parser.errors, arm=arm)
+                     parser_errors=self.parser.errors, arm=arm, manual_reference=self.manual_reference)
+        if self.profile.get('manual_reference_version') == 1:
+            arm=execution_state(command_arm_state(state,self.calibration,now,self.profile),ROOT)
+            state['arm']=arm
+            state['arm_command_enabled']=arm['command_enabled']
+            state['firmware_compatible']=arm['firmware_compatible']
+        self.arm_pub.publish(String(data=json.dumps(arm, allow_nan=False)))
         self.state_pub.publish(String(data=json.dumps(state, allow_nan=False)))
         target = ROOT/'data/controller-state.json'
         temporary = target.with_suffix('.tmp')

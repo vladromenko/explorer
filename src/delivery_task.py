@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 class DeliveryTask:
-    def __init__(self, root, robot):
+    def __init__(self, root, robot, world=None):
         self.root, self.robot = Path(root), robot
         self.lock = threading.RLock()
         self.active = None
@@ -22,6 +22,7 @@ class DeliveryTask:
         self.stopping = set()
         self.recovery_errors = []
         self.folder = self.root/'data/delivery-runs'
+        self.world = world
         self.folder.mkdir(parents=True, exist_ok=True)
         # In-flight work never resumes after a process restart.
         for path in self.folder.glob('*.json'):
@@ -103,12 +104,17 @@ class DeliveryTask:
             self.check_current(mid, generation)
             self.active['phase'] = name
             self._save(self.active)
-        result = operation()
+        if self.world:self.world.record_action('delivery',name,'started')
+        try:result = operation()
+        except Exception as exc:
+            if self.world:self.world.record_action('delivery',name,'failed',{'reason':str(exc)})
+            raise
         self.permit(mid, generation)  # including late accepted goals and results
         with self.lock:
             self.check_current(mid, generation)
             self.active['events'].append(dict(stage=name, at=time.time(), result=result))
             self._save(self.active)
+        if self.world:self.world.record_action('delivery',name,'succeeded',result if isinstance(result,dict) else {'result':str(result)})
         return result
 
     def cancel(self):
@@ -141,15 +147,26 @@ class DeliveryTask:
             self.robot.begin(mid,check=lambda:self.check_current(mid,generation))
             stage = lambda name, fn:self.stage(mid,generation,name,fn)
             target = stage('find', self.robot.find)
-            stage('approach', lambda:self.robot.approach(target))
+            approach=stage('approach', lambda:self.robot.approach(target))
+            if approach.get('reobserve_required'):
+                target=stage('refind_after_base_alignment',self.robot.find_aligned)
+                approach=stage('approach_after_base_alignment',lambda:self.robot.approach(target))
+                if approach.get('reobserve_required'):raise ValueError('Коррекция базы не сошлась после повторного измерения')
             stage('hold_base', self.robot.hold)
+            stage('inspect', self.robot.inspect)
             target = stage('reobserve', lambda:self.robot.reobserve(target))
+            stage('align', lambda:self.robot.align(target))
             stage('pregrasp', lambda:self.robot.pregrasp(target))
             stage('observe_before', self.robot.observe)
             stage('grasp', lambda:self.robot.grasp(target))
             before = stage('observe_grasp', self.robot.observe)
             stage('lift', self.robot.lift)
             held = stage('verify_hold', lambda:self.robot.verify_hold(before))
+            if held.get('outcome') == 'failure':
+                stage('regrasp', lambda:self.robot.regrasp(target))
+                before = stage('observe_regrasp', self.robot.observe)
+                stage('relift', self.robot.lift)
+                held = stage('verify_regrasp', lambda:self.robot.verify_hold(before))
             if held.get('outcome') != 'success':
                 raise ValueError('Захват не подтверждён: '+held.get('outcome','unknown'))
             stage('transport_pose', self.robot.transport)

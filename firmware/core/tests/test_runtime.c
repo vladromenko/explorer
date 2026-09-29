@@ -178,7 +178,23 @@ static void arm_transmit_authorization(void) {
     c.base.mode=EX_BASE_ACTIVE; c.base.session_id=1;
     f=calibration(6); assert(ec_dispatch(&c,&f,1)==EX_NOT_READY);
 }
+static void arm_stop_causes(void) {
+    ec_controller_t c; ex_twist_t v;
+    assert(ec_init(&c,123,0)==EX_OK);
+    assert(ex_base_begin(&c.base,123,1,0)==EX_OK);
+    for(unsigned i=0;i<6;++i) { ec_measure(&c,i,2000,true,0); }
+    c.arm_enabled=true; c.arm_expires_us=10000;
+    assert(ec_tick(&c,10000,&v)==EX_OK);
+    assert(c.arm_cancel && c.arm_stop_reason==EX_EXPIRED);
+    assert(ec_tick(&c,20000,&v)==EX_OK && c.arm_stop_reason==EX_EXPIRED);
+    c.arm_enabled=true; c.arm_expires_us=100000; c.measured_valid[2]=false;
+    assert(ec_tick(&c,30000,&v)==EX_OK && c.arm_stop_reason==EX_STALE);
+    c.arm_enabled=true;
+    ec_cancel_arm(&c,EX_FRAME);
+    assert(c.arm_stop_reason==EX_FRAME);
+}
 int main(void) {
+    arm_stop_causes();
     wire(); sessions(); arm_generations_and_recovery(); calibration_atomicity_and_zero_runtime();
     arm_transmit_authorization();
     puts("wire fuzz, deadlines, replay, atomic calibration, bounded recovery and independent generations: PASS");

@@ -17,9 +17,15 @@ ROOT=Path('/home/vlad/Explorer')
 def main():
     status=json.loads((ROOT/'data/status.json').read_text());stationary_status(status,time.time())
     calibration=load_calibration(ROOT/'config/controller-calibration.json')
+    profile=json.loads((ROOT/'config/controller-profile.json').read_text())
     def measured():
-        return measured_reference(json.loads((ROOT/'data/controller-state.json').read_text()),
-                                  calibration,time.monotonic_ns())
+        live=json.loads((ROOT/'data/controller-state.json').read_text())
+        if profile.get('manual_reference_version')==1:
+            from manual_reference_host import reference_from_state
+            value=reference_from_state(live,calibration,time.monotonic_ns())
+            value['acquired_monotonic']=[live['manual_reference']['received_monotonic_ns']/1e9]*6
+            return value
+        return measured_reference(live,calibration,time.monotonic_ns())
     before=measured()
     rclpy.init();node=rclpy.create_node('explorer_capture_handeye');data={};bridge=CvBridge()
     def receive(key,msg):data[key]=msg
@@ -50,12 +56,12 @@ def main():
     np.savez_compressed(path,rgb=rgb,depth=depth,k=np.array(data['info'].k).reshape(3,3),
                         d=np.array(data['info'].d),stamp=stamp(data['rgb']),
                         servo_deg=state['servo_deg'],base_tool=transform,
-                        measured_joint_positions=True,controller_boot_id=str(state['controller_boot_id']),
+                        measured_joint_positions=state['measured_joint_positions'],joint_state_source=state['joint_state_source'],controller_boot_id=str(state['controller_boot_id']),
                         controller_session=state['controller_session'],
                         exposure_monotonic=state['exposure_monotonic'],
                         base_mount=model.state.get_global_link_transform('arm4'),mount_frame='arm4',
                         base_pose=np.array(list(status['raw_pose'][k] for k in ('x','y','yaw'))))
-    print(json.dumps(dict(path=str(path),servo_deg=state['servo_deg'],measured_joints=True)))
+    print(json.dumps(dict(path=str(path),servo_deg=state['servo_deg'],measured_joints=state['measured_joint_positions'])))
     node.destroy_node();rclpy.shutdown()
 
 if __name__=='__main__':main()

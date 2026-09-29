@@ -11,6 +11,7 @@ from pathlib import Path
 import numpy as np
 from grasp_verification import verify_lift, verify_place
 from delivery_vision import FeatureObject, reacquire_candidate
+from mobile_alignment import correction
 
 SETUP_ARTIFACTS={'config/delivery.json','config/handeye-accepted.json','config/gripper-accepted.json',
                  'config/explorer.urdf','config/explorer.srdf'}
@@ -47,8 +48,9 @@ def load_settings(root, source_sha, calibration_sha, evidence=None):
     config=json.loads(verified['config/delivery.json'])
     handeye=json.loads(verified['config/handeye-accepted.json'])
     gripper=json.loads(verified['config/gripper-accepted.json'])
-    if handeye.get('execution_authorized') is not True or handeye.get('measured_joint_positions') is not True:
-        raise ValueError('Нет принятой калибровки камеры по измеренным суставам')
+    if handeye.get('execution_authorized') is not True or not (handeye.get('measured_joint_positions') is True or
+            handeye.get('joint_state_source')=='command_estimate' and handeye.get('physical_validation_record')):
+        raise ValueError('Нет физически проверенной калибровки камеры для текущего источника позы')
     if gripper.get('execution_authorized') is not True or gripper.get('aperture_mm_calibrated') is not True:
         raise ValueError('Нет принятой калибровки захвата')
     transform=np.asarray(handeye['camera_to_mount_reference'],dtype=float)
@@ -155,7 +157,19 @@ class DeliveryRobot:
     def blockers(self):
         reasons=[]
         if self.finder.status().get('busy'):reasons.append('Дождитесь завершения текущего распознавания')
-        if not getattr(self.arm,'native',False):reasons.append('Доставка требует измеренного положения руки')
+        if not getattr(self.arm,'native',False):
+            flags={}
+            try:flags=json.loads((self.root/'config/commissioning.json').read_text())
+            except (OSError,ValueError):pass
+            if flags.get('camera_tf_validated') is not True:
+                reasons.append('Не принята привязка камеры к руке robotio')
+            if flags.get('localization_verified') is not True:
+                reasons.append('Не принята локализация и повторное определение позы на сохранённой карте')
+            try:gripper=json.loads((self.root/'config/gripper-accepted.json').read_text())
+            except (OSError,ValueError):gripper={}
+            if not (gripper.get('execution_authorized') is True and gripper.get('aperture_mm_calibrated') is True):
+                reasons.append('Не приняты раскрытие, контакт и удержание предмета захватом')
+            reasons.append('До первого запуска нужен принятый сценарий robotio с местами поиска и размещения')
         else:
             status=self.arm.status()
             if status.get('blocked_by'):reasons.append(status['blocked_by'])
@@ -208,7 +222,8 @@ class DeliveryRobot:
                     or not state.get('telemetry_fresh') or controller.get('arm_enabled') is not False
                     or controller.get('arm_cancel_pending') is not False):
                 raise ValueError('Рука ещё исполняет или отменяет предыдущую команду')
-            return dict(attained=True,already_at_measured_goal=True)
+            estimated=getattr(self.arm,'profile',{}).get('manual_reference_version')==1
+            return dict(attained=not estimated,measured=not estimated,command_completed=True,already_at_command_goal=estimated)
         plan=self.trajectory.plan([float(v) for v in goal]);mid=self.mid
         started=self.trajectory.start_local(plan['plan_id'],lambda:self.permit(mid))
         session=started['session'];end=time.monotonic()+70
@@ -217,10 +232,14 @@ class DeliveryRobot:
             if state.get('session')!=session:raise ValueError('Исполнитель пути заменён')
             if not state['busy']:
                 measured=self.arm.reference()['servo_deg']
-                if (state.get('phase')!='reached' or state.get('reached') is not True or
+                completed=(state.get('phase')=='reached' and state.get('reached') is True or
+                           state.get('phase')=='command_completed' and state.get('command_completed') is True)
+                if (not completed or
                     not np.allclose(measured,goal,atol=.5,rtol=0)):
                     raise ValueError('Поза не достигнута: '+str(state.get('reason')))
-                return dict(attained=True,session=session,measured_deg=measured)
+                estimated=getattr(self.arm,'profile',{}).get('manual_reference_version')==1
+                return dict(attained=not estimated,measured=not estimated,command_completed=True,session=session,
+                            measured_deg=None if estimated else measured,q_estimated_deg=measured if estimated else None)
             time.sleep(.03)
         self.trajectory.stop();raise ValueError('Истёк срок пути руки')
 
@@ -238,12 +257,18 @@ class DeliveryRobot:
             if not p or not p['compatible_map']:raise ValueError('Место поиска не принадлежит текущей карте: '+name)
             self.missions.go(self.mid,p['x'],p['y'],p['yaw']);self.hold()
             self._move(self.settings['search_deg'])
+            found=self._detect_current(name)
+            if found:return found
+            self._move(self.settings['transport_deg'])
+        raise ValueError('В принятых местах не найден доступный носок')
+
+    def _detect_current(self,place):
             arrived=time.time();deadline=time.monotonic()+2
             while float(self.vision.snapshot()['stamp'])<arrived:
                 self.permit(self.mid)
                 if time.monotonic()>deadline:raise ValueError('Нет кадра после достижения поисковой позы')
                 time.sleep(.03)
-            before=self.arm.reference()['position_rad'];base=self.missions.maps.pose()
+            before=np.asarray(self.arm.reference()['servo_deg'],dtype=float);base=self.missions.maps.pose()
             request=self.finder.start('sock');self.search_id=request['id'];end=time.monotonic()+105
             try:self.permit(self.mid)
             except Exception:
@@ -256,8 +281,8 @@ class DeliveryRobot:
             objects=[o for o in found['result']['objects'] if o.get('position') and o.get('confidence',0)>=.35]
             if len(objects)>1:raise ValueError('Несколько похожих предметов: выбор для принятого сценария неоднозначен')
             if objects:
-                current=self.arm.reference()['position_rad'];pose=self.missions.maps.pose()
-                if np.max(np.abs(np.asarray(before)-current))>math.radians(.15) or max(abs(pose[k]-base[k]) for k in ('x','y','yaw'))>.003:
+                current=np.asarray(self.arm.reference()['servo_deg'],dtype=float);pose=self.missions.maps.pose()
+                if np.max(np.abs(before-current))>.15 or max(abs(pose[k]-base[k]) for k in ('x','y','yaw'))>.003:
                     raise ValueError('Камера сместилась во время распознавания')
                 with np.load(self.root/'data/object-searches'/request['id']/'rgbd.npz',allow_pickle=False) as f:initial=dict(f)
                 fresh=self.vision.snapshot()
@@ -268,31 +293,72 @@ class DeliveryRobot:
                 while not self.vision.frames and time.monotonic()<end:
                     self.permit(self.mid);time.sleep(.03)
                 target=self.vision.latest();self.tracking=True
-                return dict(place=name,target=target,semantic_label='sock',semantic_identity_verified=False,reacquisition=candidate)
-            self._move(self.settings['transport_deg'])
-        raise ValueError('В принятых местах не найден доступный носок')
+                return dict(place=place,target=target,semantic_label='sock',semantic_identity_verified=False,reacquisition=candidate)
+            return None
+
+    def find_aligned(self):
+        found=self._detect_current('base_aligned')
+        if not found:raise ValueError('После коррекции базы носок не найден; движение к старой координате запрещено')
+        return found
 
     def approach(self, target):
         # The accepted bounded release searches saved base poses with a reachable
         # foreground object. It never drives blind using optical-frame coordinates.
         self.hold();point=np.asarray(self.vision.latest()['object_xyz'])
+        alignment=correction(point)
+        if alignment['reobserve_required']:
+            pose=self.missions.maps.pose();bearing=pose['yaw']+alignment['bearing_rad']
+            world_x=pose['x']+math.cos(pose['yaw'])*point[0]-math.sin(pose['yaw'])*point[1]
+            world_y=pose['y']+math.sin(pose['yaw'])*point[0]+math.cos(pose['yaw'])*point[1]
+            goal_x=world_x-alignment['desired_distance_m']*math.cos(bearing)
+            goal_y=world_y-alignment['desired_distance_m']*math.sin(bearing)
+            self.vision.stop();self.tracking=False
+            self.missions.go(self.mid,goal_x,goal_y,bearing);self.hold()
+            return dict(reachable=False,base_repositioned=True,reobserve_required=True,
+                        alignment=alignment,goal_map=dict(x=goal_x,y=goal_y,yaw=bearing))
         point[2]+=self.settings['grasp_tcp_offset_m']
         above=point+[0,0,self.settings['approach_height_m']]
         solved=self.model().ik(above,self.arm.reference()['servo_deg'][:5],self.settings['gripper_linkage_rad'],self.settings['grasp_quaternion_xyzw'])
         if not solved.get('solved') or solved.get('collision'):raise ValueError('Предмет недоступен из принятой точки поиска')
         self.grasp_xyz=point.tolist()
-        return dict(reachable=True,base_stationary_confirmed=True,grasp_xyz=self.grasp_xyz)
+        return dict(reachable=True,base_stationary_confirmed=True,grasp_xyz=self.grasp_xyz,alignment=alignment)
 
     def reobserve(self, target):
         current=self.vision.latest()
         if np.linalg.norm(np.asarray(current['object_xyz'])-target['target']['object_xyz'])>.015:
             raise ValueError('Предмет сдвинулся до захвата')
         return current
+    def inspect(self):
+        return self.vision.observe(lambda:self.permit(self.mid),duration=.4)
+    def align(self, target):
+        """Recompute the pregrasp from fresh tracking until the target settles."""
+        corrections=[]
+        for _ in range(3):
+            self.permit(self.mid);current=self.vision.latest()
+            point=np.asarray(current['object_xyz'],dtype=float)
+            point[2]+=self.settings['grasp_tcp_offset_m']
+            error=float(np.linalg.norm(point-np.asarray(self.grasp_xyz)))
+            if error<=.008:return dict(aligned=True,corrections=corrections,error_m=error)
+            if error>.04:raise ValueError('Цель сместилась за предел локальной визуальной коррекции')
+            self.grasp_xyz=point.tolist()
+            above=(point+[0,0,self.settings['approach_height_m']]).tolist()
+            corrections.append(dict(error_m=error,command=self._xyz(above,self.settings['open_deg'])))
+        current=np.asarray(self.vision.latest()['object_xyz'],dtype=float)
+        residual=float(np.linalg.norm(current-np.asarray(self.grasp_xyz)))
+        if residual>.008:raise ValueError('Визуальное выравнивание не сошлось')
+        return dict(aligned=True,corrections=corrections,error_m=residual)
     def pregrasp(self, target):return self._xyz((np.asarray(self.grasp_xyz)+[0,0,self.settings['approach_height_m']]).tolist(),self.settings['open_deg'])
     def observe(self):return self.vision.observe(lambda:self.permit(self.mid))
     def grasp(self, target):
         self._xyz(self.grasp_xyz,self.settings['open_deg'])
         return self._xyz(self.grasp_xyz,self.settings['close_deg'])
+    def regrasp(self,target):
+        """One bounded retry after a visually proven empty grasp."""
+        self._xyz((np.asarray(self.grasp_xyz)+[0,0,self.settings['approach_height_m']]).tolist(),self.settings['open_deg'])
+        current=self.vision.latest();point=np.asarray(current['object_xyz'],dtype=float)
+        point[2]+=self.settings['grasp_tcp_offset_m'];self.grasp_xyz=point.tolist()
+        self.align(target)
+        return self.grasp(target)
     def lift(self):return self._xyz((np.asarray(self.grasp_xyz)+[0,0,self.settings['lift_height_m']]).tolist(),self.settings['close_deg'])
     def verify_hold(self, before):return verify_lift(before,self.observe(),True)
     def transport(self):return self._move(self.settings['transport_deg'][:5]+[self.settings['close_deg']])

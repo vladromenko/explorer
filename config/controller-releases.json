@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "entries": {
+    "6c189a2d8d511c612465f4a7d098fb40212500e1b3a4a4ccee52984568eeaf3f": {
+      "board": {
+        "uid": "36003c000551333031343239",
+        "device": 1104,
+        "revision": 8195,
+        "flash_kib": 1024
+      },
+      "calibration_sha256": "3203d59ef9a06fb5215446b0e3e1f7f4aaf68d27c8b85f26375fdb5dca5be53a",
+      "version": "previous-installed",
+      "reason": "Возвращён прежний образ; необходима проверка контроллера."
+    },
+    "d5f0024500899ec0a689cb9b60cd6b99966953faf7a6bf11a1e8e794ff21915e": {
+      "board": {
+        "uid": "36003c000551333031343239",
+        "device": 1104,
+        "revision": 8195,
+        "flash_kib": 1024
+      },
+      "calibration_sha256": "3203d59ef9a06fb5215446b0e3e1f7f4aaf68d27c8b85f26375fdb5dca5be53a",
+      "version": "0.2.2-rc1",
+      "image_sha256": "2ec6c7c4ee3826e5733e359671d4403cb21b21a799c18172718feed7d07fad56",
+      "reason": "Новый контроллер распознан. Следующий этап — физическая приёмка шасси и руки."
+    }
+  },
+  "staged_source_sha256": "d5f0024500899ec0a689cb9b60cd6b99966953faf7a6bf11a1e8e794ff21915e"
+}

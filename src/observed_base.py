@@ -15,6 +15,10 @@ def arm_command_pending(root,status):
             live=json.loads((root/'data/controller-state.json').read_text())
             stamp=live.get('monotonic_ns')
             controller=live.get('controller',{})
+            arm=live.get('arm') or {}
+            if arm.get('estimated_only') is True:
+                return not (isinstance(stamp,int) and 0<=time.monotonic_ns()-stamp<350_000_000
+                            and live.get('telemetry_fresh') and arm.get('reference_valid'))
             if (not isinstance(stamp,int) or not 0<=time.monotonic_ns()-stamp<350_000_000
                     or not live.get('telemetry_fresh') or controller.get('arm_enabled') is not False
                     or controller.get('arm_cancel_pending') is not False):return True
@@ -41,8 +45,9 @@ class ObservedBase:
         if direction not in ('forward','backward','left','right','ccw','cw'):raise ValueError('Неизвестное направление')
         if type(duration) not in (int,float) or not .1<=duration<=2:raise ValueError('Длительность: 0,1–2 секунды')
         if observing is not True or compact is not True:raise ValueError('Нужно наблюдение, свободный путь и сложенная рука')
-        if self.arm_busy():raise ValueError('Дождитесь завершения конечного движения руки')
         s=json.loads((self.root/'data/status.json').read_text())
+        command_mode=(s.get('arm_state') or {}).get('estimated_only') is True
+        if self.arm_busy() and not command_mode:raise ValueError('Дождитесь завершения конечного движения руки')
         if not 0<=time.time()-s.get('at',0)<1:raise ValueError('Нет свежего состояния')
         if s.get('stop_latched',True):raise ValueError('Сначала явно снимите STOP')
         if s.get('mode')!='MANUAL' or s.get('mission'):raise ValueError('Выберите ручной режим без задания')

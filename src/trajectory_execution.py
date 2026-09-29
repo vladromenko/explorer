@@ -18,7 +18,12 @@ from arm_commissioning import HARD_LIMITS
 def motion_budget(root):
     """Use the arm's live motion policy, not the separate GPU-training budget."""
     status=json.loads((Path(root)/'data/status.json').read_text())
-    stationary_status(status,time.time())
+    profile_path=Path(root)/'config/controller-profile.json'
+    profile=json.loads(profile_path.read_text()) if profile_path.exists() else {}
+    if profile.get('manual_reference_version')==1:
+        from controller_arm_commissioning import require_arm_test_power
+        require_arm_test_power(root)
+    else:stationary_status(status,time.time())
 
 
 def command_steps(points,start):
@@ -79,20 +84,21 @@ class TrajectoryExecution:
             if self.teaching.active:raise ValueError('Завершите запись показа')
             revision=self.manual.stop_revision
             native=getattr(self.manual,'native',False) is True
-            start=self.teaching.pose() if native else self.teaching.observation()[0]
+            factory=getattr(self.manual,'factory_timed',False) is True
+            start=self.teaching.pose() if native or factory else self.teaching.observation()[0]
             steps=[]
             plan=None
             if not np.allclose(start[:5],goal[:5],atol=.05):
                 plan=self.planner().plan(start[:5],goal[:5],0.)
                 if not plan.get('planned'):raise ValueError('MoveIt не нашёл путь')
-                if not native:steps=command_steps(plan['servo_waypoints'],start)
-            if native:
+                if not native and not factory:steps=command_steps(plan['servo_waypoints'],start)
+            if native or factory:
                 if len(goal)==5:goal=list(goal)+[start[5]]
                 if plan is None and np.allclose(start,goal,atol=.05):raise ValueError('Рука уже в заданной позе')
                 if revision!=self.manual.stop_revision:raise ValueError('Расчёт отменён кнопкой STOP')
                 duration=plan['joint_trajectory']['times'][-1] if plan else 0.
                 self.pending=dict(id=uuid.uuid4().hex,at=time.time(),start=start,goal=goal,
-                    revision=revision,native=True,steps=[],
+                    revision=revision,native=native,factory_timed=factory,steps=[],
                     joint_trajectory=plan['joint_trajectory'] if plan else None)
                 self.state=dict(phase='planned',plan_id=self.pending['id'],goal_deg=goal,
                     reached=False,executed=False,estimated_duration_s=None,moveit_duration_s=duration,continuous_motion=True,
@@ -159,7 +165,7 @@ class TrajectoryExecution:
                 raise ValueError('Рассчитайте свежий путь')
             if self.teaching.active:raise ValueError('Завершите показ')
             motion_budget(self.root)
-            start=self.teaching.pose() if p.get('native') else self.teaching.observation()[0]
+            start=self.teaching.pose() if p.get('native') or p.get('factory_timed') else self.teaching.observation()[0]
             same=np.allclose(start,p['start'],atol=.5) if p.get('native') else start==p['start']
             if not same or p['revision']!=self.manual.stop_revision:
                 raise ValueError('Положение или STOP изменились после расчёта')
@@ -167,7 +173,7 @@ class TrajectoryExecution:
             self.cancelled.clear();self.lease=time.monotonic()+.6;self.pending=None
             self.execution_mode='local_mission' if mission_permit else 'operator_finite' if finite else 'operator_held'
             self.local_permit=mission_permit
-            self.deadline=time.monotonic()+(600. if p.get('native') else min(180.,5.+len(p['steps'])*.7))
+            self.deadline=time.monotonic()+(600. if p.get('native') or p.get('factory_timed') else min(180.,5.+len(p['steps'])*.7))
             with self.state_lock:
                 self.state.update(phase='moving',session=self.session,steps=0,reached=False,reason=None,
                                   executed=False,execution_mode=self.execution_mode)
@@ -181,6 +187,14 @@ class TrajectoryExecution:
     def run(self,plan):
         records=[];start=plan['start']
         try:
+            if plan.get('factory_timed'):
+                record=self.manual.execute_path(start,plan['goal'],plan['joint_trajectory'],self.permit,self.revision)
+                records.append(record)
+                with self.state_lock:
+                    self.permit()
+                    self.state.update(phase='command_completed',executed=True,command_completed=True,
+                                      reached=False,measured=False,state_source=record['source'])
+                return
             if plan.get('native'):
                 self.permit();motion_budget(self.root)
                 record=self.manual.move(start,plan['goal'],expected_stop_revision=self.revision,
@@ -190,7 +204,10 @@ class TrajectoryExecution:
                 with self.state_lock:
                     self.permit()  # A late move result cannot overwrite STOP.
                     reached=record.get('attained') is True
-                    self.state.update(phase='reached' if reached else 'unconfirmed',executed=True,reached=reached)
+                    completed=record.get('command_completed') is True
+                    self.state.update(phase='reached' if reached else 'command_completed' if completed else 'unconfirmed',
+                                      executed=True,reached=reached,command_completed=completed,
+                                      measured=record.get('measured') is True,state_source=record.get('source'))
                 return
             for goal in plan['steps']:
                 self.permit();motion_budget(self.root)

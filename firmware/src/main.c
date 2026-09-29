@@ -78,7 +78,7 @@ void board_control_interrupt(void) {
         ex_base_estop(&controller.base); command_read=command_write; emergency=0;
     }
     if(arm_write_fault_seen!=servo_write_fault_generation) {
-        ec_cancel_arm(&controller); arm_write_fault_seen=servo_write_fault_generation;
+        ec_cancel_arm(&controller,servo_last_write_error); arm_write_fault_seen=servo_write_fault_generation;
     }
     if(sensor_generation_seen!=servo_measure_generation) {
         /* Main is preempted here; the sample set is committed using the brief
@@ -154,6 +154,16 @@ static void status(void) {
     ew_put32(p+204,board_rx_overruns[PORT_HOST]); ew_put32(p+208,board_uart_errors[PORT_HOST]);
     ew_put32(p+212,encoder_measurement_valid?1u:0u);
     __set_PRIMASK(saved); (void)board_emit(EW_STATUS,p,sizeof(p));
+    static uint64_t next_arm_diagnostic;
+    const uint64_t now=board_time_us();
+    if(now>=next_arm_diagnostic) {
+        uint8_t arm[SERVO_DIAGNOSTIC_BYTES];
+        saved=__get_PRIMASK(); __disable_irq();
+        servo_bus_diagnostics(&controller,arm);
+        __set_PRIMASK(saved);
+        (void)board_emit(EW_ARM_DIAGNOSTICS,arm,sizeof(arm));
+        next_arm_diagnostic=now+100000;
+    }
 }
 static void hello(const ew_frame_t *request) {
     if(request->length!=8) { return; }

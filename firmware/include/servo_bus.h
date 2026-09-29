@@ -7,6 +7,9 @@ extern volatile uint32_t servo_measure_generation;
 extern uint64_t servo_sent_generation;
 extern volatile uint32_t servo_cancel_completed_generation;
 extern volatile uint32_t servo_write_fault_generation;
+extern ex_result_t servo_last_write_error;
+#define SERVO_DIAGNOSTIC_BYTES 100u
+void servo_bus_diagnostics(const ec_controller_t *snapshot,uint8_t out[SERVO_DIAGNOSTIC_BYTES]);
 /* Baud is confirmed by USART3 configuration; processing quiet time still needs
  * physical acceptance. Ten UART bits include start and stop for each byte. */
 #define SERVO_BAUD 115200u
