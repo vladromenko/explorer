@@ -18,7 +18,7 @@ class ManualArmTests(unittest.TestCase):
         self.state=dict(at=time.time(),servo_deg=self.start,boot_id=self.arm.boot,phase='command_elapsed_observation_required')
         self.save()
         (self.root/'data/status.json').write_text('{}')
-        self.patch=patch('manual_arm.stationary_status');self.patch.start()
+        self.patch=patch('manual_arm.stationary_status');self.stationary=self.patch.start()
 
     def tearDown(self):self.patch.stop();self.directory.cleanup()
     def save(self):(self.root/'data/arm-state.json').write_text(json.dumps(self.state))
@@ -100,6 +100,17 @@ class ManualArmTests(unittest.TestCase):
     def test_factory_home_requires_observer_when_manual(self):
         with self.assertRaises(ValueError):self.arm.home_reference(False)
         self.pub.publish.assert_not_called()
+
+    def test_startup_home_waits_for_transient_power_readiness(self):
+        self.arm.startup_config=dict(delay_after_web_start_s=1,startup_window_s=180,
+                                     requires_latched_stop=True)
+        (self.root/'data/status.json').write_text(json.dumps({'stop_latched':True}))
+        self.stationary.side_effect=[ValueError('Power policy UNKNOWN'),None]
+        self.arm._uptime=Mock(side_effect=[10.,11.])
+        with patch('manual_arm.time.sleep'),patch.object(self.arm,'home_reference') as home:
+            self.arm._automatic_startup_home()
+        home.assert_called_once_with(False,'automatic_factory_startup')
+        self.assertIn('ожидает готовности',self.arm.error)
 
     def test_timed_cancel_sends_no_following_target(self):
         commands=[dict(at=0.,end=.05,pose=self.goal,runtime_ms=50),

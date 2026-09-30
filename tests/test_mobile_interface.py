@@ -11,6 +11,13 @@ def test_phone_panel_is_separate_and_has_finite_arm_and_releasing_drive():
     assert "typeof window.crypto.randomUUID==='function'" in page
     assert ").trim()" in page
 
+def test_main_panel_exposes_arm_recovery_and_gamepad_instructions():
+    page=(ROOT/'src/index.html').read_text()
+    assert 'id="prepareArmButton"' in page and "api('arm/prepare'" in page
+    assert 'Исходное положение руки не подтверждено' not in page
+    for text in ('Шасси + рука','удерживайте L1','Крестовина','L2 открывает захват','R2 закрывает'):
+        assert text in page
+
 def test_training_goals_are_unique_and_bounded():
     data=json.loads((ROOT/'config/mobile-training-goals.json').read_text())
     ids=[g['id'] for g in data['goals']]

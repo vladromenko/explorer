@@ -28,6 +28,9 @@ class ManualArm:
         if self.startup_config.get('enabled') is True:
             threading.Thread(target=self._automatic_startup_home,daemon=True).start()
 
+    def _uptime(self):
+        return float(Path('/proc/uptime').read_text().split()[0])
+
     def _automatic_startup_home(self):
         """Establish a known factory pose once near a full Jetson boot.
 
@@ -37,11 +40,23 @@ class ManualArm:
             delay=float(self.startup_config.get('delay_after_web_start_s',8))
             window=float(self.startup_config.get('startup_window_s',180))
             time.sleep(max(1,min(delay,30)))
-            uptime=float(Path('/proc/uptime').read_text().split()[0])
-            if not 0<=uptime<=window:return
-            deadline=time.monotonic()+30
-            while not self.pub.get_subscription_count() and time.monotonic()<deadline:time.sleep(.25)
-            self.home_reference(False,'automatic_factory_startup')
+            # Power and MCU telemetry commonly become valid several seconds
+            # after the web service.  Wait for the complete precondition set
+            # instead of spending the single startup attempt on UNKNOWN power.
+            while True:
+                uptime=self._uptime()
+                if not 0<=uptime<=window:return
+                try:
+                    state=json.loads((self.root/'data/status.json').read_text())
+                    stationary_status(state,time.time())
+                    if self.startup_config.get('requires_latched_stop',True) and state.get('stop_latched') is not True:
+                        raise ValueError('Для автоподготовки нужен включённый STOP')
+                    if not self.pub.get_subscription_count():raise ValueError('Контроллер руки ещё запускается')
+                except (OSError,ValueError,KeyError) as exc:
+                    self.error='Автоподготовка ожидает готовности: '+str(exc)
+                    time.sleep(.5);continue
+                self.home_reference(False,'automatic_factory_startup')
+                return
         except Exception as exc:
             self.error='Автоподготовка руки не выполнена: '+str(exc)
 
