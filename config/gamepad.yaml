@@ -16,6 +16,7 @@ estop_buttons: [select, start]
 estop_hold_s: 0.6
 deadzone: 0.15
 drive_profile: normal
+arm_speed: normal
 watchdog_timeout: 0.25
 profiles:
   precision: {linear: 0.04, angular: 0.1}

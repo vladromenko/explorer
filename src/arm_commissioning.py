@@ -52,3 +52,27 @@ def stationary_status(s, now):
            not 0 <= s['sensor_age'].get(k, math.inf) < limit
            for k, limit in [('odom', .5), ('battery', 2)]):
         raise ValueError('MCU telemetry is stale')
+
+
+def coordinated_status(s, now):
+    """Validate slow, supervised mobile manipulation without requiring base HOLD."""
+    age=now-s['at'];velocity=s.get('velocity');observed=s.get('odom_velocity')
+    if not math.isfinite(age) or not 0<=age<1:raise ValueError('Controller status is stale')
+    if s.get('mode')!='MANUAL' or s.get('stop_latched') is True or s.get('mission'):
+        raise ValueError('Совместное управление требует ручного режима без STOP')
+    if not isinstance(velocity,list) or len(velocity)!=3 or any(
+            not isinstance(v,(int,float)) or not math.isfinite(v) or abs(v)>limit
+            for v,limit in zip(velocity,[.16,.16,.42])):
+        raise ValueError('Снизьте скорость шасси для движения рукой')
+    if not isinstance(observed,list) or len(observed)!=3 or any(
+            not isinstance(v,(int,float)) or not math.isfinite(v) or abs(v)>limit
+            for v,limit in zip(observed,[.20,.20,.50])):
+        raise ValueError('Фактическая скорость шасси слишком велика для руки')
+    if s.get('power',{}).get('state') in ('CRITICAL','CHARGING','UNKNOWN','LOW_POWER'):
+        raise ValueError('Power policy blocks mobile manipulation')
+    battery=s.get('battery')
+    if not isinstance(battery,(int,float)) or not math.isfinite(battery) or battery<11:
+        raise ValueError('Battery below mobile manipulation threshold')
+    if any(not math.isfinite(s.get('sensor_age',{}).get(k,math.inf)) or
+           not 0<=s['sensor_age'].get(k,math.inf)<limit for k,limit in [('odom',.5),('battery',2)]):
+        raise ValueError('MCU telemetry is stale')

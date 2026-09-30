@@ -8,7 +8,7 @@ import time
 import uuid
 import cv2
 import numpy as np
-from arm_commissioning import stationary_status
+from arm_commissioning import stationary_status,coordinated_status
 
 ROOT=Path('/home/vlad/Explorer')
 class Demonstrations:
@@ -54,9 +54,10 @@ class TeachingController:
         folder=self.store.root/episode['id'];folder.mkdir(exist_ok=True)
         temporary=folder/'episode.tmp';temporary.write_text(json.dumps(episode));temporary.replace(folder/'episode.json')
 
-    def pose(self):
+    def pose(self,coordinated=False):
         if self.arm_reference is not None:return self.arm_reference()['servo_deg']
-        state=json.loads((self.root/'data/status.json').read_text());stationary_status(state,time.time())
+        state=json.loads((self.root/'data/status.json').read_text())
+        (coordinated_status if coordinated else stationary_status)(state,time.time())
         if self.measured_reference is not None:
             return self.measured_reference()['servo_deg']
         arm=json.loads((self.root/'data/arm-state.json').read_text())
@@ -99,7 +100,7 @@ class TeachingController:
             return self.status()
         finally:self.lock.release()
 
-    def jog(self,joint,delta,observing,deadline=None):
+    def jog(self,joint,delta,observing,deadline=None,coordinated=False,speed='normal'):
         if observing is not True:raise ValueError('Подтвердите присутствие рядом с роботом')
         if self.active:return self.step(joint,delta,deadline)
         if type(joint) is not int or not 1<=joint<=6 or type(delta) is not int or delta not in (-10,-5,-3,-2,2,3,5,10):
@@ -107,8 +108,8 @@ class TeachingController:
         if not self.lock.acquire(blocking=False):raise ValueError('Предыдущий шаг ещё выполняется')
         try:
             if self.move is None:raise ValueError('Постоянный контроллер руки не готов')
-            pose=self.pose();goal=list(pose);goal[joint-1]+=delta
-            return self.move(pose,goal,deadline)
+            pose=self.pose(coordinated);goal=list(pose);goal[joint-1]+=delta
+            return self.move(pose,goal,deadline,source='coordinated_operator' if coordinated else 'operator',speed=speed)
         finally:self.lock.release()
 
     def cartesian(self,model,axis,direction,observing,deadline=None):

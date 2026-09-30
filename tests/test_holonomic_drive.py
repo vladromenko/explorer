@@ -43,5 +43,5 @@ class GamepadIntegrationTests(unittest.TestCase):
             g.decide(config['axes']['left_x']['code'],0,3,now);g.drive_tick(now)
             drive.assert_not_called()
             g.config.update(radio_loss_verified=True,continuous_motion_enabled=True);g.drive_tick(now)
-            drive.assert_called_once_with([0,.04,0])
+            drive.assert_called_once_with([0,.10,0])
             g.heartbeat(False);stop.assert_called();self.assertFalse(g.drive_active)

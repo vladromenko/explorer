@@ -24,10 +24,10 @@ class GamepadPanel:
 
     def bind_arm(self,arm,model):
         """Bind cancellation for both factory and native arm executors."""
-        arm.gamepad_permit=lambda:self.mode in ('ARM','ARM_CARTESIAN') and time.monotonic()<self.lease and self.config['buttons']['l1'] in self.keys
+        arm.gamepad_permit=lambda:self.mode in ('ARM','ARM_CARTESIAN','COORDINATED') and time.monotonic()<self.lease and self.config['buttons']['l1'] in self.keys
         def jog(joint,delta,deadline):
-            if not arm.gamepad_permit():raise ValueError('Выберите A, удерживайте L1 и держите панель открытой')
-            return self.teaching.jog(joint,delta,True,deadline)
+            if not arm.gamepad_permit():raise ValueError('Выберите режим руки или совместный режим, удерживайте L1 и держите панель открытой')
+            return self.teaching.jog(joint,delta,True,deadline,self.mode=='COORDINATED',self.config.get('arm_speed','normal'))
         self.arm_jog=jog
         self.arm_cartesian=lambda axis,direction,deadline:self.teaching.cartesian(model(),axis,direction,True,deadline)
         self.arm_cancel=arm.stop
@@ -52,7 +52,8 @@ class GamepadPanel:
                 operator_chassis_accepted=self.config.get('operator_chassis_accepted') is True,
                 continuous_motion_enabled=bool(self.config.get('continuous_motion_enabled') and
                     (self.config.get('radio_loss_verified') or self.config.get('operator_chassis_accepted'))),
-                drive_profile=self.config.get('drive_profile','normal'),precision_step_deg=self.config['arm_step_deg'])
+                drive_profile=self.config.get('drive_profile','normal'),arm_speed=self.config.get('arm_speed','normal'),
+                precision_step_deg=self.config['arm_step_deg'])
 
     def heartbeat(self,enabled):
         with self.lock:
@@ -60,27 +61,33 @@ class GamepadPanel:
             # visible-panel lease remains short, while surviving Wi-Fi/UI jitter.
             self.lease=time.monotonic()+1.0 if enabled is True else 0.
             if not enabled:
-                if self.mode in ('ARM','ARM_CARTESIAN'):self.arm_cancel()
+                if self.mode in ('ARM','ARM_CARTESIAN','COORDINATED'):self.arm_cancel()
                 if self.drive_active:self.release();self.drive_active=False
                 self.mode='DISARMED';self.neutral=False
         return self.status()
 
-    def select(self,mode):
+    def select(self,mode,drive_profile=None,arm_speed=None):
         """Select an operator mode explicitly from the visible web panel."""
-        if mode not in ('DRIVE','ARM','ARM_CARTESIAN','DISARMED'):
+        if mode not in ('DRIVE','ARM','ARM_CARTESIAN','COORDINATED','DISARMED'):
             raise ValueError('Неизвестный режим джойстика')
+        if drive_profile is not None and drive_profile not in ('precision','normal','fast'):
+            raise ValueError('Неизвестная скорость шасси')
+        if arm_speed is not None and arm_speed not in ('precision','normal','fast'):
+            raise ValueError('Неизвестная скорость руки')
         with self.lock:
             if mode != 'DISARMED' and not self.connected:
                 raise ValueError('Геймпад не подключён')
             if mode != 'DISARMED' and time.monotonic() >= self.lease:
                 raise ValueError('Сначала включите панель джойстика')
-            if self.mode in ('ARM','ARM_CARTESIAN') and self.mode != mode:
+            if self.mode in ('ARM','ARM_CARTESIAN','COORDINATED') and self.mode != mode:
                 self.arm_cancel()
-            if self.mode == 'DRIVE' and mode != 'DRIVE':
+            if self.mode in ('DRIVE','COORDINATED') and mode not in ('DRIVE','COORDINATED'):
                 self.release(); self.drive_active=False
-            if mode == 'DRIVE' and any(abs(v) > 1e-6 for v in velocity(self.axes,self.config)):
+            if mode in ('DRIVE','COORDINATED') and any(abs(v) > 1e-6 for v in velocity(self.axes,self.config)):
                 raise ValueError('Отпустите стики в центр и повторите')
             self.mode=mode
+            if drive_profile is not None:self.config['drive_profile']=drive_profile
+            if arm_speed is not None:self.config['arm_speed']=arm_speed
             self.neutral=False
         return self.status()
 
@@ -89,26 +96,26 @@ class GamepadPanel:
         if kind==1:
             if value==1:self.keys.add(code)
             elif value==0:self.keys.discard(code)
-            if value==0 and code==b['l1'] and self.mode=='DRIVE':self.release()
-            if value==0 and code==b['l1'] and self.mode in ('ARM','ARM_CARTESIAN'):self.arm_cancel()
+            if value==0 and code==b['l1'] and self.mode in ('DRIVE','COORDINATED'):self.release()
+            if value==0 and code==b['l1'] and self.mode in ('ARM','ARM_CARTESIAN','COORDINATED'):self.arm_cancel()
             if value==1 and code==b['a'] and b['l1'] not in self.keys:
-                if self.mode in ('ARM','ARM_CARTESIAN'):self.arm_cancel()
-                if self.mode=='DRIVE':self.release();self.drive_active=False
+                if self.mode in ('ARM','ARM_CARTESIAN','COORDINATED'):self.arm_cancel()
+                if self.mode in ('DRIVE','COORDINATED'):self.release();self.drive_active=False
                 self.mode='ARM' if self.mode!='ARM' and now<self.lease else 'DISARMED'
                 self.neutral=False
             if value==1 and code==b['x'] and b['l1'] not in self.keys:
-                if self.mode in ('ARM','ARM_CARTESIAN'):self.arm_cancel()
+                if self.mode in ('ARM','ARM_CARTESIAN','COORDINATED'):self.arm_cancel()
                 centered=not any(abs(v)>1e-6 for v in velocity(self.axes,self.config))
                 self.mode='DRIVE' if centered and now<self.lease else 'DISARMED'
                 self.neutral=False
             if value==1 and code==b.get('y') and b['l1'] not in self.keys:
-                if self.mode in ('ARM','ARM_CARTESIAN'):self.arm_cancel()
-                if self.mode=='DRIVE':self.release();self.drive_active=False
+                if self.mode in ('ARM','ARM_CARTESIAN','COORDINATED'):self.arm_cancel()
+                if self.mode in ('DRIVE','COORDINATED'):self.release();self.drive_active=False
                 self.mode='ARM_CARTESIAN' if now<self.lease else 'DISARMED'
                 self.joint=min(3,self.joint);self.neutral=False
             if value==1 and code==b['b']:
                 self.mode='DISARMED';self.lease=0;self.stop()
-            if (value==1 and self.mode=='ARM' and now<self.lease and b['l1'] in self.keys and
+            if (value==1 and self.mode in ('ARM','COORDINATED') and now<self.lease and b['l1'] in self.keys and
                     code in (b.get('l2'),b.get('r2'))):
                 decision=(6,-self.config['gripper_step_deg'] if code==b.get('l2') else self.config['gripper_step_deg'])
         elif kind==3:
@@ -121,7 +128,7 @@ class GamepadPanel:
                 if abs(offset)<self.config['deadzone']:self.neutral=True
                 elif abs(offset)>.65:
                     fresh=self.neutral;self.neutral=False
-                    if fresh and self.mode in ('ARM','ARM_CARTESIAN') and now<self.lease and b['l1'] in self.keys:
+                    if fresh and self.mode in ('ARM','ARM_CARTESIAN','COORDINATED') and now<self.lease and b['l1'] in self.keys:
                         direction=1 if offset>0 else -1
                         decision=(('x','y','z')[self.joint-1],direction) if self.mode=='ARM_CARTESIAN' else (self.joint,self.config['arm_step_deg']*direction)
         return decision
@@ -136,7 +143,7 @@ class GamepadPanel:
                     if self.arm_cartesian is None:raise ValueError('Cartesian control unavailable')
                     self.arm_cartesian(joint,delta,deadline)
                 elif self.arm_jog is not None:self.arm_jog(joint,delta,deadline)
-                else:self.teaching.jog(joint,delta,True,deadline)
+                else:self.teaching.jog(joint,delta,True,deadline,self.mode=='COORDINATED',self.config.get('arm_speed','normal'))
                 self.proposal.update(executed=True,blocked_by=None,attainment_measured=False)
             except (OSError,ValueError) as exc:
                 self.error=str(exc);self.proposal.update(blocked_by=self.error)
@@ -144,7 +151,7 @@ class GamepadPanel:
     def drive_tick(self,now):
         """All requests still pass the independent core sensor/obstacle gate."""
         held=self.config['buttons']['l1'] in self.keys
-        if self.mode=='DRIVE' and now<self.lease and held:
+        if self.mode in ('DRIVE','COORDINATED') and now<self.lease and held:
             self.drive_reasons=self.drive_readiness()
             self.drive_vector=velocity(self.axes,self.config,self.config.get('drive_profile','normal'))
             if not self.drive_reasons and self.drive is not None:
@@ -177,7 +184,7 @@ class GamepadPanel:
                                     decision=self.decide(event.code,event.value,event.type,now)
                                     if decision:pending=decision
                                     packet_done=event.type==0 and event.code==0
-                                    permit=self.mode in ('ARM','ARM_CARTESIAN') and now<self.lease and self.config['buttons']['l1'] in self.keys
+                                    permit=self.mode in ('ARM','ARM_CARTESIAN','COORDINATED') and now<self.lease and self.config['buttons']['l1'] in self.keys
                                 if packet_done:
                                     if pending and permit and not self.teaching.lock.locked():
                                         threading.Thread(target=self.perform,args=(*pending,now+.5),daemon=True).start()
@@ -188,13 +195,13 @@ class GamepadPanel:
                             if self.combo_at and now-self.combo_at>=self.config['estop_hold_s']:
                                 self.stop();self.mode='DISARMED';self.lease=0;self.combo_at=now
                             if now>=self.lease:
-                                if self.mode in ('ARM','ARM_CARTESIAN'):self.arm_cancel()
+                                if self.mode in ('ARM','ARM_CARTESIAN','COORDINATED'):self.arm_cancel()
                                 if self.drive_active:self.release();self.drive_active=False
                                 self.mode='DISARMED';self.neutral=False
                             self.drive_tick(now)
             except (OSError,ValueError,KeyError) as exc:
                 with self.lock:
-                    if self.mode in ('ARM','ARM_CARTESIAN'):self.arm_cancel()
+                    if self.mode in ('ARM','ARM_CARTESIAN','COORDINATED'):self.arm_cancel()
                     if self.drive_active:self.release();self.drive_active=False
                     self.connected=False;self.mode='DISARMED';self.keys.clear();self.neutral=False;self.error=str(exc)
                 time.sleep(2)

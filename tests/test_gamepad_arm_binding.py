@@ -46,7 +46,7 @@ class GamepadArmBindingTests(unittest.TestCase):
         self.assertEqual(step,(1,5))
         self.assertIsNone(self.panel.decide(axis['code'],axis['minimum'],3,self.now))
         self.panel.perform(*step,self.now+.5)
-        self.teaching.jog.assert_called_once_with(1,5,True,self.now+.5)
+        self.teaching.jog.assert_called_once_with(1,5,True,self.now+.5,False,'normal')
         self.assertTrue(self.panel.proposal['executed'])
         self.panel.lease=0
         self.panel.perform(*step,self.now+.5)
@@ -86,6 +86,25 @@ class GamepadArmBindingTests(unittest.TestCase):
         self.panel.select('ARM')
         self.assertEqual(self.panel.mode,'ARM')
         self.release.assert_called_once()
+
+
+    def test_coordinated_mode_drives_and_jogs_with_selected_speeds(self):
+        self.panel.connected=True
+        self.panel.axes={str(a['code']):a['center'] for a in self.panel.config['axes'].values()}
+        self.panel.select('COORDINATED','fast','fast')
+        self.press('l1')
+        self.assertTrue(self.arm.gamepad_permit())
+        self.panel.arm_jog(1,5,self.now+.5)
+        self.teaching.jog.assert_called_once_with(1,5,True,self.now+.5,True,'fast')
+        self.assertEqual(self.panel.status()['drive_profile'],'fast')
+        self.assertEqual(self.panel.status()['arm_speed'],'fast')
+
+    def test_coordinated_mode_requires_centered_sticks(self):
+        self.panel.connected=True
+        axis=self.panel.config['axes']['left_y']
+        self.panel.axes={str(axis['code']):axis['minimum']}
+        with self.assertRaisesRegex(ValueError,'центр'):
+            self.panel.select('COORDINATED')
 
     def test_mode_selection_requires_connected_controller_and_live_panel(self):
         with self.assertRaisesRegex(ValueError,'не подключён'):

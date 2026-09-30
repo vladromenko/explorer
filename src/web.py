@@ -188,6 +188,8 @@ class PanelLease(BaseModel):
 
 class GamepadMode(BaseModel):
     mode:str
+    drive_profile:str|None=None
+    arm_speed:str|None=None
 
 class MobileStage(BaseModel):
     stage:str
@@ -270,7 +272,7 @@ def training_log(ident:str):return {'text':map_operation(learning_jobs.log,ident
 def panel_lease(c:PanelLease):return gamepad_panel.heartbeat(c.enabled and c.observing)
 
 @app.post('/api/gamepad/mode')
-def gamepad_mode(c:GamepadMode):return map_operation(gamepad_panel.select,c.mode)
+def gamepad_mode(c:GamepadMode):return map_operation(gamepad_panel.select,c.mode,c.drive_profile,c.arm_speed)
 
 class VoiceRequest(BaseModel):
     operation:str
@@ -722,6 +724,8 @@ class ArmJog(BaseModel):
     joint:int=Field(ge=1,le=6)
     delta:int
     observing:bool=False
+    coordinated:bool=False
+    speed:str='normal'
 
 class ArmHome(BaseModel):
     observing:bool=False
@@ -755,7 +759,7 @@ def return_reference(c:ArmHome):
     return map_operation(execute)
 
 @app.post('/api/arm/jog')
-def manual_jog(c:ArmJog):return map_operation(teaching.jog,c.joint,c.delta,c.observing)
+def manual_jog(c:ArmJog):return map_operation(teaching.jog,c.joint,c.delta,c.observing,None,c.coordinated,c.speed)
 
 class FiniteArmGoal(BaseModel):
     goal:list[int]=Field(min_length=6,max_length=6)

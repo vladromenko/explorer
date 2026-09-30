@@ -10,7 +10,7 @@ import threading
 import time
 from arm_msgs.msg import ArmJoints
 from rclpy.duration import Duration
-from arm_commissioning import HARD_LIMITS,stationary_status
+from arm_commissioning import HARD_LIMITS,stationary_status,coordinated_status
 
 class ManualArm:
     factory_timed=True
@@ -86,8 +86,9 @@ class ManualArm:
             raise
         finally:self.lock.release()
 
-    def reference(self):
-        stationary_status(json.loads((self.root/'data/status.json').read_text()),time.time())
+    def reference(self,status_check=None):
+        status_check=status_check or stationary_status
+        status_check(json.loads((self.root/'data/status.json').read_text()),time.time())
         state=json.loads((self.root/'data/arm-state.json').read_text())
         if state.get('boot_id')!=self.boot or state.get('phase')!='command_elapsed_observation_required':
             raise ValueError('После включения сначала подготовьте руку в свободном пространстве')
@@ -142,30 +143,35 @@ class ManualArm:
         return dict(no_further_steps=True,commanded_step_duration_ms=self.active_runtime_ms,physical_stop_latency_verified=False,
                     hardware_emergency_stop=False)
 
-    def move(self,start,goal,deadline=None,expected_stop_revision=None,execution_permit=None,source="operator"):
-        if source not in ('operator','supervised_policy','supervised_trajectory','local_mission'):raise ValueError('Неверный источник команды')
+    def move(self,start,goal,deadline=None,expected_stop_revision=None,execution_permit=None,source="operator",speed='normal'):
+        if source not in ('operator','coordinated_operator','supervised_policy','supervised_trajectory','local_mission'):raise ValueError('Неверный источник команды')
         if source=='local_mission' and not callable(execution_permit):raise ValueError('Нет разрешения локальной миссии')
+        if speed not in ('precision','normal','fast'):raise ValueError('Неизвестная скорость руки')
         if not self.ready:raise ValueError('Сначала дождитесь подготовки геометрии руки')
         if len(start)!=6 or len(goal)!=6 or any(type(v) is not int for v in start+goal):raise ValueError('Нужны шесть целых углов')
         if not any(a!=b for a,b in zip(start,goal)):raise ValueError('Нулевой шаг')
-        max_step=10 if source=='operator' else 2
+        max_step=10 if source in ('operator','coordinated_operator') else 2
         for a,b,(lo,hi) in zip(start,goal,HARD_LIMITS):
             if not lo<=a<=hi or not lo<=b<=hi or abs(a-b)>max_step:raise ValueError('Шаг превышает допустимый размер или предел сустава')
         if not self.lock.acquire(blocking=False):raise ValueError('Предыдущий шаг ещё выполняется')
-        sent=0;record=None;last_end=0.
+        sent=0;record=None;last_end=0.;status_check=coordinated_status if source=='coordinated_operator' else stationary_status
         try:
             if expected_stop_revision is not None and expected_stop_revision!=self.stop_revision:
                 raise ValueError('Команда отменена во время планирования')
             self.cancelled.clear()
             with (self.root/'data/arm-commissioning.lock').open('w') as lock:
                 fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
-                current=self.reference()
+                current=self.reference(status_check)
                 if current['servo_deg']!=start:raise ValueError('Исходное положение команды изменилось')
                 for shape in (0.,-.2,-.4,-.6,-.8):
                     if not self.model().path(start[:5],goal[:5],shape)['valid']:raise ValueError('MoveIt: столкновение с роботом или полом')
-                from factory_trajectory import compile_path
-                path=compile_path(start,goal,None,self.model(),self.motion_config)
-                self.reference()
+                from factory_trajectory import compile_path,motion_profile
+                factors={'precision':.65,'normal':1.,'fast':1.5};factor=factors[speed]
+                motion=motion_profile(self.motion_config)
+                for key in ('velocity_deg_s','acceleration_deg_s2','jerk_deg_s3'):
+                    motion[key]=[float(v)*factor for v in motion[key]]
+                path=compile_path(start,goal,None,self.model(),motion)
+                self.reference(status_check)
                 if self.cancelled.is_set() or (expected_stop_revision is not None and expected_stop_revision!=self.stop_revision) or deadline is not None and time.monotonic()>deadline:
                     raise ValueError('Команда отменена или истекла до отправки')
                 if deadline is not None and not self.gamepad_permit():
@@ -177,7 +183,7 @@ class ManualArm:
                     target=begun+item['at']
                     while time.monotonic()<target:
                         if self.cancelled.is_set():raise ValueError('Команда отменена')
-                        stationary_status(json.loads((self.root/'data/status.json').read_text()),time.time())
+                        status_check(json.loads((self.root/'data/status.json').read_text()),time.time())
                         time.sleep(min(.02,max(0.,target-time.monotonic())))
                     if self.cancelled.is_set() or (expected_stop_revision is not None and expected_stop_revision!=self.stop_revision):
                         raise ValueError('Команда отменена')
@@ -190,14 +196,14 @@ class ManualArm:
                     last_end=time.monotonic()+item['runtime_ms']/1000
                     record=dict(at=time.time(),servo_deg=item['pose'],runtime_ms=item['runtime_ms'],boot_id=self.boot,
                                 ends_monotonic=last_end,source='timed_factory_command_estimate',measured=False,
-                                attained=False,observed_clear=True,publish_count=sent+1,operator_step=source=="operator",
-                                command_source=source,trajectory_sha256=path['source_sha256'],motion_profile=path['profile'])
+                                attained=False,observed_clear=True,publish_count=sent+1,operator_step=source in ("operator","coordinated_operator"),
+                                command_source=source,trajectory_sha256=path['source_sha256'],motion_profile=path['profile'],speed=speed)
                     self.write(record,'command_in_progress');self.pub.publish(msg);sent+=1
                     self.active_runtime_ms=item['runtime_ms']
                 if not self.pub.wait_for_all_acked(Duration(seconds=1)):
                     raise ValueError('Нет подтверждения доставки; положение неизвестно')
                 while time.monotonic()<last_end+.05:
-                    stationary_status(json.loads((self.root/'data/status.json').read_text()),time.time())
+                    status_check(json.loads((self.root/'data/status.json').read_text()),time.time())
                     time.sleep(.025)
                 record.update(dds_acknowledged=True,command_completed=True,publish_count=sent,duration_s=path['duration'])
                 self.write(record,'command_elapsed_observation_required')

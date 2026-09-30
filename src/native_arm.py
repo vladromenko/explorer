@@ -280,7 +280,7 @@ class LegacyNativeManualArm:
             time.sleep(.005)
         raise ValueError('STM32 приняла отмену, но ещё не подтвердила завершение удержания')
 
-    def move(self, start, goal, deadline=None, expected_stop_revision=None, execution_permit=None, source='operator', trajectory=None):
+    def move(self, start, goal, deadline=None, expected_stop_revision=None, execution_permit=None, source='operator', trajectory=None,speed='normal'):
         from timed_trajectory import Execution
         if source not in ('operator', 'supervised_policy', 'supervised_trajectory', 'local_mission'):
             raise ValueError('Неверный источник команды')
