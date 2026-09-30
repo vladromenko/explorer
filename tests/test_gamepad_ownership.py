@@ -7,8 +7,8 @@ class GamepadOwnershipTests(unittest.TestCase):
     def panel(self):
         p=GamepadPanel.__new__(GamepadPanel)
         p.lock=threading.Lock();p.stop=Mock();p.release=Mock();p.status=Mock(return_value={})
-        p.drive_active=False;p.mode='DISARMED';p.neutral=False
-        p.config={'buttons':dict(l1=1,a=2,x=3,b=4),'axes':{'right_y':{'code':6}}}
+        p.drive_active=False;p.mode='DISARMED';p.neutral=False;p.dpad_y=0
+        p.config={'buttons':dict(l1=1,a=2,x=3,b=4,r1=5),'arm_modifier_button':'r1','axes':{'right_y':{'code':6}}}
         p.keys=set();p.lease=0
         return p
     def test_inactive_browser_disconnect_never_stops_autonomy(self):

@@ -69,14 +69,14 @@ class CommandContractTests(unittest.TestCase):
 
 class GamepadCommandTests(unittest.TestCase):
     def panel(self):
-        p=GamepadPanel.__new__(GamepadPanel);p.mode='ARM';p.lease=10;p.joint=1;p.neutral=False;p.keys=set();p.axes={}
+        p=GamepadPanel.__new__(GamepadPanel);p.mode='ARM';p.lease=10;p.joint=1;p.neutral=False;p.dpad_y=0;p.keys=set();p.axes={}
         p.arm_cancel=Mock();p.release=Mock();p.stop=Mock();p.drive_active=False
-        p.config=dict(buttons=dict(l1=1,a=2,x=3,b=4,y=5),axes=dict(right_y=dict(code=6,center=128)),deadzone=.2,arm_step_deg=3)
+        p.config=dict(buttons=dict(l1=1,a=2,x=3,b=4,y=5,r1=7,l2=8,r2=9),arm_modifier_button='r1',axes=dict(right_y=dict(code=6,center=128,minimum=0,maximum=255,inverted=True)),deadzone=.2,arm_step_deg=3)
         return p
-    def test_arm_step_requires_new_deflection_and_release_cancels(self):
-        p=self.panel();p.decide(1,1,1,1);p.decide(6,128,3,1)
-        self.assertEqual(p.decide(6,0,3,1),(1,3));self.assertIsNone(p.decide(6,0,3,1))
-        p.decide(1,0,1,1);p.arm_cancel.assert_called_once();p.stop.assert_not_called()
+    def test_arm_step_requires_new_dpad_press_and_r1_release_cancels(self):
+        p=self.panel();p.decide(7,1,1,1)
+        self.assertEqual(p.decide(17,-1,3,1),(1,3));self.assertIsNone(p.decide(17,-1,3,1))
+        p.decide(7,0,1,1);p.arm_cancel.assert_called_once();p.stop.assert_not_called()
     def test_cartesian_mode_uses_axis_and_does_not_require_r2(self):
-        p=self.panel();p.decide(5,1,1,1);p.decide(1,1,1,1);p.decide(6,128,3,1)
+        p=self.panel();p.decide(5,1,1,1);p.decide(7,1,1,1);p.decide(6,128,3,1)
         self.assertEqual(p.decide(6,0,3,1),('x',1))

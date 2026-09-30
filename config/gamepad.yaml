@@ -11,6 +11,7 @@ axes:
   right_y: {code: 5, center: 128, minimum: 0, maximum: 255, inverted: true}
 buttons: {a: 304, b: 305, x: 308, y: 307, l1: 310, r1: 311, l2: 312, r2: 313, select: 314, start: 315, left_stick: 317, right_stick: 318}
 deadman_button: l1
+arm_modifier_button: r1
 mode_button: a
 estop_buttons: [select, start]
 estop_hold_s: 0.6

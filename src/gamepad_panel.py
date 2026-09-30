@@ -1,7 +1,8 @@
 """Linux input, bounded arm steps and gated holonomic drive requests.
 
 The USB receiver is NOT a radio-link detector. Every arm decision requires a
-new stick deflection after neutral, L1 held, and a live visible panel lease.
+new D-pad press, R1 held, and a live visible panel lease. L1 independently
+permits chassis motion, so both modifiers can be held for mobile manipulation.
 """
 import json
 from holonomic_drive import velocity,blocked_by,axis_value
@@ -18,15 +19,17 @@ class GamepadPanel:
         self.release=release or stop
         self.drive_active=False;self.drive_reasons=[];self.drive_vector=[0.,0.,0.]
         self.lock=threading.Lock();self.connected=False;self.keys=set();self.axes={}
-        self.mode='DISARMED';self.joint=1;self.lease=0.;self.neutral=False
+        self.mode='DISARMED';self.joint=1;self.lease=0.;self.neutral=False;self.dpad_y=0
         self.last_event=0.;self.error=None;self.sequence=0;self.combo_at=None;self.proposal=None
         threading.Thread(target=self.run,daemon=True).start()
 
     def bind_arm(self,arm,model):
         """Bind cancellation for both factory and native arm executors."""
-        arm.gamepad_permit=lambda:self.mode in ('ARM','ARM_CARTESIAN','COORDINATED') and time.monotonic()<self.lease and self.config['buttons']['l1'] in self.keys
+        arm_button=self.config.get('arm_modifier_button','r1')
+        arm_code=self.config['buttons'].get(arm_button,self.config['buttons'].get('r1',self.config['buttons']['l1']))
+        arm.gamepad_permit=lambda:self.mode in ('ARM','ARM_CARTESIAN','COORDINATED') and time.monotonic()<self.lease and arm_code in self.keys
         def jog(joint,delta,deadline):
-            if not arm.gamepad_permit():raise ValueError('Выберите режим руки или совместный режим, удерживайте L1 и держите панель открытой')
+            if not arm.gamepad_permit():raise ValueError('Выберите режим руки или единый режим, удерживайте R1 и держите панель открытой')
             return self.teaching.jog(joint,delta,True,deadline,self.mode=='COORDINATED',self.config.get('arm_speed','normal'))
         self.arm_jog=jog
         self.arm_cartesian=lambda axis,direction,deadline:self.teaching.cartesian(model(),axis,direction,True,deadline)
@@ -53,7 +56,8 @@ class GamepadPanel:
                 continuous_motion_enabled=bool(self.config.get('continuous_motion_enabled') and
                     (self.config.get('radio_loss_verified') or self.config.get('operator_chassis_accepted'))),
                 drive_profile=self.config.get('drive_profile','normal'),arm_speed=self.config.get('arm_speed','normal'),
-                precision_step_deg=self.config['arm_step_deg'])
+                precision_step_deg=self.config['arm_step_deg'],chassis_modifier='L1',arm_modifier='R1',
+                control_scheme='L1 chassis; R1 D-pad arm; L1+R1 simultaneous')
 
     def heartbeat(self,enabled):
         with self.lock:
@@ -63,7 +67,7 @@ class GamepadPanel:
             if not enabled:
                 if self.mode in ('ARM','ARM_CARTESIAN','COORDINATED'):self.arm_cancel()
                 if self.drive_active:self.release();self.drive_active=False
-                self.mode='DISARMED';self.neutral=False
+                self.mode='DISARMED';self.neutral=False;self.dpad_y=0
         return self.status()
 
     def select(self,mode,drive_profile=None,arm_speed=None):
@@ -93,44 +97,49 @@ class GamepadPanel:
 
     def decide(self,code,value,kind,now):
         b=self.config['buttons'];decision=None
+        arm_button=b.get(self.config.get('arm_modifier_button','r1'),b.get('r1',b['l1']))
         if kind==1:
             if value==1:self.keys.add(code)
             elif value==0:self.keys.discard(code)
             if value==0 and code==b['l1'] and self.mode in ('DRIVE','COORDINATED'):self.release()
-            if value==0 and code==b['l1'] and self.mode in ('ARM','ARM_CARTESIAN','COORDINATED'):self.arm_cancel()
-            if value==1 and code==b['a'] and b['l1'] not in self.keys:
+            if value==0 and code==arm_button and self.mode in ('ARM','ARM_CARTESIAN','COORDINATED'):self.arm_cancel()
+            if value==1 and code==b['a'] and b['l1'] not in self.keys and arm_button not in self.keys:
                 if self.mode in ('ARM','ARM_CARTESIAN','COORDINATED'):self.arm_cancel()
                 if self.mode in ('DRIVE','COORDINATED'):self.release();self.drive_active=False
                 self.mode='ARM' if self.mode!='ARM' and now<self.lease else 'DISARMED'
                 self.neutral=False
-            if value==1 and code==b['x'] and b['l1'] not in self.keys:
+            if value==1 and code==b['x'] and b['l1'] not in self.keys and arm_button not in self.keys:
                 if self.mode in ('ARM','ARM_CARTESIAN','COORDINATED'):self.arm_cancel()
                 centered=not any(abs(v)>1e-6 for v in velocity(self.axes,self.config))
                 self.mode='DRIVE' if centered and now<self.lease else 'DISARMED'
                 self.neutral=False
-            if value==1 and code==b.get('y') and b['l1'] not in self.keys:
+            if value==1 and code==b.get('y') and b['l1'] not in self.keys and arm_button not in self.keys:
                 if self.mode in ('ARM','ARM_CARTESIAN','COORDINATED'):self.arm_cancel()
                 if self.mode in ('DRIVE','COORDINATED'):self.release();self.drive_active=False
                 self.mode='ARM_CARTESIAN' if now<self.lease else 'DISARMED'
                 self.joint=min(3,self.joint);self.neutral=False
             if value==1 and code==b['b']:
                 self.mode='DISARMED';self.lease=0;self.stop()
-            if (value==1 and self.mode in ('ARM','COORDINATED') and now<self.lease and b['l1'] in self.keys and
+            if (value==1 and self.mode in ('ARM','COORDINATED') and now<self.lease and arm_button in self.keys and
                     code in (b.get('l2'),b.get('r2'))):
                 decision=(6,-self.config['gripper_step_deg'] if code==b.get('l2') else self.config['gripper_step_deg'])
         elif kind==3:
             self.axes[str(code)]=value
-            if code==16 and value and b['l1'] not in self.keys:
+            if code==16 and value and arm_button in self.keys and self.mode in ('ARM','ARM_CARTESIAN','COORDINATED'):
                 self.joint=min(3 if self.mode=='ARM_CARTESIAN' else 6,max(1,self.joint+value))
                 self.neutral=False
-            if code==self.config['axes']['right_y']['code']:
+            if code==17:
+                fresh=getattr(self,'dpad_y',0)==0;self.dpad_y=value
+            if code==17 and value and fresh and arm_button in self.keys and self.mode in ('ARM','COORDINATED') and now<self.lease:
+                decision=(self.joint,self.config['arm_step_deg']*(1 if value<0 else -1))
+            if code==self.config['axes']['right_y']['code'] and self.mode=='ARM_CARTESIAN':
                 axis=self.config['axes']['right_y'];offset=axis_value(value,axis,0.)
                 if abs(offset)<self.config['deadzone']:self.neutral=True
                 elif abs(offset)>.65:
                     fresh=self.neutral;self.neutral=False
-                    if fresh and self.mode in ('ARM','ARM_CARTESIAN','COORDINATED') and now<self.lease and b['l1'] in self.keys:
+                    if fresh and now<self.lease and arm_button in self.keys:
                         direction=1 if offset>0 else -1
-                        decision=(('x','y','z')[self.joint-1],direction) if self.mode=='ARM_CARTESIAN' else (self.joint,self.config['arm_step_deg']*direction)
+                        decision=(('x','y','z')[self.joint-1],direction)
         return decision
 
     def perform(self,joint,delta,deadline=None):
@@ -171,7 +180,7 @@ class GamepadPanel:
                     if device.info.vendor!=self.config['device']['vendor_id'] or device.info.product!=self.config['device']['product_id']:
                         raise ValueError('Подключён другой геймпад')
                     with self.lock:
-                        self.connected=True;self.mode='DISARMED';self.keys.clear();self.neutral=False;self.error=None
+                        self.connected=True;self.mode='DISARMED';self.keys.clear();self.neutral=False;self.dpad_y=0;self.error=None
                         self.axes={str(a['code']):device.absinfo(a['code']).value for a in self.config['axes'].values()}
                     pending=None
                     while True:
@@ -184,7 +193,9 @@ class GamepadPanel:
                                     decision=self.decide(event.code,event.value,event.type,now)
                                     if decision:pending=decision
                                     packet_done=event.type==0 and event.code==0
-                                    permit=self.mode in ('ARM','ARM_CARTESIAN','COORDINATED') and now<self.lease and self.config['buttons']['l1'] in self.keys
+                                    buttons=self.config['buttons']
+                                    arm_button=buttons.get(self.config.get('arm_modifier_button','r1'),buttons.get('r1',buttons['l1']))
+                                    permit=self.mode in ('ARM','ARM_CARTESIAN','COORDINATED') and now<self.lease and arm_button in self.keys
                                 if packet_done:
                                     if pending and permit and not self.teaching.lock.locked():
                                         threading.Thread(target=self.perform,args=(*pending,now+.5),daemon=True).start()
@@ -203,5 +214,5 @@ class GamepadPanel:
                 with self.lock:
                     if self.mode in ('ARM','ARM_CARTESIAN','COORDINATED'):self.arm_cancel()
                     if self.drive_active:self.release();self.drive_active=False
-                    self.connected=False;self.mode='DISARMED';self.keys.clear();self.neutral=False;self.error=str(exc)
+                    self.connected=False;self.mode='DISARMED';self.keys.clear();self.neutral=False;self.dpad_y=0;self.error=str(exc)
                 time.sleep(2)

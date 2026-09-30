@@ -29,22 +29,23 @@ class GamepadArmBindingTests(unittest.TestCase):
         self.panel.decide(self.buttons[name],value,1,self.now)
 
     def arm_mode(self):
-        self.press('a');self.press('l1')
+        self.press('a');self.press('r1')
 
     def test_factory_cancellation_on_release_and_hidden_panel(self):
         self.arm_mode();self.assertTrue(self.arm.gamepad_permit())
-        self.press('l1',0);self.arm.stop.assert_called_once()
+        self.press('r1',0);self.arm.stop.assert_called_once()
         self.assertFalse(self.arm.gamepad_permit())
         self.panel.heartbeat(False);self.assertEqual(self.arm.stop.call_count,2)
         self.assertEqual(self.panel.mode,'DISARMED')
         self.stop.assert_not_called()
 
-    def test_one_step_per_neutral_and_valid_live_permission(self):
-        self.arm_mode();axis=self.panel.config['axes']['right_y']
-        self.panel.decide(axis['code'],axis['center'],3,self.now)
-        step=self.panel.decide(axis['code'],axis['minimum'],3,self.now)
+    def test_one_step_per_dpad_press_and_valid_live_permission(self):
+        self.arm_mode()
+        step=self.panel.decide(17,-1,3,self.now)
         self.assertEqual(step,(1,5))
-        self.assertIsNone(self.panel.decide(axis['code'],axis['minimum'],3,self.now))
+        self.assertIsNone(self.panel.decide(17,-1,3,self.now))
+        self.panel.decide(17,0,3,self.now)
+        self.assertEqual(self.panel.decide(17,1,3,self.now),(1,-5))
         self.panel.perform(*step,self.now+.5)
         self.teaching.jog.assert_called_once_with(1,5,True,self.now+.5,False,'normal')
         self.assertTrue(self.panel.proposal['executed'])
@@ -54,7 +55,7 @@ class GamepadArmBindingTests(unittest.TestCase):
         self.assertFalse(self.panel.proposal['executed'])
 
     def test_changing_mode_cancels_factory_arm_and_does_not_send_motion(self):
-        self.arm_mode();self.press('l1',0);self.arm.stop.reset_mock()
+        self.arm_mode();self.press('r1',0);self.arm.stop.reset_mock()
         self.press('x');self.arm.stop.assert_called_once()
         self.assertEqual(self.panel.mode,'DRIVE')
         self.panel.drive.assert_not_called()
@@ -68,11 +69,13 @@ class GamepadArmBindingTests(unittest.TestCase):
         (self.panel.root/'data/status.json').write_text('null')
         self.assertEqual(self.panel.status()['drive_blocked_by'],['Нет достоверного состояния робота'])
 
-    def test_direction_uses_calibration_instead_of_fixed_polarity(self):
-        self.arm_mode();axis=self.panel.config['axes']['right_y']
-        axis.update(minimum=0,center=100,maximum=200,inverted=False)
-        self.panel.decide(axis['code'],100,3,self.now)
-        self.assertEqual(self.panel.decide(axis['code'],200,3,self.now),(1,5))
+    def test_dpad_left_right_selects_joint_and_up_down_moves_it(self):
+        self.arm_mode()
+        self.panel.decide(16,1,3,self.now)
+        self.assertEqual(self.panel.joint,2)
+        self.assertEqual(self.panel.decide(17,-1,3,self.now),(2,5))
+        self.panel.decide(17,0,3,self.now)
+        self.assertEqual(self.panel.decide(17,1,3,self.now),(2,-5))
 
     def test_triggers_control_gripper_in_arm_mode(self):
         self.arm_mode()
@@ -92,12 +95,27 @@ class GamepadArmBindingTests(unittest.TestCase):
         self.panel.connected=True
         self.panel.axes={str(a['code']):a['center'] for a in self.panel.config['axes'].values()}
         self.panel.select('COORDINATED','fast','fast')
-        self.press('l1')
+        self.press('l1');self.press('r1')
         self.assertTrue(self.arm.gamepad_permit())
         self.panel.arm_jog(1,5,self.now+.5)
         self.teaching.jog.assert_called_once_with(1,5,True,self.now+.5,True,'fast')
         self.assertEqual(self.panel.status()['drive_profile'],'fast')
         self.assertEqual(self.panel.status()['arm_speed'],'fast')
+
+
+    def test_l1_chassis_and_r1_arm_layers_are_independent(self):
+        self.panel.connected=True
+        self.panel.axes={str(a['code']):a['center'] for a in self.panel.config['axes'].values()}
+        self.panel.select('COORDINATED')
+        (self.panel.root/'data/status.json').write_text(json.dumps(dict(at=time.time(),stop_latched=False,commissioning={})))
+        self.press('l1');self.press('r1')
+        axis=self.panel.config['axes']['left_y'];self.panel.decide(axis['code'],axis['minimum'],3,self.now)
+        self.panel.drive_tick(self.now)
+        self.panel.drive.assert_called_once()
+        self.assertEqual(self.panel.decide(17,-1,3,self.now),(1,5))
+        self.press('r1',0)
+        self.assertFalse(self.arm.gamepad_permit())
+        self.assertTrue(self.panel.drive_active)
 
     def test_coordinated_mode_requires_centered_sticks(self):
         self.panel.connected=True

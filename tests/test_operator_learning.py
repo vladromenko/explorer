@@ -28,16 +28,14 @@ class OperatorLearningTests(unittest.TestCase):
         with patch.object(threading.Thread,'start'):
             return GamepadPanel(ROOT,None,lambda:None)
 
-    def test_stick_requires_neutral_deadman_and_live_lease(self):
+    def test_dpad_requires_r1_new_press_and_live_lease(self):
         panel=self.panel();panel.mode='ARM';panel.lease=11
-        self.assertIsNone(panel.decide(5,0,3,10))
-        panel.decide(5,128,3,10)
-        self.assertIsNone(panel.decide(5,0,3,10))
-        panel.decide(310,1,1,10);panel.decide(5,128,3,10)
-        self.assertEqual(panel.decide(5,0,3,10),(1,5))
-        self.assertIsNone(panel.decide(5,0,3,10))
-        panel.decide(5,128,3,12)
-        self.assertIsNone(panel.decide(5,0,3,12))
+        self.assertIsNone(panel.decide(17,-1,3,10))
+        panel.decide(17,0,3,10);panel.decide(311,1,1,10)
+        self.assertEqual(panel.decide(17,-1,3,10),(1,5))
+        self.assertIsNone(panel.decide(17,-1,3,10))
+        panel.decide(17,0,3,12)
+        self.assertIsNone(panel.decide(17,-1,3,12))
 
     def test_gamepad_proposals_have_no_actuator_path(self):
         panel=self.panel();panel.perform(2,-2)
