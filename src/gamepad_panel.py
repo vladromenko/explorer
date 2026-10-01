@@ -9,10 +9,10 @@ from manual_teleop import ManualTeleop
 
 
 class GamepadPanel:
-    def __init__(self,root,teaching,stop,drive=None,release=None,teleop=None,resume=None):
+    def __init__(self,root,teaching,stop,drive=None,release=None,teleop=None,resume=None,takeover=None):
         self.root=root;self.config=yaml.safe_load((root/'config/gamepad.yaml').read_text())
         self.teaching=teaching;self.stop=stop;self.release=release or stop
-        self.teleop=teleop or ManualTeleop(drive,self.release,stop,teaching,resume)
+        self.teleop=teleop or ManualTeleop(drive,self.release,stop,teaching,resume,takeover)
         self.lock=threading.RLock();self.connected=False;self.keys=set();self.axes={}
         self.mode='DISARMED';self.lease=0.;self.last_event=0.;self.error=None;self.sequence=0
         self.precision=False;self.proposal=None;self.drive_active=False;self.drive_vector=[0.,0.,0.]

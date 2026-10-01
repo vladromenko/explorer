@@ -12,6 +12,8 @@ import numpy as np
 from grasp_verification import verify_lift, verify_place
 from delivery_vision import FeatureObject, reacquire_candidate
 from mobile_alignment import correction
+from semantic_world import guarded_closure
+from learning_stack import CandidateScorer
 
 SETUP_ARTIFACTS={'config/delivery.json','config/handeye-accepted.json','config/gripper-accepted.json',
                  'config/explorer.urdf','config/explorer.srdf'}
@@ -151,8 +153,32 @@ class DeliveryRobot:
     def __init__(self, root, missions, arm, trajectory, finder, vision, model):
         self.root,self.missions,self.arm,self.trajectory=Path(root),missions,arm,trajectory
         self.finder,self.vision,self.model=finder,vision,model
+        self.scorer=CandidateScorer(self.root)
         self.mid=None;self.settings=None;self.tracking=False;self.grasp_xyz=None;self.boot=None;self.owner_check=lambda:None;self.search_id=None
-        self.drop_zone=None;self.destination_pose=None
+        self.drop_zone=None;self.destination_pose=None;self.grasp_selection=None
+
+    def select_grasp(self,point,observation):
+        extent=observation.get('object_extent_xyz_m',[.05,.04,.025])
+        uncertainty=float(observation.get('object_position_uncertainty_m',.01))
+        candidates=[]
+        for lateral in (0.,-.01,.01):
+            candidate=np.asarray(point,dtype=float)+[0,lateral,0]
+            above=candidate+[0,0,self.settings['approach_height_m']]
+            solved=self.model().ik(above,self.arm.reference()['servo_deg'][:5],self.settings['gripper_linkage_rad'],self.settings['grasp_quaternion_xyzw'])
+            if solved.get('solved') and not solved.get('collision'):
+                candidates.append(dict(approach_x=float(candidate[0]),approach_y=float(candidate[1]),approach_z=float(candidate[2]),
+                    aperture_m=min(.07,max(.01,float(extent[1])*1.15)),roll_rad=0.,base_shift_m=0.,
+                    clearance_m=max(.001,float(self.settings['approach_height_m'])-uncertainty),
+                    trajectory_cost=float(solved.get('residual',0))+abs(lateral)*10,point=candidate.tolist()))
+        if not candidates:raise ValueError('Нет достижимого кандидата захвата')
+        context=dict(object_width_m=float(extent[0]),object_height_m=float(extent[2]),distance_m=float(np.linalg.norm(point)),
+            visibility=float(observation.get('confidence',0)),depth_uncertainty_m=uncertainty,target_distance_m=1.,
+            softness=1. if str(self.settings.get('object_kind','soft')).startswith('soft') else 0.,scene_clutter=float(observation.get('scene_clutter',0)),
+            previous_failures=0.)
+        ranked=self.scorer.choose(context,candidates,exploration=float(self.settings.get('grasp_exploration',0)))
+        ranked['context']=context
+        chosen=ranked['rows'][ranked['selected']]['candidate'];self.grasp_selection=ranked
+        return np.asarray(chosen['point'],dtype=float)
 
     def blockers(self):
         reasons=[]
@@ -304,7 +330,7 @@ class DeliveryRobot:
     def approach(self, target):
         # The accepted bounded release searches saved base poses with a reachable
         # foreground object. It never drives blind using optical-frame coordinates.
-        self.hold();point=np.asarray(self.vision.latest()['object_xyz'])
+        self.hold();observation=self.vision.latest();point=np.asarray(observation['object_xyz'])
         alignment=correction(point)
         if alignment['reobserve_required']:
             pose=self.missions.maps.pose();bearing=pose['yaw']+alignment['bearing_rad']
@@ -316,12 +342,13 @@ class DeliveryRobot:
             self.missions.go(self.mid,goal_x,goal_y,bearing);self.hold()
             return dict(reachable=False,base_repositioned=True,reobserve_required=True,
                         alignment=alignment,goal_map=dict(x=goal_x,y=goal_y,yaw=bearing))
-        point[2]+=self.settings['grasp_tcp_offset_m']
+        point[2]+=self.settings['grasp_tcp_offset_m'];point=self.select_grasp(point,observation)
         above=point+[0,0,self.settings['approach_height_m']]
         solved=self.model().ik(above,self.arm.reference()['servo_deg'][:5],self.settings['gripper_linkage_rad'],self.settings['grasp_quaternion_xyzw'])
         if not solved.get('solved') or solved.get('collision'):raise ValueError('Предмет недоступен из принятой точки поиска')
         self.grasp_xyz=point.tolist()
-        return dict(reachable=True,base_stationary_confirmed=True,grasp_xyz=self.grasp_xyz,alignment=alignment)
+        return dict(reachable=True,base_stationary_confirmed=True,grasp_xyz=self.grasp_xyz,alignment=alignment,
+                    grasp_selection=self.grasp_selection)
 
     def reobserve(self, target):
         current=self.vision.latest()
@@ -351,7 +378,18 @@ class DeliveryRobot:
     def observe(self):return self.vision.observe(lambda:self.permit(self.mid))
     def grasp(self, target):
         self._xyz(self.grasp_xyz,self.settings['open_deg'])
-        return self._xyz(self.grasp_xyz,self.settings['close_deg'])
+        if self.settings.get('guarded_closure_enabled') is not True:
+            return self._xyz(self.grasp_xyz,self.settings['close_deg'])
+        observations=self.vision.observe(lambda:self.permit(self.mid),duration=.25)
+        angle=float(self.settings['open_deg']);commands=[]
+        while angle<self.settings['close_deg']:
+            decision=guarded_closure(observations,soft=self.settings.get('object_kind','soft')=='soft')
+            if decision['action'] in ('hold','stop'):
+                return dict(guarded=True,decision=decision,commands=commands,final_deg=angle)
+            step=float(decision.get('step_deg',1));angle=min(float(self.settings['close_deg']),angle+step)
+            commands.append(self._xyz(self.grasp_xyz,angle))
+            observations=self.vision.observe(lambda:self.permit(self.mid),duration=.25)
+        return dict(guarded=True,decision={'action':'hold','reason':'accepted_close_limit'},commands=commands,final_deg=angle)
     def regrasp(self,target):
         """One bounded retry after a visually proven empty grasp."""
         self._xyz((np.asarray(self.grasp_xyz)+[0,0,self.settings['approach_height_m']]).tolist(),self.settings['open_deg'])

@@ -36,12 +36,12 @@ def audit(root,world,perception=None,status=None,mission=None,delivery=None,lear
       item(5,'Grasp planning and retry','PARTIAL','RGB-D candidates, IK/collision checks, tracking and outcome verification exist. Stationary hand-eye is physically accepted.',grasp_missing),
       item(6,'Mobile manipulation','PARTIAL','Delivery owns base and arm in one transaction and checks stationary handoffs.',delivery.get('blocked_by',[])),
       item(7,'Reactive manipulation','PARTIAL','30 Hz feature/depth tracking and freshness checks exist; local action policy is available.',grasp_missing),
-      item(8,'Learning and interventions','DONE','Demonstrations, outcomes/interventions, ACT training/validation and grasp replay memory persist.',[],
+      item(8,'Learning and interventions','PARTIAL','Demonstrations, outcome/intervention replay, trainable scorer, outcome model, bounded actor/critic and ACT training persist. Physical learned-policy trials are not yet accepted.',[],
            {'jobs':len(learning_jobs),'framework':learning.get('backend',{}).get('lerobot')}),
-      item(9,'Hierarchical task execution','DONE','The delivery state machine uses search→navigate→inspect→align→grasp→verify→transport→place with cancellation and evidence boundaries.',delivery.get('blocked_by',[])),
+      item(9,'Hierarchical task execution','PARTIAL','The persistent supervisor uses three-valued predicates and bounded cost search over a skill registry; the accepted delivery remains its physical executor.',delivery.get('blocked_by',[])),
       item(10,'Learned navigation concepts','DONE','Applicable concepts are implemented as Nav2 local feedback, risk/clearance-aware frontier ranking, replanning and measured goal checks; no unvalidated NavDP weights are loaded.'),
       item(11,'RoboBrain/RoboOS upper layer','DONE','Kept out of actuator control: current local tool planner already exposes bounded skills, while no compatible validated model offers a measured advantage on 8 GB.'),
-      item(12,'Continual world model','DONE','Every new visual episode and every hierarchical skill result updates persistent world/action memory.',[],world_state),
+      item(12,'Continual world model','PARTIAL','Visual episodes, entities, places, actions and relations update persistent memory with a scene generation. A trained high-dimensional world model still needs physical transitions.',[],world_state),
     ]
     return dict(at=time.time(),items=entries,summary={s:sum(e['state']==s for e in entries) for s in ('DONE','PARTIAL','MISSING')},
                 physical_experiment_ready=not nav_missing and not arm_missing and not delivery.get('blocked_by'))

@@ -153,9 +153,17 @@ class FeatureObject:
         xyz=np.column_stack([rays*z[:,None],z]);center=np.median(xyz,axis=0)
         if np.percentile(np.linalg.norm(xyz-center,axis=1),90)>.15:
             self.ended=True;raise ValueError('Tracked depth no longer forms a small object')
+        # Robust visual geometry is part of the evidence contract.  It is not a
+        # calibrated object model: the percentiles and median absolute
+        # deviation state exactly what this RGB-D observation supports.
+        low,high=np.percentile(xyz,[5,95],axis=0)
+        extent=np.maximum(high-low,.001)
+        radial=np.linalg.norm(xyz-center,axis=1)
+        uncertainty=max(.001,float(np.median(np.abs(radial-np.median(radial)))))
         spread=np.ptp(points[:,0],axis=0);scale=float(math.sqrt(max(1.,spread[0]*spread[1]))/self.initial_scale)
         self.gray,self.points,self.stamp=gray,points,stamp
-        return dict(object_id=self.object_id,point_camera=center,association_fraction=fraction,object_scale=scale)
+        return dict(object_id=self.object_id,point_camera=center,association_fraction=fraction,object_scale=scale,
+                    object_extent_camera_m=extent,object_position_uncertainty_m=uncertainty)
 
 
 class MeasuredVision:
@@ -235,7 +243,13 @@ class MeasuredVision:
                     if track is not self.track or generation!=self.generation:return processed
                     observation=track.update(queued)
                     obj=(transform@np.r_[observation['point_camera'],1])[:3]
+                    # A rigid transform rotates an extent; absolute rotation is
+                    # the conservative axis-aligned base-frame bounding box.
+                    extent_camera=np.asarray(observation.get('object_extent_camera_m',[0,0,0]),dtype=float)
+                    extent_base=np.abs(transform[:3,:3])@extent_camera
                     plane=np.asarray(settings['floor_plane_base']);pose=self.maps.pose()
+                    command_mode=getattr(self,'command_mode',False)
+                    gripper_open=abs(angles[5]-settings['open_deg'])<.5
                     value=dict(at=float(queued['stamp']),object_id=observation['object_id'],confidence=observation['association_fraction'],
                         confidence_kind='feature_retention_not_semantic_probability',
                         association_fraction=observation['association_fraction'],identity_association_verified=True,
@@ -245,9 +259,14 @@ class MeasuredVision:
                         camera_pose_source='command_estimate' if getattr(self,'command_mode',False) else 'servo_measurement',frame='base_footprint',
                         object_xyz=obj.tolist(),tcp_xyz=tcp.tolist(),base_xyyaw=[pose[k] for k in ('x','y','yaw')],
                         object_scale=observation.get('object_scale'),object_tcp_distance_m=float(np.linalg.norm(obj-tcp)),
+                        object_extent_xyz_m=extent_base.tolist(),
+                        object_position_uncertainty_m=float(observation.get('object_position_uncertainty_m',0.)),
                         floor_clearance_m=float(obj@plane[:3]+plane[3]),
-                        gripper_open_measured=not getattr(self,'command_mode',False) and abs(angles[5]-settings['open_deg'])<.5,
-                        gripper_open_estimated=getattr(self,'command_mode',False) and abs(angles[5]-settings['open_deg'])<.5)
+                        gripper_open_measured=gripper_open if not command_mode else None,
+                        gripper_open_commanded=gripper_open if command_mode else None,
+                        gripper_open_estimated=gripper_open if command_mode else None,
+                        gripper_aperture_measured_deg=float(angles[5]) if not command_mode else None,
+                        gripper_aperture_command_deg=float(angles[5]) if command_mode else None)
                     self.frames.append(value);self.last_stamp=float(queued['stamp']);self.pending.popleft()
                     self.waiting_for_joints=None;processed+=1
             except JointSamplePending as exc:

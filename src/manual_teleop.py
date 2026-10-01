@@ -19,11 +19,12 @@ def keyboard_inputs(keys):
 
 
 class ManualTeleop:
-    def __init__(self,drive,release,stop,teaching,resume_callback=None):
+    def __init__(self,drive,release,stop,teaching,resume_callback=None,takeover_callback=None):
         self.drive=drive;self.release=release;self.stop_all=stop;self.teaching=teaching
         self.lock=threading.RLock();self.owner=None;self.lease=0.;self.inputs={};self.precision=False
         self.stop_latched=True;self.neutral_seen=False;self.drive_active=False;self.arm_busy=False
         self.error=None;self.arm=None;self.model=None;self.last_arm=0.;self.closed=False;self.resume_callback=resume_callback
+        self.takeover_callback=takeover_callback;self.takeover_active=False
         threading.Thread(target=self._run,daemon=True).start()
 
     def bind_arm(self,arm,model):
@@ -44,9 +45,12 @@ class ManualTeleop:
     def update(self,source,inputs,observing=True,precision=False):
         self.claim(source,observing)
         clean={str(k).lower():float(v) for k,v in inputs.items() if math.isfinite(float(v)) and abs(float(v))<=1.0001}
+        moving=self._moving(clean);announce=moving and not self.takeover_active
+        self.takeover_active=moving
+        if announce and self.takeover_callback:self.takeover_callback()
         with self.lock:
             self.inputs=clean;self.precision=bool(precision);self.lease=time.monotonic()+.45
-            if self.stop_latched and not self._moving(clean):self.neutral_seen=True
+            if self.stop_latched and not moving:self.neutral_seen=True
         return self.status()
 
     @staticmethod

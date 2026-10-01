@@ -76,7 +76,8 @@ class VisionTests(unittest.TestCase):
         updated=[]
         def update(sample):
             updated.append(float(sample['stamp']))
-            return dict(object_id='original-object',point_camera=np.array([.2,0,.04]),association_fraction=1.)
+            return dict(object_id='original-object',point_camera=np.array([.2,0,.04]),association_fraction=1.,
+                        object_extent_camera_m=np.array([.03,.02,.02]),object_position_uncertainty_m=.002)
         tracker=SimpleNamespace(stamp=1.,update=update)
         vision.start_tracker(tracker,dict(floor_plane_base=[0,0,1,0],open_deg=30))
         vision.geometry=lambda *args:(np.eye(4),np.zeros(3),[90,90,90,90,90,30])
@@ -141,8 +142,11 @@ class VisionTests(unittest.TestCase):
         vision.process_snapshot(dict(stamp=1.02),now=0.)
         frame=vision.frames[-1]
         self.assertFalse(frame['camera_pose_measured'])
-        self.assertFalse(frame['gripper_open_measured'])
+        self.assertIsNone(frame['gripper_open_measured'])
+        self.assertTrue(frame['gripper_open_commanded'])
         self.assertTrue(frame['gripper_open_estimated'])
+        self.assertIsNone(frame['gripper_aperture_measured_deg'])
+        self.assertEqual(frame['gripper_aperture_command_deg'],30.)
         self.assertEqual(frame['camera_pose_source'],'command_estimate')
 
     def test_factory_geometry_uses_only_settled_command_estimate(self):

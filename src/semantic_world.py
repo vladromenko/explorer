@@ -42,7 +42,12 @@ class SemanticWorld:
             CREATE TABLE IF NOT EXISTS actions(
               id INTEGER PRIMARY KEY, at REAL, task TEXT, skill TEXT, state TEXT,
               before_episode TEXT, after_episode TEXT, result TEXT);
+            CREATE TABLE IF NOT EXISTS relations(
+              id INTEGER PRIMARY KEY, at REAL, subject TEXT, predicate TEXT,
+              object TEXT, confidence REAL, evidence TEXT);
+            CREATE TABLE IF NOT EXISTS memory_meta(key TEXT PRIMARY KEY, value TEXT);
             ''')
+            db.execute("INSERT OR IGNORE INTO memory_meta VALUES('scene_generation','0')")
             columns={row[1] for row in db.execute('PRAGMA table_info(places)')}
             if 'validated' not in columns:
                 db.execute('ALTER TABLE places ADD COLUMN validated INTEGER DEFAULT 0')
@@ -153,6 +158,8 @@ class SemanticWorld:
                     (ident,stamp,map_epoch,json.dumps(safe_pose),json.dumps(signature),json.dumps(content),source))
                 entities=[self._entity(db,o,map_epoch,now) for o in objects]
                 observed={v for v in entities if v is not None}
+                operations={row[0] for row in db.execute('SELECT operation FROM entity_events WHERE at=?',(now,))}
+                changed=bool(operations & {'appeared','moved'})
                 observable=perception.get('observable_entity_ids',[])
                 if perception.get('visibility_volume_validated') is True and isinstance(observable,list):
                     for entity_id in observable:
@@ -165,6 +172,10 @@ class SemanticWorld:
                                 db.execute('INSERT INTO entity_events(at,entity_id,operation,position,evidence) VALUES(?,?,?,?,?)',
                                     (now,entity_id,'missing' if count>=3 else 'not_observed',None,
                                      json.dumps({'validated_visibility_volume':True,'consecutive_misses':count})))
+                                changed=changed or count>=3
+                if changed:
+                    generation=int(db.execute("SELECT value FROM memory_meta WHERE key='scene_generation'").fetchone()[0])+1
+                    db.execute("UPDATE memory_meta SET value=? WHERE key='scene_generation'",(str(generation),))
             return dict(added=True,episode=ident,place=place,objects=len(objects),
                         fused_entities=sum(v is not None for v in entities),
                         viewpoint_known=safe_pose is not None)
@@ -190,19 +201,38 @@ class SemanticWorld:
         if state not in ('started','succeeded','failed','intervention','cancelled','unknown'):
             raise ValueError('Invalid action state')
         with self.db() as db:
-            db.execute('INSERT INTO actions(at,task,skill,state,before_episode,after_episode,result) VALUES(?,?,?,?,?,?,?)',
-                       (time.time(),str(task)[:80],str(skill)[:80],state,before_episode,after_episode,
+            now=time.time()
+            cursor=db.execute('INSERT INTO actions(at,task,skill,state,before_episode,after_episode,result) VALUES(?,?,?,?,?,?,?)',
+                       (now,str(task)[:80],str(skill)[:80],state,before_episode,after_episode,
                         json.dumps(result or {},ensure_ascii=False)))
+            db.execute('INSERT INTO relations(at,subject,predicate,object,confidence,evidence) VALUES(?,?,?,?,?,?)',
+                       (now,'task:'+str(task)[:80],'executed_skill','skill:'+str(skill)[:80],1.,
+                        json.dumps({'action_id':cursor.lastrowid,'state':state},ensure_ascii=False)))
+            if state in ('succeeded','failed','unknown'):
+                db.execute('INSERT INTO relations(at,subject,predicate,object,confidence,evidence) VALUES(?,?,?,?,?,?)',
+                           (now,'skill:'+str(skill)[:80],'had_outcome',state,1.,json.dumps(result or {},ensure_ascii=False)))
+
+    def scene_version(self,map_epoch='unknown'):
+        with self.db() as db:generation=db.execute("SELECT value FROM memory_meta WHERE key='scene_generation'").fetchone()[0]
+        return str(map_epoch)+':'+str(generation)
+
+    def related(self,subject,limit=50):
+        with self.db() as db:
+            return [dict(row,evidence=json.loads(row['evidence'])) for row in db.execute(
+                'SELECT * FROM relations WHERE subject=? OR object=? ORDER BY id DESC LIMIT ?',
+                (subject,subject,limit))]
 
     def status(self):
         with self.db() as db:
             counts={name:db.execute('SELECT count(*) FROM '+name).fetchone()[0]
-                    for name in ('episodes','entities','actions')}
+                    for name in ('episodes','entities','actions','relations')}
             counts['places']=db.execute('SELECT count(*) FROM places WHERE validated=1').fetchone()[0]
             provisional_places=db.execute('SELECT count(*) FROM places WHERE validated=0').fetchone()[0]
             validated=counts['entities']
             recent=[dict(r) for r in db.execute('SELECT at,task,skill,state FROM actions ORDER BY id DESC LIMIT 10')]
+            generation=db.execute("SELECT value FROM memory_meta WHERE key='scene_generation'").fetchone()[0]
         return dict(**counts,provisional_places=provisional_places,validated_3d_entities=validated,recent_actions=recent,
+                    scene_generation=int(generation),
                     dynamic_3d_enabled=True,unvalidated_camera_points_never_fused=True)
 
 

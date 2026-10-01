@@ -101,10 +101,15 @@ def heavy_jobs():
     if any(j.get('state') in ('queued','exporting','training','validating') for j in learning_jobs.status()['jobs']):jobs.append('train')
     return jobs
 profiles=ResourceProfiles(ROOT,heavy_jobs)
+from resource_scheduler import ResourceScheduler
+resource_scheduler=ResourceScheduler(ROOT)
 from appearance import MODES as APPEARANCE_MODES,read as read_appearance,write as write_appearance
 
 @app.get('/api/resources/profile')
 def resource_profile():return profiles.status()
+
+@app.get('/api/resources/jobs')
+def resource_jobs():return resource_scheduler.status()
 
 class ProfileRequest(BaseModel):mode:str
 @app.post('/api/resources/profile')
@@ -150,6 +155,8 @@ def base_step(c:BaseStep):return map_operation(observed_base.start,c.direction,c
 
 def stop_all():
     experiments.cancel()
+    supervisor=globals().get('autonomy_supervisor')
+    if supervisor:supervisor.cancel(reason='Manual takeover or STOP')
     delivery=globals().get('delivery_task')
     if delivery:delivery.cancel()
     controller=globals().get('manual_arm')
@@ -159,10 +166,17 @@ def stop_all():
     trajectory=globals().get('trajectory_execution')
     if trajectory:trajectory.stop()
     return emit('stop')
+def manual_takeover():
+    experiments.cancel()
+    supervisor=globals().get('autonomy_supervisor')
+    if supervisor:supervisor.cancel(reason='Manual keyboard/gamepad takeover')
+    delivery=globals().get('delivery_task')
+    if delivery:delivery.cancel()
+
 def resume_manual():
-    emit('clear_stop');emit('mode',mode='MANUAL')
+    manual_takeover();emit('clear_stop');emit('mode',mode='MANUAL')
 gamepad_panel=GamepadPanel(ROOT,teaching,stop_all,lambda values:emit('drive',velocity=values,source='manual'),
-                          lambda:emit('manual_release',initiator='manual_teleop'),resume=resume_manual)
+                          lambda:emit('manual_release',initiator='manual_teleop'),resume=resume_manual,takeover=manual_takeover)
 
 @app.get('/api/teaching')
 def teaching_status():
@@ -879,8 +893,115 @@ missions.compound_guard=delivery_robot.permit
 
 from robot_readiness import status as robot_readiness
 
+def autonomy_permissions():
+    try:value=json.loads((ROOT/'data/autonomy-permissions.json').read_text())
+    except (OSError,ValueError,TypeError):value={}
+    active=type(value.get('expires_at')) in (int,float) and value['expires_at']>time.time()
+    scopes=set(value.get('scopes',[])) if active else set()
+    return {name:name in scopes for name in ('base_motion','arm_motion','target_contact','scene_preparation')}
+
+def autonomy_world_snapshot():
+    live=read_state('status.json',2);perception=read_state('perception.json',2);flags=live.get('commissioning',{})
+    try:epoch=maps.epoch()
+    except (OSError,ValueError,KeyError):epoch='unknown'
+    places=missions.places()
+    predicates=dict(scene_observed=not perception.get('stale',True),
+        object_localized='unknown',base_aligned='unknown',grasp_reachable='unknown',gripper_aligned='unknown',
+        grasp_attempted='unknown',object_held='unknown',at_destination='unknown',object_supported='unknown',
+        release_attempted='unknown',placed='unknown',contact_allowed=autonomy_permissions()['target_contact'],
+        localization_valid=flags.get('localization_verified'),destination_localized=bool(places))
+    return dict(at=time.time(),scene_version=semantic_world.scene_version(str(epoch)),map_epoch=str(epoch),predicates=predicates,
+                perception_at=perception.get('image_stamp'),world=semantic_world.status())
+
+def autonomy_readiness():
+    ready=robot_readiness(ROOT,delivery_task.status())
+    return dict(hardware=dict(physical_execution_ready=ready.get('delivery_ready') is True,
+                              blocked_by=ready.get('blocked_by',[])),permissions=autonomy_permissions())
+
+def autonomy_action(spec,plan,episode_id):
+    if spec.get('task_type','delivery')!='delivery':
+        return dict(state='unknown',reason='No physical gateway registered for this task type',episode_id=episode_id)
+    started=delivery_task.start();identifier=started['id'];deadline=time.monotonic()+float(spec.get('episode_budget_s',900))
+    while time.monotonic()<deadline:
+        state=delivery_task.status();active=state.get('active');last=state.get('last') or {}
+        if not active:
+            if last.get('id')!=identifier:return dict(state='infrastructure_error',reason='Delivery result identity changed')
+            outcome='success' if last.get('delivered') is True else 'cancelled' if last.get('state')=='cancelled' else 'failure'
+            return dict(state=outcome,reason=last.get('reason') or last.get('state','finished'),delivery_id=identifier,
+                        verifier='delivery_task',events=last.get('events',[]))
+        time.sleep(.2)
+    delivery_task.cancel()
+    return dict(state='failure',reason='Episode time budget expired',delivery_id=identifier)
+
+def autonomy_reset(spec,episode_id):
+    profile=spec.get('reset_profile')
+    if profile in (None,'none'):
+        return dict(state='unknown',reason='No accepted observable reset profile for this scene')
+    path=ROOT/'config/reset-profiles.json'
+    try:profiles=json.loads(path.read_text()).get('profiles',{})
+    except (OSError,ValueError,TypeError):profiles={}
+    item=profiles.get(profile)
+    if not item or item.get('accepted') is not True:
+        return dict(state='unknown',reason='Reset profile is absent or not physically accepted')
+    return dict(state='unknown',reason='Accepted profile has no registered physical executor')
+
+from autonomy_runtime import AutonomySupervisor
+autonomy_supervisor=AutonomySupervisor(ROOT,autonomy_world_snapshot,autonomy_readiness,autonomy_action,autonomy_reset)
+
 @app.get('/api/readiness')
 def readiness_status():return robot_readiness(ROOT,delivery_task.status())
+
+class AutonomyPermissionRequest(BaseModel):
+    scopes:list[str]=Field(default_factory=list,max_length=4)
+    hours:float=Field(default=1.,gt=0,le=24)
+    area:str=Field(default='operator-defined area',min_length=3,max_length=120)
+    objects:list[str]=Field(default_factory=list,max_length=20)
+
+class AutonomyJobRequest(BaseModel):
+    request_id:str=Field(min_length=16,max_length=100)
+    goal:str=Field(min_length=3,max_length=500)
+    attempts:int=Field(default=1,ge=1,le=500)
+    time_budget_s:float=Field(default=900,ge=30,le=86400)
+    episode_budget_s:float=Field(default=900,ge=30,le=1800)
+    allowed_skills:list[str]|None=None
+    permissions:list[str]=Field(default_factory=lambda:['base_motion','arm_motion'],max_length=4)
+    reset_profile:str|None=None
+    object_query:str=Field(default='',max_length=80)
+    destination_name:str=Field(default='',max_length=80)
+
+class AutonomyAnswer(BaseModel):answer:dict
+
+@app.get('/api/autonomy')
+def autonomy_status():return autonomy_supervisor.status()
+
+@app.post('/api/autonomy/permissions')
+def autonomy_permission(c:AutonomyPermissionRequest):
+    allowed={'base_motion','arm_motion','target_contact','scene_preparation'}
+    if not set(c.scopes)<=allowed:raise HTTPException(400,'Unknown autonomy permission')
+    value=dict(at=time.time(),expires_at=time.time()+c.hours*3600,scopes=c.scopes,area=c.area,objects=c.objects)
+    path=ROOT/'data/autonomy-permissions.json';temporary=path.with_suffix('.tmp')
+    temporary.write_text(json.dumps(value,ensure_ascii=False,allow_nan=False));temporary.replace(path)
+    return dict(value,active=autonomy_permissions())
+
+@app.post('/api/autonomy/jobs')
+def autonomy_submit(c:AutonomyJobRequest):
+    spec=c.model_dump();spec['destination']={'name':spec.pop('destination_name')} if c.destination_name else {}
+    spec.update(kind='experiment' if c.attempts>1 else 'goal',task_type='delivery',
+                                    target_predicates={'placed':True},reward_version='outcome_v1')
+    return map_operation(autonomy_supervisor.submit,c.request_id,spec)
+
+@app.get('/api/autonomy/jobs/{identifier}')
+def autonomy_job(identifier:str):return map_operation(autonomy_supervisor.get,identifier)
+
+@app.post('/api/autonomy/jobs/{identifier}/cancel')
+def autonomy_cancel(identifier:str):
+    delivery_task.cancel();return map_operation(autonomy_supervisor.cancel,identifier,'Operator cancellation')
+
+@app.post('/api/autonomy/jobs/{identifier}/resume')
+def autonomy_resume(identifier:str):return map_operation(autonomy_supervisor.resume,identifier)
+
+@app.post('/api/autonomy/help/{identifier}')
+def autonomy_help(identifier:str,c:AutonomyAnswer):return map_operation(autonomy_supervisor.answer,identifier,c.answer)
 
 @app.get('/api/delivery')
 def delivery_status():return delivery_task.status()

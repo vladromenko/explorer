@@ -23,6 +23,7 @@ HELP='''Explorer: /status — питание, нагрузка, режим и д
 /explore — исследовать доступные границы карты; /mobile — телефонная панель;
 /lights режим — подсветка: auto, off, headlights, work, search, success, error, gradient;
 /skills — функции и обучение;
+/autonomy — состояние самостоятельных задач; /do предмет -> место — запустить уже разрешённую доставку;
 /ask вопрос — локальный помощник.
 Поездки требуют готового шасси и выбранного автономного режима в панели.'''
 
@@ -77,6 +78,15 @@ def command(text):
     if name=='/learn':return 'teaching',None
     if name=='/results':return 'experiments/results',None
     if name=='/skills':return 'skills',None
+    if name=='/autonomy':return 'autonomy',None
+    if name=='/do' and argument:
+        object_query,separator,destination=argument.partition('->')
+        object_query=object_query.strip();destination=destination.strip()
+        if not separator or not object_query or not destination:
+            raise ValueError('Формат: /do предмет -> место, например /do носок -> корзина')
+        return 'autonomy/jobs',dict(goal='Перенести '+object_query+' в '+destination,attempts=1,time_budget_s=900,
+            episode_budget_s=900,permissions=['base_motion','arm_motion'],reset_profile=None,
+            object_query=object_query,destination_name=destination)
     if name=='/explore':return 'missions',dict(kind='explore',x=None,y=None,yaw=0.)
     if name=='/camera':return 'camera',None
     if name=='/mobile':return 'mobile',None
@@ -199,6 +209,8 @@ class TelegramBridge:
         if path=='skills':
             self.reply(item['chat_id'],'Функции: карта и frontier exploration; поездки к сохранённым местам; поиск предметов GroundingDINO/YOLO; память «где видел»; ручное управление шасси и 6 суставами; запись полного показа подъехать→взять→перевезти→положить; офлайн LeRobot ACT после 10+ успешных показов; эксперименты /experiments. Автономный навык включается только после проверки модели.')
             return
+        if path=='autonomy/jobs':
+            payload['request_id']='tg-'+str(item['chat_id'])+'-'+str(int(item['at']))
         result=self.api('status' if path=='objects' else path,payload)
         if path=='status':
             try:graduation=self.api('autonomy/graduation',None)
@@ -216,6 +228,11 @@ class TelegramBridge:
             graduation=self.api('autonomy/graduation',None)
             text='Обучение доступно в телефонной панели (/mobile). Успешных показов руки: '+str(result['teaching'].get('successful',0))+'; полных мобильных: '+str(result['mobile'].get('successful',0))+'\n'+'\n'.join(x['name']+': '+('открыто' if x['state']=='accepted' else x['next_action']) for x in graduation['items'])
         elif path=='agent':text=result.get('answer','Нет ответа')
+        elif path=='autonomy':
+            active=result.get('active',[]);latest=active[0] if active else (result.get('jobs') or [None])[0]
+            text='Автономность: '+(('нет задач') if not latest else latest['state']+' · '+latest['spec'].get('goal',''))
+            if result.get('help'):text+='\nНужно: '+result['help'][0]['request']['question']
+        elif path=='autonomy/jobs':text='Автономная задача сохранена: '+result['id']+' · '+result['state']
         elif path=='control':text='Команда STOP передана. При физической неисправности связи нужна кнопка питания.'
         elif path in ('places/go','agents/survey','missions'):
             text='Задание принято: '+str(result.get('id'))+'. Завершение ещё не подтверждено.'
@@ -243,7 +260,7 @@ class TelegramBridge:
         if self.telegram('getWebhookInfo',{}).get('url'):raise ValueError('Existing webhook; no changes made')
         names={'/status':'Состояние','/camera':'Камера','/control':'Управление','/map':'Карта и лидары','/experiments':'Эксперименты','/memory':'Память',
                '/skills':'Функции и обучение','/explore':'Исследовать комнату','/mobile':'Телефонная панель',
-               '/learn':'Обучение','/lights':'Передняя подсветка','/results':'Результаты','/stop':'Остановить'}
+               '/learn':'Обучение','/autonomy':'Автономные задачи','/lights':'Передняя подсветка','/results':'Результаты','/stop':'Остановить'}
         self.telegram('setMyCommands',{'commands':[{'command':k[1:],'description':v} for k,v in names.items()]})
         labels={v:k for k,v in names.items()}
         labels['Телефон']='/mobile'

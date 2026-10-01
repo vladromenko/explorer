@@ -24,6 +24,13 @@ class TelegramTests(unittest.TestCase):
         self.assertEqual(command('/lights'),('appearance',None))
         with self.assertRaises(ValueError):command('/lights laser')
 
+    def test_delivery_command_has_explicit_object_and_destination(self):
+        path,payload=command('/do носок -> корзина для белья')
+        self.assertEqual(path,'autonomy/jobs')
+        self.assertEqual(payload['object_query'],'носок')
+        self.assertEqual(payload['destination_name'],'корзина для белья')
+        with self.assertRaises(ValueError):command('/do просто задача')
+
     def test_status_contains_power_compute_sensors_and_autonomy(self):
         state={'mode':'MANUAL','stop_latched':True,'reason':'STOP','battery':11.8,
                'battery_gauge':{'available':True,'percent':55},'sensor_age':{'odom':.1,'scan0':.2,'scan1':2},

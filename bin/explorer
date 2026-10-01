@@ -13,7 +13,8 @@ case "${1:-status}" in
    /home/vlad/Explorer/bin/remote-access url 2>/dev/null || true
    ;;
  delivery) exec python3 /home/vlad/Explorer/bin/delivery-command.py "${2:-status}";;
+ autonomy) shift; exec python3 /home/vlad/Explorer/bin/autonomy-command.py "${@:-status}";;
  readiness) exec python3 /home/vlad/Explorer/bin/readiness.py;;
  estop) source /home/vlad/Explorer/bin/env.sh; ros2 topic pub --once /explorer/request std_msgs/msg/String '{data: "{\"op\":\"stop\"}"}' ;;
- *) echo 'Usage: explorer {arm ...|start|stop|status|readiness|logs [component]|url|mobile-url|estop|delivery [start|status|cancel]}' >&2; exit 2;;
+ *) echo 'Usage: explorer {arm ...|start|stop|status|readiness|logs [component]|url|mobile-url|estop|delivery [start|status|cancel]|autonomy [status|grant|start|cancel]}' >&2; exit 2;;
 esac

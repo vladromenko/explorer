@@ -4,7 +4,7 @@ from manual_teleop import ManualTeleop,keyboard_inputs
 
 class ManualTeleopTests(unittest.TestCase):
  def panel(self):
-  t=ManualTeleop.__new__(ManualTeleop);t.drive=Mock();t.release=Mock();t.stop_all=Mock();t.teaching=Mock();t.lock=threading.RLock();t.owner=None;t.lease=0;t.inputs={};t.precision=False;t.stop_latched=True;t.neutral_seen=False;t.drive_active=False;t.arm_busy=False;t.error=None;t.arm=None;t.model=None;t.last_arm=0;t.closed=True;t.resume_callback=Mock();return t
+  t=ManualTeleop.__new__(ManualTeleop);t.drive=Mock();t.release=Mock();t.stop_all=Mock();t.teaching=Mock();t.lock=threading.RLock();t.owner=None;t.lease=0;t.inputs={};t.precision=False;t.stop_latched=True;t.neutral_seen=False;t.drive_active=False;t.arm_busy=False;t.error=None;t.arm=None;t.model=None;t.last_arm=0;t.closed=True;t.resume_callback=Mock();t.takeover_callback=Mock();t.takeover_active=False;return t
  def test_keyboard_multikey_and_keyup_keeps_remaining_action(self):
   t=self.panel();t.update('keyboard',{},True);t.resume('keyboard',True);v=keyboard_inputs(['w','a','e','arrowup','b']);t.update('keyboard',v,True);t.tick()
   t.drive.assert_called_with([.1/2**.5,.09/2**.5,-.25])
@@ -16,6 +16,10 @@ class ManualTeleopTests(unittest.TestCase):
   t=self.panel();t.update('keyboard',keyboard_inputs(['w']),True);t.stop();t.tick();t.drive.assert_not_called()
   with self.assertRaisesRegex(ValueError,'отпустите'):t.resume('keyboard',True)
   t.update('keyboard',{},True);t.resume('keyboard',True);self.assertFalse(t.stop_latched)
+ def test_first_motion_announces_manual_takeover_once(self):
+  t=self.panel();t.update('keyboard',keyboard_inputs(['w']),True);t.update('keyboard',keyboard_inputs(['w']),True)
+  t.takeover_callback.assert_called_once();t.update('keyboard',{},True);t.update('keyboard',keyboard_inputs(['a']),True)
+  self.assertEqual(t.takeover_callback.call_count,2)
  def test_focus_loss_releases_without_global_stop(self):
   t=self.panel();t.owner='keyboard';t.drive_active=True;t.disconnect('keyboard');t.release.assert_called_once();t.stop_all.assert_not_called()
  def test_owner_transfer_releases_old_stream(self):
