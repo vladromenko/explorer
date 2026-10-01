@@ -28,21 +28,17 @@ class OperatorLearningTests(unittest.TestCase):
         with patch.object(threading.Thread,'start'):
             return GamepadPanel(ROOT,None,lambda:None)
 
-    def test_dpad_requires_r1_new_press_and_live_lease(self):
-        panel=self.panel();panel.mode='ARM';panel.lease=11
-        self.assertIsNone(panel.decide(17,-1,3,10))
-        panel.decide(17,0,3,10);panel.decide(311,1,1,10)
-        self.assertEqual(panel.decide(17,-1,3,10),(1,5))
-        self.assertIsNone(panel.decide(17,-1,3,10))
-        panel.decide(17,0,3,12)
-        self.assertIsNone(panel.decide(17,-1,3,12))
+    def test_dpad_is_continuous_cartesian_and_needs_no_modifier(self):
+        panel=self.panel();panel.axes={str(a['code']):a['center'] for a in panel.config['axes'].values()}
+        panel.decide(17,-1,3,10);self.assertEqual(panel._inputs()['arm_x_forward'],1)
+        panel.decide(16,1,3,10);self.assertEqual(panel._inputs()['wrist_right'],1)
+        self.assertNotIn(panel.config['buttons']['r1'],panel.keys)
 
-    def test_gamepad_proposals_have_no_actuator_path(self):
-        panel=self.panel();panel.perform(2,-2)
-        self.assertFalse(panel.proposal['executed'])
-        self.assertTrue(panel.status()['continuous_motion_enabled'])
-        self.assertTrue(panel.status()['operator_chassis_accepted'])
-        self.assertFalse(panel.status()['radio_link_verified'])
+    def test_select_and_stick_click_do_not_create_motion(self):
+        panel=self.panel();panel.axes={str(a['code']):a['center'] for a in panel.config['axes'].values()}
+        before=panel._inputs();b=panel.config['buttons']
+        for name in ('select','left_stick','right_stick'):panel.decide(b[name],1,1,10)
+        self.assertEqual(before,panel._inputs())
 
     def test_low_or_stale_power_rejects_learning(self):
         with tempfile.TemporaryDirectory() as directory:

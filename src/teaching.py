@@ -1,5 +1,6 @@
 """Supervised demonstrations for LeRobot. No policy-driven actuator access."""
 import json
+import math
 import os
 from pathlib import Path
 import subprocess
@@ -123,6 +124,30 @@ class TeachingController:
             pose=self.pose();proposal=propose(model,pose,axis,direction)
             result=self.move(pose,proposal['goal_deg'],deadline=deadline,expected_stop_revision=revision)
             return dict(proposal,executed=True,command=result,attainment_verified=result.get('attained') is True)
+        finally:self.lock.release()
+
+    def teleop(self,model,xyz,joints,observing,deadline=None,precision=False):
+        """One combined velocity-like XYZ/wrist/gripper segment."""
+        if observing is not True:raise ValueError('Подтвердите присутствие рядом с роботом')
+        if len(xyz)!=3 or len(joints)!=3:raise ValueError('Неверный вектор teleop')
+        if not self.lock.acquire(blocking=False):raise ValueError('Предыдущий сегмент руки ещё выполняется')
+        try:
+            if self.move is None:raise ValueError('Контроллер руки не готов')
+            pose=self.pose(coordinated=True);goal=list(pose)
+            magnitude=max(abs(float(v)) for v in xyz)
+            if magnitude>.08:
+                from cartesian_jog import propose_delta
+                scale=(.003 if precision else .005)/max(1.,math.sqrt(sum(float(v)**2 for v in xyz)))
+                goal=propose_delta(model,pose,[float(v)*scale for v in xyz])['goal_deg']
+            step=1 if precision else 2
+            for index,value in zip((3,4,5),joints):
+                if abs(float(value))>.08:
+                    requested=goal[index]+step*(1 if value>0 else -1)
+                    goal[index]=max(pose[index]-10,min(pose[index]+10,requested))
+            if goal==pose:raise ValueError('Нет исполнимого движения руки')
+            revision=self.stop_revision()
+            return self.move(pose,goal,deadline=deadline,expected_stop_revision=revision,
+                             source='coordinated_operator',speed='precision' if precision else 'normal')
         finally:self.lock.release()
 
     def step(self,joint,delta,deadline=None):

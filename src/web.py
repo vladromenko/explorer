@@ -159,8 +159,10 @@ def stop_all():
     trajectory=globals().get('trajectory_execution')
     if trajectory:trajectory.stop()
     return emit('stop')
+def resume_manual():
+    emit('clear_stop');emit('mode',mode='MANUAL')
 gamepad_panel=GamepadPanel(ROOT,teaching,stop_all,lambda values:emit('drive',velocity=values,source='manual'),
-                          lambda:emit('manual_release',initiator='gamepad_panel'))
+                          lambda:emit('manual_release',initiator='manual_teleop'),resume=resume_manual)
 
 @app.get('/api/teaching')
 def teaching_status():
@@ -190,6 +192,15 @@ class GamepadMode(BaseModel):
     mode:str
     drive_profile:str|None=None
     arm_speed:str|None=None
+
+class TeleopInput(BaseModel):
+    source:str
+    keys:list[str]=Field(default_factory=list,max_length=20)
+    observing:bool=False
+
+class TeleopAction(BaseModel):
+    source:str
+    observing:bool=False
 
 class MobileStage(BaseModel):
     stage:str
@@ -273,6 +284,24 @@ def panel_lease(c:PanelLease):return gamepad_panel.heartbeat(c.enabled and c.obs
 
 @app.post('/api/gamepad/mode')
 def gamepad_mode(c:GamepadMode):return map_operation(gamepad_panel.select,c.mode,c.drive_profile,c.arm_speed)
+
+@app.get('/api/teleop')
+def teleop_status():return gamepad_panel.teleop.status()
+
+@app.post('/api/teleop/input')
+def teleop_input(c:TeleopInput):
+    if c.source!='keyboard':raise HTTPException(400,'Browser endpoint accepts keyboard only')
+    from manual_teleop import keyboard_inputs
+    return map_operation(gamepad_panel.teleop.update,'keyboard',keyboard_inputs(c.keys),c.observing,'shift' in {x.lower() for x in c.keys})
+
+@app.post('/api/teleop/stop')
+def teleop_stop():return gamepad_panel.teleop.stop()
+
+@app.post('/api/teleop/resume')
+def teleop_resume(c:TeleopAction):return map_operation(gamepad_panel.teleop.resume,c.source,c.observing)
+
+@app.post('/api/teleop/disconnect')
+def teleop_disconnect(c:TeleopAction):return gamepad_panel.teleop.disconnect(c.source)
 
 class VoiceRequest(BaseModel):
     operation:str

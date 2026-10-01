@@ -1,175 +1,96 @@
-"""Linux input, bounded arm steps and gated holonomic drive requests.
-
-The USB receiver is NOT a radio-link detector. Every arm decision requires a
-new D-pad press, R1 held, and a live visible panel lease. L1 independently
-permits chassis motion, so both modifiers can be held for mobile manipulation.
-"""
+"""Evdev adapter for the shared manual teleoperation backend."""
 import json
-from holonomic_drive import velocity,blocked_by,axis_value
 import threading
 import time
 import yaml
 from contextlib import closing
+from holonomic_drive import blocked_by,axis_value
+from manual_teleop import ManualTeleop
+
 
 class GamepadPanel:
-    def __init__(self,root,teaching,stop,drive=None,release=None):
-        self.config=yaml.safe_load((root/'config/gamepad.yaml').read_text())
-        self.teaching=teaching;self.stop=stop;self.root=root;self.drive=drive
-        self.arm_jog=None;self.arm_cartesian=None;self.arm_cancel=lambda:None
-        self.release=release or stop
-        self.drive_active=False;self.drive_reasons=[];self.drive_vector=[0.,0.,0.]
-        self.lock=threading.Lock();self.connected=False;self.keys=set();self.axes={}
-        self.mode='DISARMED';self.joint=1;self.lease=0.;self.neutral=False;self.dpad_y=0
-        self.last_event=0.;self.error=None;self.sequence=0;self.combo_at=None;self.proposal=None
+    def __init__(self,root,teaching,stop,drive=None,release=None,teleop=None,resume=None):
+        self.root=root;self.config=yaml.safe_load((root/'config/gamepad.yaml').read_text())
+        self.teaching=teaching;self.stop=stop;self.release=release or stop
+        self.teleop=teleop or ManualTeleop(drive,self.release,stop,teaching,resume)
+        self.lock=threading.RLock();self.connected=False;self.keys=set();self.axes={}
+        self.mode='DISARMED';self.lease=0.;self.last_event=0.;self.error=None;self.sequence=0
+        self.precision=False;self.proposal=None;self.drive_active=False;self.drive_vector=[0.,0.,0.]
         threading.Thread(target=self.run,daemon=True).start()
 
-    def bind_arm(self,arm,model):
-        """Bind cancellation for both factory and native arm executors."""
-        arm_button=self.config.get('arm_modifier_button','r1')
-        arm_code=self.config['buttons'].get(arm_button,self.config['buttons'].get('r1',self.config['buttons']['l1']))
-        arm.gamepad_permit=lambda:self.mode in ('ARM','ARM_CARTESIAN','COORDINATED') and time.monotonic()<self.lease and arm_code in self.keys
-        def jog(joint,delta,deadline):
-            if not arm.gamepad_permit():raise ValueError('Выберите режим руки или единый режим, удерживайте R1 и держите панель открытой')
-            return self.teaching.jog(joint,delta,True,deadline,self.mode=='COORDINATED',self.config.get('arm_speed','normal'))
-        self.arm_jog=jog
-        self.arm_cartesian=lambda axis,direction,deadline:self.teaching.cartesian(model(),axis,direction,True,deadline)
-        self.arm_cancel=arm.stop
-        if getattr(arm,'profile',{}).get('manual_reference_version')==1:self.config['arm_step_deg']=3
+    def bind_arm(self,arm,model):self.teleop.bind_arm(arm,model)
 
     def drive_readiness(self):
-        try:
-            state=json.loads((self.root/'data/status.json').read_text())
-            return blocked_by(state,self.config,time.time())
-        except (OSError,ValueError,TypeError,AttributeError):
-            return ['Нет достоверного состояния робота']
+        try:return blocked_by(json.loads((self.root/'data/status.json').read_text()),self.config,time.time())
+        except (OSError,ValueError,TypeError,AttributeError):return ['Нет достоверного состояния робота']
 
     def status(self):
         with self.lock:
-            b=self.config['buttons']
-            return dict(connected=self.connected,mode=self.mode,joint=self.joint,
-                buttons=[k for k,v in b.items() if v in self.keys],axes=self.axes.copy(),
-                last_event_age_s=time.monotonic()-self.last_event if self.last_event else None,
-                sequence=self.sequence,error=self.error,proposal=self.proposal,radio_link_verified=self.config.get('radio_loss_verified') is True,
-                bounded_steps_enabled=self.config.get('bounded_arm_steps_verified',False),
-                drive_blocked_by=self.drive_readiness(),drive_velocity=self.drive_vector,
-                operator_chassis_accepted=self.config.get('operator_chassis_accepted') is True,
-                continuous_motion_enabled=bool(self.config.get('continuous_motion_enabled') and
-                    (self.config.get('radio_loss_verified') or self.config.get('operator_chassis_accepted'))),
-                drive_profile=self.config.get('drive_profile','normal'),arm_speed=self.config.get('arm_speed','normal'),
-                precision_step_deg=self.config['arm_step_deg'],chassis_modifier='L1',arm_modifier='R1',
-                control_scheme='L1 chassis; R1 D-pad arm; L1+R1 simultaneous')
+            buttons=self.config['buttons']
+            return dict(connected=self.connected,mode=self.mode,buttons=[k for k,v in buttons.items() if v in self.keys],
+                axes=self.axes.copy(),last_event_age_s=time.monotonic()-self.last_event if self.last_event else None,
+                sequence=self.sequence,error=self.error,proposal=self.proposal,drive_blocked_by=self.drive_readiness(),
+                drive_velocity=self.teleop._drive_vector(self._inputs(),self.precision),precision=self.precision,
+                drive_profile='precision' if self.precision else 'normal',arm_speed='precision' if self.precision else 'normal',
+                control_scheme='left stick chassis; L1/R1 rotate; right stick+D-pad XYZ; Y/A pitch; D-pad left/right wrist; L2/R2 gripper',
+                shared_backend=self.teleop.status())
 
     def heartbeat(self,enabled):
         with self.lock:
-            # Browsers throttle sub-second timers in background tabs.  A one-second
-            # visible-panel lease remains short, while surviving Wi-Fi/UI jitter.
             self.lease=time.monotonic()+1.0 if enabled is True else 0.
-            if not enabled:
-                if self.mode in ('ARM','ARM_CARTESIAN','COORDINATED'):self.arm_cancel()
-                if self.drive_active:self.release();self.drive_active=False
-                self.mode='DISARMED';self.neutral=False;self.dpad_y=0
+            if not enabled:self.mode='DISARMED';self.teleop.disconnect('gamepad')
         return self.status()
 
     def select(self,mode,drive_profile=None,arm_speed=None):
-        """Select an operator mode explicitly from the visible web panel."""
-        if mode not in ('DRIVE','ARM','ARM_CARTESIAN','COORDINATED','DISARMED'):
-            raise ValueError('Неизвестный режим джойстика')
-        if drive_profile is not None and drive_profile not in ('precision','normal','fast'):
-            raise ValueError('Неизвестная скорость шасси')
-        if arm_speed is not None and arm_speed not in ('precision','normal','fast'):
-            raise ValueError('Неизвестная скорость руки')
+        if mode not in ('DRIVE','ARM','ARM_CARTESIAN','COORDINATED','TELEOP','DISARMED'):raise ValueError('Неизвестный режим джойстика')
         with self.lock:
-            if mode != 'DISARMED' and not self.connected:
-                raise ValueError('Геймпад не подключён')
-            if mode != 'DISARMED' and time.monotonic() >= self.lease:
-                raise ValueError('Сначала включите панель джойстика')
-            if self.mode in ('ARM','ARM_CARTESIAN','COORDINATED') and self.mode != mode:
-                self.arm_cancel()
-            if self.mode in ('DRIVE','COORDINATED') and mode not in ('DRIVE','COORDINATED'):
-                self.release(); self.drive_active=False
-            if mode in ('DRIVE','COORDINATED') and any(abs(v) > 1e-6 for v in velocity(self.axes,self.config)):
-                raise ValueError('Отпустите стики в центр и повторите')
-            self.mode=mode
-            if drive_profile is not None:self.config['drive_profile']=drive_profile
-            if arm_speed is not None:self.config['arm_speed']=arm_speed
-            self.neutral=False
+            if mode!='DISARMED' and not self.connected:raise ValueError('Геймпад не подключён')
+            if mode!='DISARMED' and time.monotonic()>=self.lease:raise ValueError('Сначала включите панель джойстика')
+            if mode=='DISARMED':self.mode=mode;self.teleop.disconnect('gamepad');return self.status()
+            if self._moving():raise ValueError('Отпустите стики и кнопки движения, затем повторите')
+            self.mode='TELEOP';self.precision=drive_profile=='precision' or arm_speed=='precision'
+            self.teleop.update('gamepad',{},True,self.precision)
         return self.status()
 
+    def _axis(self,name):
+        item=self.config['axes'][name];value=self.axes.get(str(item['code']),item['center'])
+        return axis_value(value,item,self.config['deadzone'])
+
+    def _inputs(self):
+        b=self.config['buttons'];dpx=float(self.axes.get('16',0));dpy=float(self.axes.get('17',0))
+        ly=self._axis('left_y');lx=self._axis('left_x');rx=self._axis('right_x');ry=self._axis('right_y')
+        return dict(forward=max(0.,ly),backward=max(0.,-ly),left=max(0.,lx),right=max(0.,-lx),
+            turn_left=float(b['l1'] in self.keys),turn_right=float(b['r1'] in self.keys),
+            arm_x_forward=max(0.,-dpy),arm_x_back=max(0.,dpy),arm_y_left=max(0.,rx),arm_y_right=max(0.,-rx),
+            arm_z_up=max(0.,ry),arm_z_down=max(0.,-ry),wrist_left=max(0.,-dpx),wrist_right=max(0.,dpx),
+            pitch_up=float(b['y'] in self.keys),pitch_down=float(b['a'] in self.keys),
+            grip_open=float(b['l2'] in self.keys),grip_close=float(b['r2'] in self.keys))
+
+    def _moving(self):return self.teleop._moving(self._inputs())
+
     def decide(self,code,value,kind,now):
-        b=self.config['buttons'];decision=None
-        arm_button=b.get(self.config.get('arm_modifier_button','r1'),b.get('r1',b['l1']))
+        b=self.config['buttons']
         if kind==1:
             if value==1:self.keys.add(code)
             elif value==0:self.keys.discard(code)
-            if value==0 and code==b['l1'] and self.mode in ('DRIVE','COORDINATED'):self.release()
-            if value==0 and code==arm_button and self.mode in ('ARM','ARM_CARTESIAN','COORDINATED'):self.arm_cancel()
-            if value==1 and code==b['a'] and b['l1'] not in self.keys and arm_button not in self.keys:
-                if self.mode in ('ARM','ARM_CARTESIAN','COORDINATED'):self.arm_cancel()
-                if self.mode in ('DRIVE','COORDINATED'):self.release();self.drive_active=False
-                self.mode='ARM' if self.mode!='ARM' and now<self.lease else 'DISARMED'
-                self.neutral=False
-            if value==1 and code==b['x'] and b['l1'] not in self.keys and arm_button not in self.keys:
-                if self.mode in ('ARM','ARM_CARTESIAN','COORDINATED'):self.arm_cancel()
-                centered=not any(abs(v)>1e-6 for v in velocity(self.axes,self.config))
-                self.mode='DRIVE' if centered and now<self.lease else 'DISARMED'
-                self.neutral=False
-            if value==1 and code==b.get('y') and b['l1'] not in self.keys and arm_button not in self.keys:
-                if self.mode in ('ARM','ARM_CARTESIAN','COORDINATED'):self.arm_cancel()
-                if self.mode in ('DRIVE','COORDINATED'):self.release();self.drive_active=False
-                self.mode='ARM_CARTESIAN' if now<self.lease else 'DISARMED'
-                self.joint=min(3,self.joint);self.neutral=False
+            if value==1 and code==b['x']:self.precision=not self.precision
             if value==1 and code==b['b']:
-                self.mode='DISARMED';self.lease=0;self.stop()
-            if (value==1 and self.mode in ('ARM','COORDINATED') and now<self.lease and arm_button in self.keys and
-                    code in (b.get('l2'),b.get('r2'))):
-                decision=(6,-self.config['gripper_step_deg'] if code==b.get('l2') else self.config['gripper_step_deg'])
-        elif kind==3:
-            self.axes[str(code)]=value
-            if code==16 and value and arm_button in self.keys and self.mode in ('ARM','ARM_CARTESIAN','COORDINATED'):
-                self.joint=min(3 if self.mode=='ARM_CARTESIAN' else 6,max(1,self.joint+value))
-                self.neutral=False
-            if code==17:
-                fresh=getattr(self,'dpad_y',0)==0;self.dpad_y=value
-            if code==17 and value and fresh and arm_button in self.keys and self.mode in ('ARM','COORDINATED') and now<self.lease:
-                decision=(self.joint,self.config['arm_step_deg']*(1 if value<0 else -1))
-            if code==self.config['axes']['right_y']['code'] and self.mode=='ARM_CARTESIAN':
-                axis=self.config['axes']['right_y'];offset=axis_value(value,axis,0.)
-                if abs(offset)<self.config['deadzone']:self.neutral=True
-                elif abs(offset)>.65:
-                    fresh=self.neutral;self.neutral=False
-                    if fresh and now<self.lease and arm_button in self.keys:
-                        direction=1 if offset>0 else -1
-                        decision=(('x','y','z')[self.joint-1],direction)
-        return decision
+                self.mode='DISARMED';self.teleop.stop()
+            if value==1 and code==b['start']:
+                self.teleop.update('gamepad',self._inputs(),True,self.precision)
+                self.teleop.resume('gamepad',True);self.mode='TELEOP'
+        elif kind==3:self.axes[str(code)]=value
+        return None
 
-    def perform(self,joint,delta,deadline=None):
-        self.proposal=dict(joint=joint,delta=delta,at=time.time(),executed=False,
-                           blocked_by='Radio loss and servo cancellation are not verified')
-        if self.config.get('bounded_arm_steps_verified',False) and deadline is not None:
-            try:
-                self.error=None
-                if isinstance(joint,str):
-                    if self.arm_cartesian is None:raise ValueError('Cartesian control unavailable')
-                    self.arm_cartesian(joint,delta,deadline)
-                elif self.arm_jog is not None:self.arm_jog(joint,delta,deadline)
-                else:self.teaching.jog(joint,delta,True,deadline,self.mode=='COORDINATED',self.config.get('arm_speed','normal'))
-                self.proposal.update(executed=True,blocked_by=None,attainment_measured=False)
-            except (OSError,ValueError) as exc:
-                self.error=str(exc);self.proposal.update(blocked_by=self.error)
+    def feed(self,now):
+        with self.lock:
+            fresh=self.last_event and now-self.last_event<=float(self.config.get('watchdog_timeout',.25))
+            if self.mode=='TELEOP' and now<self.lease:
+                self.teleop.update('gamepad',self._inputs() if fresh else {},True,self.precision)
+            elif self.mode!='DISARMED':self.mode='DISARMED';self.teleop.disconnect('gamepad')
 
-    def drive_tick(self,now):
-        """All requests still pass the independent core sensor/obstacle gate."""
-        held=self.config['buttons']['l1'] in self.keys
-        if self.mode in ('DRIVE','COORDINATED') and now<self.lease and held:
-            self.drive_reasons=self.drive_readiness()
-            self.drive_vector=velocity(self.axes,self.config,self.config.get('drive_profile','normal'))
-            if not self.drive_reasons and self.drive is not None:
-                self.drive(self.drive_vector);self.drive_active=True
-            elif self.drive_active:
-                self.release();self.drive_active=False
-        else:
-            self.drive_vector=[0.,0.,0.]
-            if self.drive_active:self.release();self.drive_active=False
+    def drive_tick(self,now):self.feed(now)
+    def perform(self,*_args,**_kwargs):raise ValueError('Discrete gamepad arm mode replaced by shared Cartesian teleop')
 
     def run(self):
         import select
@@ -180,39 +101,15 @@ class GamepadPanel:
                     if device.info.vendor!=self.config['device']['vendor_id'] or device.info.product!=self.config['device']['product_id']:
                         raise ValueError('Подключён другой геймпад')
                     with self.lock:
-                        self.connected=True;self.mode='DISARMED';self.keys.clear();self.neutral=False;self.dpad_y=0;self.error=None
+                        self.connected=True;self.mode='DISARMED';self.keys.clear();self.error=None
                         self.axes={str(a['code']):device.absinfo(a['code']).value for a in self.config['axes'].values()}
-                    pending=None
                     while True:
-                        ready,_,_=select.select([device.fd],[],[],.05)
-                        now=time.monotonic()
+                        ready,_,_=select.select([device.fd],[],[],.05);now=time.monotonic()
                         if ready:
                             for event in device.read():
-                                with self.lock:
-                                    self.last_event=now;self.sequence+=1
-                                    decision=self.decide(event.code,event.value,event.type,now)
-                                    if decision:pending=decision
-                                    packet_done=event.type==0 and event.code==0
-                                    buttons=self.config['buttons']
-                                    arm_button=buttons.get(self.config.get('arm_modifier_button','r1'),buttons.get('r1',buttons['l1']))
-                                    permit=self.mode in ('ARM','ARM_CARTESIAN','COORDINATED') and now<self.lease and arm_button in self.keys
-                                if packet_done:
-                                    if pending and permit and not self.teaching.lock.locked():
-                                        threading.Thread(target=self.perform,args=(*pending,now+.5),daemon=True).start()
-                                    pending=None
-                        with self.lock:
-                            combo=all(self.config['buttons'][k] in self.keys for k in self.config['estop_buttons'])
-                            self.combo_at=(self.combo_at or now) if combo else None
-                            if self.combo_at and now-self.combo_at>=self.config['estop_hold_s']:
-                                self.stop();self.mode='DISARMED';self.lease=0;self.combo_at=now
-                            if now>=self.lease:
-                                if self.mode in ('ARM','ARM_CARTESIAN','COORDINATED'):self.arm_cancel()
-                                if self.drive_active:self.release();self.drive_active=False
-                                self.mode='DISARMED';self.neutral=False
-                            self.drive_tick(now)
+                                with self.lock:self.last_event=now;self.sequence+=1;self.decide(event.code,event.value,event.type,now)
+                        self.feed(now)
             except (OSError,ValueError,KeyError) as exc:
                 with self.lock:
-                    if self.mode in ('ARM','ARM_CARTESIAN','COORDINATED'):self.arm_cancel()
-                    if self.drive_active:self.release();self.drive_active=False
-                    self.connected=False;self.mode='DISARMED';self.keys.clear();self.neutral=False;self.dpad_y=0;self.error=str(exc)
+                    self.teleop.disconnect('gamepad');self.connected=False;self.mode='DISARMED';self.keys.clear();self.error=str(exc)
                 time.sleep(2)
