@@ -57,6 +57,9 @@ class LearningTests(unittest.TestCase):
             scorer=CandidateScorer(folder);samples=[self.row(i,i%2==0) for i in range(40)]
             checkpoint=scorer.train(samples,epochs=30)
             self.assertNotEqual(checkpoint['id'],'geometry-baseline')
+            for index in range(6):
+                scorer.record_evaluation(checkpoint['id'],'baseline','failure' if index<3 else 'success','b'+str(index))
+                scorer.record_evaluation(checkpoint['id'],'candidate','success','c'+str(index))
             promoted=scorer.promote(checkpoint,minimum_margin=-1)
             self.assertTrue(promoted['accepted']);self.assertEqual(scorer.version,checkpoint['id'])
 

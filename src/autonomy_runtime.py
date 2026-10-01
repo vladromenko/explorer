@@ -219,7 +219,13 @@ class AutonomySupervisor:
             rows=[json.loads(line) for line in path.read_text().splitlines() if line.strip()]
             if len(rows)>=20 and len(rows)%10==0:
                 try:
-                    candidate=self.scorer.train(rows);self.scorer.promote(candidate)
+                    candidate=self.scorer.train(rows)
+                    version=PolicyVersion(candidate['id'],'contextual_logistic_scorer',candidate['feature_version'],
+                        'candidate',str(self.scorer.root/(candidate['id']+'.json')),
+                        tuple(candidate['train_episodes']),tuple(candidate['validation_episodes']),
+                        dict(candidate['metrics'],skill='grasp'))
+                    try:self.policies.add(version)
+                    except ValueError:pass
                 except (OSError,ValueError,KeyError,TypeError):pass
 
     def cancelled(self, identifier):

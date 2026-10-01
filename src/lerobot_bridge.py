@@ -48,7 +48,7 @@ class LearningJobs:
         if type(steps) is not int or steps not in (1000,5000,20000):raise ValueError('Неизвестная длительность обучения')
         from teaching import Demonstrations
         demos=[e for e in Demonstrations(self.root/'data/demonstrations').eligible() if e['name']==task]
-        if len(demos)<10:raise ValueError('Сначала запишите минимум 10 успешных показов; лучше 30–50 в разных положениях')
+        if not demos:raise ValueError('Нужен хотя бы один успешный показ для ACT; самостоятельные попытки обучают scorer без ACT')
         backend=self.status()['backend']
         if not backend.get('ready'):raise ValueError('Среда LeRobot ещё не прошла проверку')
         training_budget(self.root)
@@ -76,7 +76,7 @@ class LearningJobs:
             episode=json.loads(path.read_text())
             if (episode.get('name')==task and episode.get('state')=='complete' and episode.get('outcome')=='success' and
                     episode.get('label_source')=='operator' and set(episode.get('stages',[]))==set(STAGES) and episode.get('samples',0)>=20):episodes.append(episode)
-        if len(episodes)<10:raise ValueError('Сначала запишите минимум 10 успешных полных показов; рекомендуется 30–100')
+        if not episodes:raise ValueError('Нужен хотя бы один успешный полный показ для ACT; фиксированного минимума нет')
         if not self.status()['backend'].get('ready'):raise ValueError('Среда LeRobot ещё не прошла проверку')
         training_budget(self.root)
         if not self.lock.acquire(blocking=False):raise ValueError('Обучение уже выполняется')

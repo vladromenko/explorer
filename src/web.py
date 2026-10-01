@@ -953,6 +953,62 @@ def autonomy_reset(spec,episode_id):
 from autonomy_runtime import AutonomySupervisor
 autonomy_supervisor=AutonomySupervisor(ROOT,autonomy_world_snapshot,autonomy_readiness,autonomy_action,autonomy_reset)
 
+from learning_workflows import LearningWorkflows
+def workflow_train(workflow):
+    try:
+        task=workflow['skill']+' '+workflow['target']
+        result=(learning_jobs.start_mobile if workflow['skill']=='mobile_pick_place' else learning_jobs.start)(1000,task)
+        return dict(queued=True,job=result['id'])
+    except (OSError,ValueError,KeyError,subprocess.SubprocessError) as exc:
+        return dict(queued=False,reason=str(exc))
+
+learning_workflows=LearningWorkflows(ROOT,train_submit=workflow_train)
+def completed_demonstration(record,path):
+    identifier=record.get('workflow_id')
+    if identifier:learning_workflows.attach_demonstration(identifier,path)
+teaching.on_complete=completed_demonstration
+mobile_demonstrations.on_complete=completed_demonstration
+
+class LearningWorkflowStart(BaseModel):
+    mode:str
+    skill:str
+    target:str=Field(min_length=1,max_length=80)
+    human_demonstrations:int=Field(default=0,ge=0,le=500)
+    autonomous_trials:int=Field(default=0,ge=0,le=500)
+
+class LearningDemoStart(BaseModel):
+    observing:bool=False
+    mobile:bool=True
+
+class LearningIntervention(BaseModel):
+    proposed_action:dict
+    executed_action:dict
+    started_at:float
+    ended_at:float
+    metadata:dict=Field(default_factory=dict)
+
+@app.get('/api/learning/workflows')
+def learning_workflow_status():return learning_workflows.status()
+
+@app.post('/api/learning/workflows')
+def learning_workflow_start(c:LearningWorkflowStart):
+    return map_operation(learning_workflows.start,c.mode,c.skill,c.target,c.human_demonstrations,c.autonomous_trials)
+
+@app.post('/api/learning/workflows/{identifier}/demonstration')
+def learning_workflow_demonstration(identifier:str,c:LearningDemoStart):
+    workflow=map_operation(learning_workflows.get,identifier);task=workflow['skill']+' '+workflow['target']
+    if c.mobile:
+        return map_operation(mobile_demonstrations.start,task,c.observing,workflow['target'],'unknown','medium','',identifier)
+    return map_operation(teaching.start,task,c.observing,identifier)
+
+@app.post('/api/learning/workflows/{identifier}/intervention')
+def learning_workflow_intervention(identifier:str,c:LearningIntervention):
+    return map_operation(learning_workflows.intervention,identifier,c.proposed_action,c.executed_action,
+                         c.started_at,c.ended_at,c.metadata)
+
+@app.post('/api/learning/workflows/{identifier}/cancel')
+def learning_workflow_cancel(identifier:str):return map_operation(learning_workflows.cancel,identifier)
+
 @app.get('/api/readiness')
 def readiness_status():return robot_readiness(ROOT,delivery_task.status())
 

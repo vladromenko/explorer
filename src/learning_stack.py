@@ -100,13 +100,40 @@ class CandidateScorer:
 
     def promote(self, checkpoint, minimum_margin=0.):
         metrics=checkpoint['metrics']
-        accepted=metrics['validation_accuracy']>=metrics['geometry_baseline_accuracy']+minimum_margin
+        evaluation=self.evaluation_status(checkpoint['id'])
+        accepted=(metrics['validation_accuracy']>=metrics['geometry_baseline_accuracy']+minimum_margin and
+                  evaluation['ready'] and evaluation['candidate_success_rate']>=evaluation['baseline_success_rate'])
         if accepted:
             previous=json.loads(self.path.read_text()) if self.path.exists() else None
             if previous:atomic_json(self.root/'rollback.json',previous)
             atomic_json(self.path,checkpoint);self.load()
         return dict(accepted=accepted,policy_version=checkpoint['id'],metrics=metrics,
-                    reason='validation_not_worse_than_geometry_baseline' if accepted else 'regression_gate_rejected')
+                    physical_evaluation=evaluation,
+                    reason='offline_and_physical_gates_passed' if accepted else 'offline_or_physical_gate_rejected')
+
+    def record_evaluation(self,checkpoint_id,arm,outcome,episode_id):
+        if arm not in ('baseline','candidate') or outcome not in ('success','failure','unknown'):
+            raise ValueError('Invalid physical evaluation result')
+        path=self.root/'physical-evaluation.jsonl'
+        with path.open('a') as stream:
+            stream.write(json.dumps(dict(at=time.time(),checkpoint_id=checkpoint_id,arm=arm,
+                outcome=outcome,episode_id=episode_id),allow_nan=False)+'\n')
+        return self.evaluation_status(checkpoint_id)
+
+    def evaluation_status(self,checkpoint_id,minimum_per_arm=6):
+        path=self.root/'physical-evaluation.jsonl';rows=[]
+        if path.exists():
+            for line in path.read_text().splitlines():
+                if line.strip():
+                    item=json.loads(line)
+                    if item.get('checkpoint_id')==checkpoint_id and item.get('outcome') in ('success','failure'):
+                        rows.append(item)
+        baseline=[row for row in rows if row['arm']=='baseline'];candidate=[row for row in rows if row['arm']=='candidate']
+        rate=lambda values:sum(row['outcome']=='success' for row in values)/len(values) if values else None
+        return dict(ready=len(baseline)>=minimum_per_arm and len(candidate)>=minimum_per_arm,
+            minimum_per_arm=minimum_per_arm,baseline_trials=len(baseline),candidate_trials=len(candidate),
+            baseline_success_rate=rate(baseline),candidate_success_rate=rate(candidate),
+            assignment='deterministic_alternation',unknown_excluded=True)
 
     def rollback(self):
         path=self.root/'rollback.json'

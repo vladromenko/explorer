@@ -57,6 +57,7 @@ class MobileDemonstrations:
     def __init__(self,root):
         self.root=Path(root);self.folder=self.root/'data/mobile-demonstrations';self.folder.mkdir(exist_ok=True)
         self.lock=threading.RLock();self.active=None;self.last=None;self.lease=0
+        self.on_complete=None
         for path in self.folder.glob('*/episode.json'):
             record=json.loads(path.read_text())
             if record['state']=='recording':
@@ -78,7 +79,7 @@ class MobileDemonstrations:
 
     def save(self):write_json(self.folder/self.active['id']/'episode.json',self.active)
 
-    def start(self,name,observing,object_label='',object_class='unknown',size_class='medium',destination=''):
+    def start(self,name,observing,object_label='',object_class='unknown',size_class='medium',destination='',workflow_id=''):
         if observing is not True:raise ValueError('Показ требует наблюдателя')
         if object_class not in ('soft_cloth','rigid','fragile','slippery','deformable','unknown'):
             raise ValueError('Неизвестный физический класс предмета')
@@ -92,6 +93,7 @@ class MobileDemonstrations:
                 source='operator_mobile_demonstration',joint_state_source='commanded_not_measured',
                 physical_sample_rate_hz=2,automatic_replay_allowed=False,dataset_kind='mobile_manipulation_9dof',
                 object_label=object_label[:80],object_class=object_class,size_class=size_class,destination=destination[:80],
+                workflow_id=workflow_id,
                 transfer_context=dict(grasp_family='learned_from_operator',contact_feedback='visual_only'))
             self.lease=time.monotonic()+2;self.save()
             threading.Thread(target=self.run,args=(ident,),daemon=True).start()
@@ -119,7 +121,8 @@ class MobileDemonstrations:
                 raise ValueError('Для полного успешного показа запишите поездку, захват, перевозку и размещение')
             self.active.update(state='complete' if reason is None else 'interrupted',outcome=outcome,
                                label_source='operator' if reason is None else 'recorder',ended=time.time(),reason=reason)
-            self.save();self.last=self.active;self.active=None
+            self.save();self.last=self.active;completed=self.active;self.active=None
+            if self.on_complete is not None:self.on_complete(completed,self.folder/completed['id']/'episode.json')
             return self.status()
 
     def run(self,ident):

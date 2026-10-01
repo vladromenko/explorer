@@ -45,6 +45,7 @@ class TeachingController:
         self.move=None;self.stop_revision=lambda:0
         self.measured_reference=None
         self.arm_reference=None
+        self.on_complete=None
         # A restart never resumes recording or motion.
         for episode in self.store.episodes():
             if episode.get('state')=='recording':
@@ -85,7 +86,7 @@ class TeachingController:
         return dict(self.store.status(),active=self.active,error=self.error,busy=self.lock.locked(),
                     blocked_by=blocked)
 
-    def start(self,name,observing):
+    def start(self,name,observing,workflow_id=''):
         if observing is not True:raise ValueError('Показ требует присутствия наблюдателя у робота')
         if not self.lock.acquire(blocking=False):raise ValueError('Предыдущий шаг ещё выполняется')
         try:
@@ -93,6 +94,7 @@ class TeachingController:
             pose,image=self.observation()
             episode=dict(id=uuid.uuid4().hex,created=time.time(),name=name[:80],state='recording',
                          outcome='unknown',label_source=None,source='operator_demonstration',
+                         workflow_id=workflow_id,
                          start_deg=pose,steps=[],joint_positions_measured=self.arm_reference is None and self.measured_reference is not None,
                          joint_state_source='command_estimate' if self.arm_reference is not None else 'legacy')
             self.save(episode)
@@ -187,6 +189,7 @@ class TeachingController:
         try:
             if not self.active:raise ValueError('Нет текущего показа')
             self.active.update(state='complete',ended=time.time(),outcome=outcome,label_source='operator')
-            self.save(self.active);self.active=None
+            self.save(self.active);completed=self.active;self.active=None
+            if self.on_complete is not None:self.on_complete(completed,self.store.root/completed['id']/'episode.json')
             return self.status()
         finally:self.lock.release()
