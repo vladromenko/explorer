@@ -1,9 +1,9 @@
 {
-  "base_commissioned": false,
-  "arm_commissioned": false,
-  "lidar_tf_validated": false,
-  "camera_tf_validated": false,
-  "mcu_watchdog_verified": false,
+  "base_commissioned": true,
+  "arm_commissioned": true,
+  "lidar_tf_validated": true,
+  "camera_tf_validated": true,
+  "mcu_watchdog_verified": true,
   "max_velocity": [
     0.15,
     0.15,
@@ -15,6 +15,12 @@
     0.7
   ],
   "battery_stop_voltage": 10.8,
-  "notes": "Velocity and battery thresholds are provisional commissioning limits. Physical calibration is required before autonomous motion.",
-  "localization_verified": false
+  "notes": "Accepted scope is recorded in calibration-acceptance.json. Chassis directions/scale, command-gap stop, navigation lidar geometry, finite robotio arm commands and stationary hand-eye are accepted. Localization/relocalization, measured arm feedback, gripper aperture/contact and autonomous pick-and-deliver remain unaccepted.",
+  "localization_verified": false,
+  "link_recovery_verified": false,
+  "arm_feedback_measured": false,
+  "gripper_calibrated": false,
+  "visual_closed_loop_arm_verified": false,
+  "learned_policy_verified": false,
+  "autonomous_delivery_verified": false
 }

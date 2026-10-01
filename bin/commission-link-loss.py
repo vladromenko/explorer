@@ -26,6 +26,7 @@ parser=argparse.ArgumentParser()
 parser.add_argument('--power-cut-observer',action='store_true',required=True)
 parser.set_defaults(axis='forward')
 parser.add_argument('--extended-reverse',action='store_true')
+parser.add_argument('--settled-speed',action='store_true',help='Wait for a full second of commands before pausing transport')
 parser.set_defaults(timeout_test=False)
 args=parser.parse_args()
 if args.timeout_test and args.axis!='forward':parser.error('Timeout test only permits forward')
@@ -33,6 +34,11 @@ velocity={'forward':[.04,0.,0.],'left':[0.,.04,0.],'ccw':[0.,0.,.15]}[args.axis]
 if args.extended_reverse:velocity=[-.025,0.,0.]
 restore_seconds=2.6 if args.extended_reverse else 1.4
 duration=.6
+freeze_after=.35
+if args.settled_speed:
+ freeze_after=1.0
+ duration=1.3
+ restore_seconds=2.2
 pid=int(subprocess.check_output(['systemctl','--user','show','explorer-mcu.service','-p','MainPID','--value']))
 if pid<=1 or 'micro_ros_agent' not in str(Path(f'/proc/{pid}/exe').resolve()) or Path(f'/proc/{pid}').stat().st_uid!=os.getuid():
  raise RuntimeError('Expected the running user-owned MCU agent')
@@ -42,7 +48,8 @@ rclpy.init();node=Node('explorer_commission_base');pub=node.create_publisher(Str
 samples=[];started=time.monotonic();command_started=None
 def odom(m):
  p=m.pose.pose.position;q=m.pose.pose.orientation;t=m.twist.twist
- samples.append(dict(t=time.monotonic()-started,kind='odom',x=p.x,y=p.y,yaw=math.atan2(2*(q.w*q.z+q.x*q.y),1-2*(q.y*q.y+q.z*q.z)),vx=t.linear.x,vy=t.linear.y,wz=t.angular.z))
+ stamp=m.header.stamp.sec+m.header.stamp.nanosec/1e9
+ samples.append(dict(t=time.monotonic()-started,at=time.time(),source_stamp=stamp,source_age=time.time()-stamp,kind='odom',x=p.x,y=p.y,yaw=math.atan2(2*(q.w*q.z+q.x*q.y),1-2*(q.y*q.y+q.z*q.z)),vx=t.linear.x,vy=t.linear.y,wz=t.angular.z))
 def imu(m):samples.append(dict(t=time.monotonic()-started,kind='imu',wz=m.angular_velocity.z))
 def cmd(m):samples.append(dict(t=time.monotonic()-started,kind='command',vx=m.linear.x,vy=m.linear.y,wz=m.angular.z))
 node.create_subscription(Odometry,'/odom_raw',odom,qos_profile_sensor_data)
@@ -84,28 +91,34 @@ try:
  with os.fdopen(fd,'w') as f:json.dump(dict(token=token,expires=time.monotonic()+2),f)
  command_started=time.monotonic()
  # Independent session restores transport even if the SSH probe process dies.
- rescue_code='import os,signal,sys,time; print("ready",flush=True); time.sleep(max(0,float(sys.argv[2])-time.monotonic())); os.kill(int(sys.argv[1]),signal.SIGCONT)'
+ rescue_code='import os,signal,sys,time\nprint("ready",flush=True)\ntime.sleep(max(0,float(sys.argv[2])-time.monotonic()))\ntry: os.kill(int(sys.argv[1]),signal.SIGCONT)\nexcept ProcessLookupError: pass'
  rescue=subprocess.Popen(['/usr/bin/python3','-c',rescue_code,str(pid),str(command_started+restore_seconds)],start_new_session=True,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,text=True)
  if rescue.stdout.readline().strip()!='ready':raise RuntimeError('Recovery timer unavailable')
  request('commission_pulse',token=token,velocity=velocity,duration=duration,quiet_seconds=quiet_seconds)
  while time.monotonic()-command_started<restore_seconds+.25:
   spin(.025)
   elapsed=time.monotonic()-command_started
-  if frozen_at is None and elapsed>=.35:
-   if elapsed>.5:raise RuntimeError('Probe timing slipped before transport interruption')
+  if frozen_at is None and elapsed>=freeze_after:
+   if elapsed>freeze_after+.15:raise RuntimeError('Probe timing slipped before transport interruption')
    frozen_at=time.monotonic();os.kill(pid,signal.SIGSTOP)
    print(json.dumps(dict(event='transport_paused',at=time.time(),elapsed=elapsed)),flush=True)
   if frozen_at is not None and elapsed>=restore_seconds and resume_at is None:
-   os.kill(pid,signal.SIGCONT);resume_at=time.monotonic()
+   try:os.kill(pid,signal.SIGCONT)
+   except ProcessLookupError:pass
+   resume_at=time.monotonic()
    print(json.dumps(dict(event='transport_restored',at=time.time(),elapsed=elapsed)),flush=True)
   request('commission_lease',token=token)
- request('stop');spin(1.2)
+ request('stop');spin(8.0 if args.settled_speed else 1.2)
  before=[s for s in samples if s['kind']=='odom' and s['t']<command_started-started][-1]
  after=[s for s in samples if s['kind']=='odom'][-1]
+ final_age=time.time()-after['source_stamp']
+ final_fresh=0<=final_age<.5
  commands=[s for s in samples if s['kind']=='command' and s['t']>=command_started-started]
  result=dict(axis=args.axis,requested=velocity,duration=duration,quiet_seconds=quiet_seconds,delta={k:after[k]-before[k] for k in ('x','y','yaw')},
              peak={k:max(abs(s[k]) for s in commands) for k in ('vx','vy','wz')},
-             final_velocity={k:after[k] for k in ('vx','vy','wz')},physical_direction_confirmed=False,transport_pause_s=resume_at-frozen_at,extended_reverse=args.extended_reverse,hardware_stop_verified=False,observer_analysis_required=True)
+             final_velocity={k:after[k] for k in ('vx','vy','wz')} if final_fresh else None,final_telemetry_age_s=final_age,final_telemetry_fresh=final_fresh,physical_direction_confirmed=False,transport_pause_s=resume_at-frozen_at,extended_reverse=args.extended_reverse,hardware_stop_verified=False,observer_analysis_required=True)
+ result['agent_pid_before']=pid
+ result['agent_pid_after']=int(subprocess.check_output(['systemctl','--user','show','explorer-mcu.service','-p','MainPID','--value']))
  print(json.dumps(result))
 finally:
  try:os.kill(pid,signal.SIGCONT)

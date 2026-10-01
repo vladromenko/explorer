@@ -1,0 +1,27 @@
+import json
+from pathlib import Path
+
+ROOT=Path(__file__).parents[1]
+
+def test_phone_panel_is_separate_and_has_finite_arm_and_releasing_drive():
+    page=(ROOT/'src/mobile.html').read_text()
+    assert "arm/jog" in page and "manual_release" in page and "teaching/mobile/start" in page
+    assert "visibilitychange" in page and "lastFrame" in page
+    assert "session=sessionId()" in page
+    assert "typeof window.crypto.randomUUID==='function'" in page
+    assert ").trim()" in page
+
+def test_main_panel_exposes_arm_recovery_and_gamepad_instructions():
+    page=(ROOT/'src/index.html').read_text()
+    assert 'id="prepareArmButton"' in page and "api('arm/prepare'" in page
+    assert 'Исходное положение руки не подтверждено' not in page
+    for text in ('левый стик — ход','L1/R1 — поворот','крестовина ↑/↓ — X','Y/A — наклон кисти','L2/R2 — открыть/закрыть','START возобновляет'):
+        assert text in page
+    assert "heldKeys=new Set()" in page and "api('teleop/input'" in page
+
+def test_training_goals_are_unique_and_bounded():
+    data=json.loads((ROOT/'config/mobile-training-goals.json').read_text())
+    ids=[g['id'] for g in data['goals']]
+    assert len(ids)==len(set(ids))>=5
+    allowed={'soft_cloth','rigid','fragile','slippery','deformable','unknown'}
+    assert all(g['object_class'] in allowed and g['size_class'] in {'small','medium','large'} for g in data['goals'])

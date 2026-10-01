@@ -165,7 +165,7 @@
       }
     }
   },
-  "base_distance_scale_calibrated": false,
+  "base_distance_scale_calibrated": true,
   "base_angle_scale_calibrated": false,
   "lidar_reference_alignment": {
     "reference_transform": [
@@ -201,7 +201,9 @@
   },
   "mapping": {
     "live_verified": true,
-    "provisional_geometry": true,
+    "provisional_geometry": false,
+    "navigation_geometry_accepted": true,
+    "precision_manipulation_geometry_accepted": false,
     "scanners": 2,
     "autonomous_navigation_enabled": false
   },
@@ -264,7 +266,8 @@
     "fk_ik_reference_only": true,
     "measured_joint_feedback": false,
     "reference_gripper_contacts_unresolved": true,
-    "physical_execution": false
+    "physical_execution": true,
+    "physical_execution_scope": "finite commands and hand-eye validation; attainment remains command-estimated"
   },
   "ai_control_interference": {
     "inference_seconds": 4.585110379999605,

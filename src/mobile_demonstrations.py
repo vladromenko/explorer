@@ -21,12 +21,15 @@ def sample(root,now):
     if state.get('mode')!='MANUAL':raise ValueError('Показ записывается только при ручном управлении')
     if state.get('power',{}).get('state','UNKNOWN') in ('LOW_POWER','CRITICAL','UNKNOWN','CHARGING'):
         raise ValueError('Запись остановлена из-за питания')
-    arm=state.get('arm_command_state',{})
+    contract=state.get('arm_state') or {}
+    command_mode=contract.get('estimated_only') is True
+    arm=contract if command_mode else state.get('arm_command_state',{})
     angles=arm.get('servo_deg')
-    if arm.get('phase') not in ('command_in_progress','command_elapsed_observation_required'):
+    if (command_mode and not arm.get('reference_valid') or not command_mode and
+        arm.get('phase') not in ('command_in_progress','command_elapsed_observation_required')):
         raise ValueError('Нет достоверной истории команд руки')
     fault=root/'data/arm-telemetry-fault.json'
-    if fault.exists() and json.loads(fault.read_text()).get('at',0)>arm.get('at',0):
+    if not command_mode and fault.exists() and json.loads(fault.read_text()).get('at',0)>arm.get('at',0):
         raise ValueError('После потери связи заново подготовьте руку')
     action=np.asarray([*(angles or []),*state.get('velocity',[])],dtype=float)
     if action.shape!=(9,) or not np.isfinite(action).all():raise ValueError('Неполное состояние для записи')
@@ -34,11 +37,18 @@ def sample(root,now):
         raise ValueError('Датчики устарели')
     with np.load(root/'data/rgbd-snapshot.npz',allow_pickle=False) as frame:
         stamp=float(frame['stamp'])
-        if not 0<=now-stamp<1.5:raise ValueError('Нет свежего кадра камеры')
-        if abs(stamp-state['at'])>.3:raise ValueError('Камера и состояние не синхронизированы для показа')
+        if not 0<=now-stamp<2.:raise ValueError('Нет свежего кадра камеры')
+        camera_state_offset=state['at']-stamp
+        # The on-board perception process publishes an acquisition timestamp
+        # after a bounded processing delay.  Preserve that delay in every row
+        # instead of pretending the two independently written files are
+        # simultaneous.  Larger gaps are rejected rather than relabelled.
+        if abs(camera_state_offset)>1.5:raise ValueError('Камера и состояние слишком далеко разнесены по времени')
         image=frame['rgb'].copy()
     return dict(at=now,image_stamp=stamp,state_stamp=state['at'],command=action.tolist(),
-                arm_in_progress=arm['phase']=='command_in_progress',raw_odometry_pose=state.get('raw_pose'),
+                camera_state_offset_s=camera_state_offset,
+                arm_in_progress=arm['phase'] in ('command_in_progress','EXECUTING'),raw_odometry_pose=state.get('raw_pose'),
+                q_estimated=arm.get('q_estimated'),state_source=arm.get('state_source','command_estimate'),
                 lidar=state.get('lidar'),sensor_age=state.get('sensor_age'),
                 measured_arm_angles=False,velocity_source='commanded_body_velocity'),image
 
@@ -53,13 +63,26 @@ class MobileDemonstrations:
                 record.update(state='interrupted',outcome='unknown');write_json(path,record)
 
     def status(self):
+        episodes=[]
+        for path in sorted(self.folder.glob('*/episode.json')):
+            try:episodes.append(json.loads(path.read_text()))
+            except (OSError,ValueError,TypeError):pass
+        eligible=[e for e in episodes if e.get('state')=='complete' and e.get('outcome')=='success' and
+                  e.get('label_source')=='operator' and set(e.get('stages',[]))==set(STAGES) and e.get('samples',0)>=20]
+        skills={name:sum(e.get('name')==name for e in eligible) for name in {e.get('name') for e in episodes if e.get('name')}}
         with self.lock:return dict(active=self.active,last=self.last,automatic_replay=False,
-                                    format='explorer_mobile_episode_v1',trainable_in_arm_only_ui=False)
+            format='explorer_mobile_episode_v2',trainable=True,successful=len(eligible),skills=skills,
+            training_required_successful_demonstrations=10,recommended_demonstrations='30–100',
+            observations=['wrist_rgb','arm_command_estimate','body_velocity_command','odometry','dual_lidar_summary','stage'],
+            policy='LeRobot ACT 9-DoF candidate; offline validation before supervised execution')
 
     def save(self):write_json(self.folder/self.active['id']/'episode.json',self.active)
 
-    def start(self,name,observing):
+    def start(self,name,observing,object_label='',object_class='unknown',size_class='medium',destination=''):
         if observing is not True:raise ValueError('Показ требует наблюдателя')
+        if object_class not in ('soft_cloth','rigid','fragile','slippery','deformable','unknown'):
+            raise ValueError('Неизвестный физический класс предмета')
+        if size_class not in ('small','medium','large'):raise ValueError('Неизвестный размер предмета')
         with self.lock:
             if self.active:raise ValueError('Показ поездки уже записывается')
             sample(self.root,time.time())
@@ -67,7 +90,9 @@ class MobileDemonstrations:
             self.active=dict(id=ident,name=name,state='recording',started=time.time(),outcome='unknown',
                 stage='travel_to_object',stages=['travel_to_object'],samples=0,
                 source='operator_mobile_demonstration',joint_state_source='commanded_not_measured',
-                physical_sample_rate_hz=None,automatic_replay_allowed=False)
+                physical_sample_rate_hz=2,automatic_replay_allowed=False,dataset_kind='mobile_manipulation_9dof',
+                object_label=object_label[:80],object_class=object_class,size_class=size_class,destination=destination[:80],
+                transfer_context=dict(grasp_family='learned_from_operator',contact_feedback='visual_only'))
             self.lease=time.monotonic()+2;self.save()
             threading.Thread(target=self.run,args=(ident,),daemon=True).start()
             return self.status()

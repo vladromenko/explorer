@@ -1,0 +1,22 @@
+[Unit]
+Description=Explorer private remote access
+PartOf=explorer.target
+After=network-online.target explorer-web.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/vlad/Explorer
+ExecStart=/home/vlad/Explorer/vendor/tailscale/tailscaled --tun=userspace-networking --state=/home/vlad/Explorer/data/tailscale/tailscaled.state --socket=/home/vlad/Explorer/data/tailscale/tailscaled.sock --port=0 --no-logs-no-support
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/vlad/Explorer/data/tailscale
+MemoryMax=256M
+CPUWeight=10
+
+[Install]
+WantedBy=explorer.target

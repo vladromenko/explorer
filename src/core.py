@@ -8,7 +8,8 @@ import signal
 import yaml
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import qos_profile_sensor_data, QoSProfile
+from rclpy.duration import Duration
 from rclpy.signals import SignalHandlerOptions
 from geometry_msgs.msg import Twist, TwistStamped
 from sensor_msgs.msg import Imu, LaserScan, Joy
@@ -25,8 +26,29 @@ from motion_session import MotionSession
 from transition_log import TransitionLog
 from source_freshness import SourceFreshness
 from lidar_observation import summarize as summarize_scan
+from controller_control import BaseTransport
+from factory_zero_cadence import StationaryZeroCadence
+from appearance import read as read_appearance,messages as appearance_messages
 
 ROOT = Path(os.environ.get('EXPLORER_ROOT', '/home/vlad/Explorer'))
+
+
+def publish_stop(node):
+    """Stop both transports, including when the ROS executor is shutting down."""
+    native = getattr(node, 'native', None)
+    if native:
+        native.stop(time.monotonic_ns())
+    node.pub.publish(Twist())
+
+
+def publish_hold(node):
+    """Stop base motion immediately while preserving an active mission session."""
+    native = getattr(node, 'native', None)
+    if native:
+        now_ns = time.monotonic_ns()
+        native.velocity([0., 0., 0.], now_ns, now_ns)
+    else:
+        node.pub.publish(Twist())
 
 
 class Core(Node):
@@ -35,6 +57,7 @@ class Core(Node):
         self.config = json.loads((ROOT/'config/commissioning.json').read_text())
         self.gate = SafetyGate(self.config)
         self.config_sha256=hashlib.sha256((ROOT/'config/commissioning.json').read_bytes()).hexdigest()
+        self.create_timer(2.,self.refresh_graduated_capabilities)
         self.events=TransitionLog(ROOT/'data/motion-transitions.jsonl')
         self.session=MotionSession()
         self.nav_not_before=0.
@@ -60,6 +83,7 @@ class Core(Node):
         self.odom_velocity = None
         self.scans = {}
         self.arm_feedback = None
+        self.arm_measurements = None
         self.arm_feedback_transport=dict(publishers=None,checked_monotonic=None)
         self.create_timer(5.,self.inspect_arm_transport)
         self.arm_active_until = 0.
@@ -70,7 +94,19 @@ class Core(Node):
         self.last_probe_result=None
         self.probe_token = None
         self.autonomy_lease = -1e9
-        self.pub = self.create_publisher(Twist, '/cmd_vel', 1)
+        self.pub = self.create_publisher(Twist, '/cmd_vel', QoSProfile(depth=1,lifespan=Duration(seconds=.15)))
+        self.native = None
+        self.factory_zero_cadence = None
+        try:
+            factory=json.loads((ROOT/'config/factory-runtime.json').read_text())
+            if factory.get('idle_zero_cadence') is True and not (ROOT/'config/controller-profile.json').exists():
+                self.factory_zero_cadence=StationaryZeroCadence()
+        except (OSError,ValueError):pass
+        if (ROOT/'config/controller-profile.json').exists():
+            self.native_pub = self.create_publisher(String, '/explorer/controller_request', 10)
+            self.native = BaseTransport(lambda request:self.native_pub.publish(String(data=json.dumps(request))))
+            self.create_subscription(String, '/explorer/controller_state',
+                lambda message:self.native.observe(json.loads(message.data), time.monotonic_ns()), 10)
         self.arm_pub = self.create_publisher(ArmJoints, '/arm6_joints', 1)
         self.rgb_pub = self.create_publisher(ColorRGBA, '/rgb', 1)
         self.heartbeat = self.create_publisher(UInt64, '/explorer/control_heartbeat', 1)
@@ -81,6 +117,7 @@ class Core(Node):
         for name in ('scan0', 'scan1'):
             self.create_subscription(LaserScan, '/'+name, lambda m,n=name:self.scan_cb(n,m), qos_profile_sensor_data)
         self.create_subscription(ArmJoints, '/arm6_feedback', self.arm_cb, qos_profile_sensor_data)
+        self.create_subscription(String, '/explorer/arm_measurements', self.arm_measurement_cb, 10)
         self.create_subscription(String, '/explorer/request', self.request, 10)
         self.create_subscription(TwistStamped, '/explorer/nav_cmd_vel', self.nav_cb, 1)
         self.joy_held = False
@@ -88,8 +125,28 @@ class Core(Node):
         self.last_tick = time.monotonic()
         self.create_timer(.02, self.tick)
         self.create_timer(.5, self.write_status)
-        # Vendor ColorRGBA.a selects an effect: 100 = off, 101 = changing colours.
-        self.create_timer(10., self.refresh_lights)
+        # Core is the only /rgb publisher. Vendor a=100..106 selects effects;
+        # a=255 applies an RGB colour to every WS2812 LED.
+        self.last_light_key=None;self.last_light_refresh=-1e9
+        self.create_timer(.25,self.refresh_lights)
+
+    def refresh_graduated_capabilities(self):
+        """Hot-apply only evidence-derived capability flags.
+
+        All motion limits and hardware commissioning fields remain immutable for
+        this process.  This prevents the curriculum service from becoming a
+        general configuration bypass.
+        """
+        keys=('localization_verified','gripper_calibrated','visual_closed_loop_arm_verified',
+              'learned_policy_verified','autonomous_delivery_verified')
+        try:
+            raw=(ROOT/'config/commissioning.json').read_bytes();candidate=json.loads(raw)
+            old_other={k:v for k,v in self.config.items() if k not in keys}
+            new_other={k:v for k,v in candidate.items() if k not in keys}
+            if old_other!=new_other:return
+            for key in keys:self.config[key]=candidate.get(key,False) is True
+            self.config_sha256=hashlib.sha256(raw).hexdigest()
+        except (OSError,ValueError,TypeError):pass
 
     def snapshot(self):
         return dict(mode=self.gate.mode,stop_latched=self.gate.estop,
@@ -107,17 +164,23 @@ class Core(Node):
 
     def emergency(self, initiator, reason):
         before=self.snapshot()
+        native = getattr(self, 'native', None)
+        if native and not self.gate.estop:
+            native.stop(time.monotonic_ns())
         self.gate.stop();self.session.end();self.autonomy_lease=-1e9;self.joy_held=False
         self.hold_requested=False
         if self.probe:self.probe.cancel(reason)
         if before!=self.snapshot():self.event(initiator,reason,before)
 
     def refresh_lights(self):
-        try:
-            effect=json.loads((ROOT/'config/appearance.json').read_text())['rgb_effect']
-            if type(effect) is not int or not 100<=effect<=107:effect=100
-        except (OSError,ValueError,KeyError,TypeError):effect=100
-        self.rgb_pub.publish(ColorRGBA(a=float(effect)))
+        now=time.monotonic();config=read_appearance(ROOT)
+        status=dict(power_state=self.power_state.get('state','UNKNOWN'),velocity=self.gate.output,
+                    mission=self.session.mission,arm_active=now<self.arm_active_until)
+        mode,frames=appearance_messages(config,status,now)
+        key=(mode,tuple(tuple(sorted(frame.items())) for frame in frames))
+        if key==self.last_light_key and now-self.last_light_refresh<8:return
+        for frame in frames:self.rgb_pub.publish(ColorRGBA(**frame))
+        self.last_light_key=key;self.last_light_refresh=now
 
     def touch(self, key):
         self.seen[key] = time.monotonic()
@@ -163,6 +226,14 @@ class Core(Node):
         self.arm_feedback_transport.update(publishers=[dict(node=p.node_namespace.rstrip('/')+'/'+p.node_name,
             type=p.topic_type,qos=str(p.qos_profile)) for p in publishers],checked_monotonic=time.monotonic())
 
+    def arm_measurement_cb(self, msg):
+        data = json.loads(msg.data)
+        self.arm_measurements = data
+        if data.get('all_fresh') or data.get('reference_valid') and data.get('estimated'):
+            self.touch('arm')
+        # Preserve signed measurements and raw evidence separately from the
+        # legacy command-angle array; never make old callers infer calibration.
+
     def joy_cb(self, msg):
         self.touch('gamepad')
         if not self.config.get('gamepad_commissioned',False):return
@@ -201,14 +272,16 @@ class Core(Node):
             op = req['op']
             before=self.snapshot()
             if op in ('stop','estop'):
+                publish_stop(self)
                 self.emergency(req.get('initiator','request'),'OPERATOR_ESTOP')
-                self.pub.publish(Twist())
             else:
                 age = time.monotonic() - float(req['at'])
                 if not math.isfinite(age) or age < 0 or age > .25:
                     raise ValueError('Expired request')
                 if op == 'clear_stop':
                     if not self.power_state['motion_allowed']:raise ValueError('Power state prohibits arming')
+                    native = getattr(self, 'native', None)
+                    if native:native.start(time.monotonic_ns())
                     self.gate.command_at = -1e9
                     self.gate.estop = False
                 elif op == 'commission_pulse':
@@ -220,14 +293,14 @@ class Core(Node):
                         raise ValueError('No current local commissioning permit')
                     if self.gate.estop or self.probe:
                         raise ValueError('Stop is latched or a probe is active')
-                    self.probe=Pulse(req['velocity'],req['duration'],time.monotonic(),req.get('quiet_seconds',0.))
+                    self.probe=Pulse(req['velocity'],req['duration'],float(req['at']),req.get('quiet_seconds',0.))
                     self.probe_id=req.get('id')
                     self.probe_token=req['token']
                     permit_path.unlink()
                 elif op == 'commission_lease':
                     if not self.probe or not secrets.compare_digest(req['token'],self.probe_token):
                         raise ValueError('No matching probe')
-                    self.probe.last_lease=time.monotonic()
+                    self.probe.last_lease=float(req['at'])
                 elif op in ('begin_mission','autonomy_lease','resume_base'):
                     if self.gate.estop or self.gate.mode!='AUTONOMOUS' or not all(self.config.get(k,False) for k in ('base_commissioned','mcu_watchdog_verified','lidar_tf_validated','localization_verified')):
                         raise ValueError('Autonomy prerequisites not met')
@@ -248,12 +321,15 @@ class Core(Node):
                     if not self.hold_requested:self.stationary_since=None
                     self.hold_requested=True
                     if self.probe:self.probe.cancel('HOLD_REQUESTED')
-                    self.pub.publish(Twist())
+                    publish_hold(self)
                 elif op=='manual_release':
                     # A disconnected/idle panel cannot cancel local autonomy.
-                    if self.gate.source=='manual' and not self.session.mission:
+                    if self.gate.mode=='MANUAL' and not self.session.mission:
                         self.gate.hold();self.joy_held=False
-                        self.pub.publish(Twist())
+                        # Manual base/arm operation is sequential: releasing the
+                        # chassis establishes the stationary hold needed by the arm.
+                        self.hold_requested=True;self.stationary_since=None
+                        publish_hold(self)
                 elif op == 'mode':
                     if req['mode'] not in ('MANUAL','ASSISTED','AUTONOMOUS'):
                         raise ValueError('Invalid mode')
@@ -266,7 +342,7 @@ class Core(Node):
                         raise ValueError('Autonomy velocity must come from the local navigator')
                     self.session.end();self.hold_requested=False
                     if self.probe:self.probe.cancel('MANUAL_TAKEOVER')
-                    if not self.gate.submit(req['velocity'], req.get('source','manual'), time.monotonic()):
+                    if not self.gate.submit(req['velocity'], req.get('source','manual'), float(req['at'])):
                         raise ValueError('Autonomy not selected')
                 elif op == 'arm':
                     raise ValueError('General arm execution is not commissioned. Supervised near-home probes use bin/commission-arm.py; servo feedback is unavailable.')
@@ -282,6 +358,8 @@ class Core(Node):
 
     def tick(self):
         now = time.monotonic()
+        arm_controller = self.native.state.get('controller', {}) if self.native else {}
+        arm_execution_pending = bool(arm_controller.get('arm_enabled') or arm_controller.get('arm_cancel_pending'))
         arm_link_ok=all(now-self.seen.get(k,-1e9)<ttl for k,ttl in [('odom',.5),('battery',2.)])
         if not arm_link_ok:
             source_faults={k:v for k,v in self.source_freshness.diagnostics.items() if v['reason']}
@@ -293,7 +371,7 @@ class Core(Node):
                 fault.replace(ROOT/'data/arm-telemetry-fault.json')
             except OSError:self.emergency('telemetry','FAULT_RECORD_FAILED')
         self.arm_link_was_healthy=arm_link_ok
-        self.power_state = self.power_policy.evaluate(now, active=now<self.arm_active_until or any(abs(v)>.001 for v in self.gate.output), charging=self.charging)
+        self.power_state = self.power_policy.evaluate(now, active=arm_execution_pending or now<self.arm_active_until or any(abs(v)>.001 for v in self.gate.output), charging=self.charging)
         if not self.power_state['motion_allowed']:
             self.emergency('power',self.power_state['state'])
         scale = self.power_state['speed_scale']
@@ -301,12 +379,19 @@ class Core(Node):
         healthy = all(now-self.seen.get(k,-1e9) < ttl for k,ttl in [('odom',.5),('imu',.5),('scan0',.6),('scan1',.6),('battery',3.)])
         healthy = healthy and self.power_state['motion_allowed'] and self.battery is not None and self.battery > self.config['battery_stop_voltage']
         # Conservative all-direction guard until the measured scanner extrinsics are installed.
-        collision = any(s['nearest'] is None or s['nearest'] < .30 for s in self.scans.values())
+        # The fixed lidars have legitimate near-field returns from the robot itself.
+        # Until a direction-aware footprint filter is available, obstacle stops belong
+        # to autonomous navigation.  A present operator keeps the independent STOP,
+        # command-expiry, power and sensor gates, but must be able to manoeuvre away.
+        collision = self.gate.mode == 'AUTONOMOUS' and any(
+            s['nearest'] is None or s['nearest'] < .30 for s in self.scans.values())
         if self.session.mission and now-self.session.lease_at>.25:
             before=self.snapshot();self.session.end();self.gate.hold();self.hold_requested=True
             self.event('mission','MISSION_LEASE_EXPIRED',before)
         before=self.snapshot()
+        source_at = self.gate.command_at
         if self.probe:
+            source_at = self.probe.last_lease
             velocity,self.reason=self.probe.tick(now,now-self.last_tick,self.gate.estop,healthy,collision)
             if velocity is not None:self.gate.output=list(velocity)
             if self.probe.finished:
@@ -319,6 +404,15 @@ class Core(Node):
         else:
             healthy = healthy and self.config['lidar_tf_validated']
             velocity, self.reason = self.gate.tick(now, now-self.last_tick, healthy, collision)
+        command_arm=self.native and (self.native.state.get('arm') or {}).get('estimated_only') is True
+        if arm_execution_pending and not command_arm:
+            if self.probe:self.probe.cancel('ARM EXECUTION ACTIVE')
+            self.gate.hold()
+            velocity = [0., 0., 0.]
+            self.reason = 'ARM EXECUTION ACTIVE'
+        elif arm_execution_pending and command_arm and velocity is not None:
+            velocity=[max(-limit,min(limit,value)) for value,limit in zip(velocity,[.05,.05,.15])]
+            self.gate.output=list(velocity)
         signature=(self.reason,self.gate.mode,self.gate.estop,self.session.mission)
         if signature!=getattr(self,'last_signature',None):
             self.event('velocity_gate',self.reason,before);self.last_signature=signature
@@ -330,7 +424,12 @@ class Core(Node):
         if velocity is not None:
             msg = Twist()
             msg.linear.x, msg.linear.y, msg.angular.z = velocity
-            self.pub.publish(msg)
+            if self.native:
+                self.native.velocity(velocity, int(source_at*1e9), time.monotonic_ns())
+            else:
+                cadence=getattr(self,'factory_zero_cadence',None)
+                if cadence is None or cadence.publish_due(velocity,self.stationary_since,now):
+                    self.pub.publish(msg)
         self.heartbeat.publish(UInt64(data=time.monotonic_ns()))
 
     def write_status(self):
@@ -338,6 +437,12 @@ class Core(Node):
         try:
             arm_state=json.loads((ROOT/'data/arm-state.json').read_text())
             if arm_state.get('boot_id')!=self.boot_id:arm_state=dict(phase='UNKNOWN_AFTER_REBOOT',measured=False)
+            controller_boot = arm_state.get('controller_boot_id')
+            if controller_boot is not None:
+                current_boot = ((self.native.state.get('identity') or {}).get('boot')
+                                if self.native else None)
+                if controller_boot != current_boot:
+                    arm_state=dict(phase='UNKNOWN_AFTER_CONTROLLER_REBOOT',measured=False)
         except (OSError,ValueError):arm_state=dict(phase='UNKNOWN',measured=False)
         if arm_state.get('phase')=='command_in_progress':
             self.arm_active_until=min(now+5.,float(arm_state.get('ends_monotonic',0.)))
@@ -362,6 +467,8 @@ class Core(Node):
                       power=self.power_state,
                       velocity=self.gate.output, sensor_age={k:round(now-v,3) for k,v in self.seen.items()},
                       lidar=self.scans, arm_feedback=self.arm_feedback, commissioning=self.config,
+                      arm_measurements=self.arm_measurements,
+                      arm_state=self.arm_measurements if self.native else None,
                       arm_feedback_transport=self.arm_feedback_transport,
                       arm_command_state=arm_state,
                       last_request=self.last_result)
@@ -382,7 +489,7 @@ def main():
         pass
     finally:
         for _ in range(5):
-            node.pub.publish(Twist())
+            publish_stop(node)
             time.sleep(.02)
         node.destroy_node()
         rclpy.shutdown()

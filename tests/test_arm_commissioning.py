@@ -1,6 +1,6 @@
 import copy
 import unittest
-from arm_commissioning import HOME, validate_pose, validate_incremental, stationary_status
+from arm_commissioning import HOME, validate_pose, validate_incremental, stationary_status, coordinated_status
 
 
 class ArmCommissioningTests(unittest.TestCase):
@@ -16,6 +16,17 @@ class ArmCommissioningTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 validate_pose(pose, 1500)
         validate_pose(HOME, 4000)
+
+
+    def test_coordinated_status_allows_bounded_manual_motion(self):
+        s=dict(at=100,mode='MANUAL',stop_latched=False,mission=None,
+               velocity=[.15,-.15,.4],odom_velocity=[.18,-.18,.45],battery=12.0,
+               power={'state':'NORMAL'},sensor_age={'odom':.1,'battery':.2})
+        coordinated_status(s,100.1)
+        for key,value in [('mode','AUTONOMOUS'),('stop_latched',True),('mission',{'id':'x'}),
+                          ('velocity',[.17,0,0]),('odom_velocity',[.21,0,0]),('battery',10.9)]:
+            changed=copy.deepcopy(s);changed[key]=value
+            with self.assertRaises(ValueError):coordinated_status(changed,100.1)
 
     def test_stale_nonfinite_moving_and_unlatched_states_fail_closed(self):
         s = dict(at=100, stop_latched=True, velocity=[0,0,0], battery=11.2,

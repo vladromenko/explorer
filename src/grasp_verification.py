@@ -2,6 +2,12 @@
 import math
 import numpy as np
 
+def validated_camera_pose(frame):
+    return frame.get('camera_pose_measured') is True or (
+        frame.get('camera_pose_source')=='command_estimate' and
+        frame.get('camera_pose_validated_for_execution') is True and
+        bool(frame.get('camera_pose_validation_record')))
+
 
 def verify_lift(before, after, calibration_validated=False):
     evidence=dict(verifier='rgbd_lift_v1',calibration_validated=calibration_validated,
@@ -19,6 +25,9 @@ def verify_lift(before, after, calibration_validated=False):
         if len(ids)!=1 or min(f['confidence'] for f in frames)<.85:
             return unknown('Object identity not stable')
         if any(not f.get('depth_validated',False) for f in frames):return unknown('Invalid depth association')
+        if any(f.get('identity_association_verified') is not True or f.get('frame')!='base_footprint' or
+               not validated_camera_pose(f) for f in frames):
+            return unknown('Object association and validated camera-motion compensation required')
         stamps=[f['at'] for f in frames]
         if any(b<=a for a,b in zip(stamps,stamps[1:])) or stamps[-1]-stamps[0]>30:
             return unknown('Invalid observation timing')
@@ -39,3 +48,36 @@ def verify_lift(before, after, calibration_validated=False):
                         hold_duration_s=after[-1]['at']-after[0]['at'])
         return dict(outcome='success' if held else 'failure' if stayed else 'unknown',evidence=evidence)
     except (KeyError,TypeError,ValueError):return unknown('Incomplete visual evidence')
+
+
+def verify_place(before, after, zone, calibration_validated=False):
+    evidence=dict(verifier='rgbd_place_v1', calibration_validated=calibration_validated)
+    def unknown(reason):return dict(outcome='unknown',evidence=dict(evidence,reason=reason))
+    if not calibration_validated or len(before)<3 or len(after)<3:
+        return unknown('Calibrated geometry and three observations on both sides required')
+    try:
+        frames=before+after
+        if any(f.get('identity_association_verified') is not True or not validated_camera_pose(f) or
+               f.get('depth_validated') is not True or f.get('frame')!='base_footprint' for f in frames):
+            return unknown('Unverified tracking or camera geometry')
+        if len({f['object_id'] for f in frames})!=1:return unknown('Object identity changed')
+        stamps=[f['at'] for f in frames]
+        if not all(math.isfinite(t) for t in stamps) or any(b<=a for a,b in zip(stamps,stamps[1:])):
+            return unknown('Invalid observation timing')
+        if after[-1]['at']-after[0]['at']<1 or stamps[-1]-stamps[0]>30:
+            return unknown('No recent stable placement interval')
+        obj=np.array([f['object_xyz'] for f in after]);tcp=np.array([f['tcp_xyz'] for f in after])
+        base=np.array([f['base_xyyaw'] for f in frames]);center=np.asarray(zone['center_xyz'])
+        numeric=np.r_[obj.ravel(),tcp.ravel(),base.ravel(),center.ravel(),zone['radius_m']]
+        if obj.shape!=(len(after),3) or tcp.shape!=obj.shape or center.shape!=(3,) or not np.isfinite(numeric).all():
+            return unknown('Invalid geometry')
+        if np.max(np.abs(base-base[0]))>.005:return unknown('Base moved during verification')
+        if any(f.get('gripper_open_measured') is not True for f in after):return unknown('Opening not measured')
+        stationary=np.max(np.ptp(obj,axis=0))<.012
+        supported=np.max(np.abs(obj[:,2]-center[2]))<zone['support_tolerance_m']
+        inside=np.max(np.linalg.norm(obj[:,:2]-center[:2],axis=1))<zone['radius_m']
+        detached=np.min(np.linalg.norm(tcp-obj,axis=1))>.06
+        evidence.update(stationary=bool(stationary),supported=bool(supported),inside=bool(inside),detached=bool(detached))
+        # An object still moving with the withdrawing hand cannot count as placed.
+        return dict(outcome='success' if stationary and supported and inside and detached else 'unknown',evidence=evidence)
+    except (KeyError,TypeError,ValueError):return unknown('Incomplete placement evidence')

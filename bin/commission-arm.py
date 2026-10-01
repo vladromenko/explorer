@@ -21,6 +21,9 @@ ROOT = Path('/home/vlad/Explorer')
 
 
 def main():
+    profile=ROOT/'config/controller-profile.json'
+    if profile.exists() and json.loads(profile.read_text()).get('manual_reference_version')==1:
+        raise SystemExit('CommandOnly: используйте explorer arm calibrate / jog; legacy HOME отключён')
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--pose', type=int, nargs=6, default=HOME)
     parser.add_argument('--runtime-ms', type=int, default=4000)

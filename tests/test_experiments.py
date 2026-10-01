@@ -96,7 +96,7 @@ class ExperimentTests(unittest.TestCase):
         self.assertIn('mcu_watchdog_verified',s[names.index('navigate')]['missing'])
 
     def test_joint_decoder_checks_checksum_id_and_error(self):
-        packet=bytes([255,255,1,4,0,1,44]);packet+=bytes([(~sum(packet[2:]))&255])
+        packet=bytes([255,245,1,4,0,1,44]);packet+=bytes([(~sum(packet[2:]))&255])
         self.assertEqual(decode_position(packet,1)['raw_ticks'],300)
         with self.assertRaises(ValueError):decode_position(packet,2)
         with self.assertRaises(ValueError):decode_position(packet[:-1]+b'\x00',1)

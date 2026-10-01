@@ -80,11 +80,16 @@ class ArmModel:
                 t=self.state.get_global_link_transform('Gripping')
                 r=(t[:3,3]-target).tolist()
                 if rot is not None:r.extend((.1*(rot.inv()*Rotation.from_matrix(t[:3,:3])).as_rotvec()).tolist())
+                elif max_step_deg is not None:
+                    # Local teleop IK is underdetermined (XYZ from joints 1-4).
+                    # A small seed penalty selects the nearest configuration
+                    # instead of a distant equivalent elbow/wrist solution.
+                    r.extend((.002*(q-seed[:4])).tolist())
                 return r
             size=4 if rot is None else 5
             low=LOW[:size].copy();high=HIGH[:size].copy()
             if max_step_deg is not None:
-                if not math.isfinite(max_step_deg) or not 0<max_step_deg<=2:raise ValueError('Invalid local IK bound')
+                if not math.isfinite(max_step_deg) or not 0<max_step_deg<=10:raise ValueError('Invalid local IK bound')
                 low=np.maximum(low,seed[:size]-np.radians(max_step_deg))
                 high=np.minimum(high,seed[:size]+np.radians(max_step_deg))
             fit=least_squares(residual,np.clip(seed[:size],low+1e-8,high-1e-8),bounds=(low,high),max_nfev=100,

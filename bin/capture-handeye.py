@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Record synchronized RGB-D with an explicitly COMMAND-ESTIMATED arm pose."""
+"""Record synchronized RGB-D bracketed by stationary, measured joint feedback."""
 import json,time,uuid
 from pathlib import Path
 import numpy as np
@@ -9,14 +9,24 @@ from sensor_msgs.msg import Image,CameraInfo
 from cv_bridge import CvBridge
 from arm_commissioning import stationary_status
 from arm_model import ArmModel
+from controller_feedback import load_calibration
+from native_arm import measured_reference
+from capture_geometry import stationary_exposure
 ROOT=Path('/home/vlad/Explorer')
 
 def main():
     status=json.loads((ROOT/'data/status.json').read_text());stationary_status(status,time.time())
-    state=json.loads((ROOT/'data/arm-state.json').read_text())
-    if state.get('phase')!='command_elapsed_observation_required' or time.monotonic()-state['ends_monotonic']<1:
-        raise ValueError('Arm command has not settled')
-    if state['boot_id']!=Path('/proc/sys/kernel/random/boot_id').read_text().strip():raise ValueError('Pose from previous boot')
+    calibration=load_calibration(ROOT/'config/controller-calibration.json')
+    profile=json.loads((ROOT/'config/controller-profile.json').read_text())
+    def measured():
+        live=json.loads((ROOT/'data/controller-state.json').read_text())
+        if profile.get('manual_reference_version')==1:
+            from manual_reference_host import reference_from_state
+            value=reference_from_state(live,calibration,time.monotonic_ns())
+            value['acquired_monotonic']=[live['manual_reference']['received_monotonic_ns']/1e9]*6
+            return value
+        return measured_reference(live,calibration,time.monotonic_ns())
+    before=measured()
     rclpy.init();node=rclpy.create_node('explorer_capture_handeye');data={};bridge=CvBridge()
     def receive(key,msg):data[key]=msg
     for key,typ,topic in [('rgb',Image,'/camera/color/image_raw'),('depth',Image,'/camera/depth/image_raw'),('info',CameraInfo,'/camera/color/camera_info')]:
@@ -31,9 +41,14 @@ def main():
     rgb=bridge.imgmsg_to_cv2(data['rgb'],'bgr8');depth=bridge.imgmsg_to_cv2(data['depth']).astype(np.float32)
     if data['depth'].encoding in ('16UC1','mono16'):depth*=.001
     if depth.shape!=rgb.shape[:2]:raise ValueError('Depth dimensions differ')
-    later=json.loads((ROOT/'data/arm-state.json').read_text())
-    if later!=state:raise ValueError('Arm state changed during capture')
-    model=ArmModel();model.set_state(state['servo_deg'][:4]+[90],-.3)
+    exposure=time.monotonic()-(time.time()-stamp(data['rgb']))
+    later=measured()
+    deadline=time.monotonic()+.3
+    while min(later['acquired_monotonic'])<exposure and time.monotonic()<deadline:
+        time.sleep(.01);later=measured()
+    state=stationary_exposure(before,later,exposure)
+    stationary_status(json.loads((ROOT/'data/status.json').read_text()),time.time())
+    model=ArmModel();model.set_state(state['servo_deg'][:5],-.3)
     transform=model.state.get_global_link_transform('Gripping')
     folder=ROOT/'data/handeye';folder.mkdir(exist_ok=True)
     name=str(int(time.time()))+'-'+uuid.uuid4().hex[:6]
@@ -41,9 +56,12 @@ def main():
     np.savez_compressed(path,rgb=rgb,depth=depth,k=np.array(data['info'].k).reshape(3,3),
                         d=np.array(data['info'].d),stamp=stamp(data['rgb']),
                         servo_deg=state['servo_deg'],base_tool=transform,
+                        measured_joint_positions=state['measured_joint_positions'],joint_state_source=state['joint_state_source'],controller_boot_id=str(state['controller_boot_id']),
+                        controller_session=state['controller_session'],
+                        exposure_monotonic=state['exposure_monotonic'],
                         base_mount=model.state.get_global_link_transform('arm4'),mount_frame='arm4',
                         base_pose=np.array(list(status['raw_pose'][k] for k in ('x','y','yaw'))))
-    print(json.dumps(dict(path=str(path),servo_deg=state['servo_deg'],measured_joints=False)))
+    print(json.dumps(dict(path=str(path),servo_deg=state['servo_deg'],measured_joints=state['measured_joint_positions'])))
     node.destroy_node();rclpy.shutdown()
 
 if __name__=='__main__':main()

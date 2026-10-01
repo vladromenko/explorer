@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "classes": {
+    "soft_cloth": {"examples": ["sock", "towel", "glove"], "closure": "minimal_then_visual_hold_check", "preferred_grasp": "fold_or_edge_with_visible_material_between_fingers", "retry": "change_wrist_roll_and_grasp_region"},
+    "rigid": {"examples": ["bottle", "box", "toy"], "closure": "fit_object_width", "preferred_grasp": "opposed_surfaces_near_center_of_mass", "retry": "change_candidate_or_base_pose"},
+    "fragile": {"examples": ["cookie", "thin_container"], "closure": "minimum_visual_contact", "preferred_grasp": "supported_wide_contact", "retry": "reduce_closure_and_support_from_below"},
+    "slippery": {"examples": ["smooth_packet", "plastic_bottle"], "closure": "increment_if_visual_slip", "preferred_grasp": "narrow_stable_section", "retry": "regrasp_with_larger_contact"},
+    "deformable": {"examples": ["soft_package", "sponge"], "closure": "limit_visible_deformation", "preferred_grasp": "broad_low_pressure_region", "retry": "open_and_choose_thicker_region"}
+  },
+  "measurement_limits": "No force sensor: all contact, deformation and slip labels are visual estimates and operator outcomes."
+}

@@ -15,10 +15,11 @@ class MobileTests(unittest.TestCase):
             root=Path(path);state,now=self.setup_files(root);r,image=sample(root,now)
             self.assertEqual(len(r['command']),9);self.assertFalse(r['measured_arm_angles'])
             self.assertEqual(r['velocity_source'],'commanded_body_velocity')
+            self.assertEqual(r['camera_state_offset_s'],0)
     def test_unsynchronized_or_faulted_data_is_rejected(self):
         with tempfile.TemporaryDirectory() as path:
             root=Path(path);state,now=self.setup_files(root)
-            np.savez(root/'data/rgbd-snapshot.npz',stamp=now-.8,rgb=np.zeros((3,3,3),dtype=np.uint8))
+            np.savez(root/'data/rgbd-snapshot.npz',stamp=now-2.5,rgb=np.zeros((3,3,3),dtype=np.uint8))
             with self.assertRaises(ValueError):sample(root,now)
             np.savez(root/'data/rgbd-snapshot.npz',stamp=now,rgb=np.zeros((3,3,3),dtype=np.uint8))
             (root/'data/arm-telemetry-fault.json').write_text(json.dumps({'at':now+1}))

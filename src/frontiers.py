@@ -33,7 +33,12 @@ def candidates(grid,resolution,origin,pose,radius=.38):
         score=np.where(approach,distances+3.0*to_frontier,np.inf)
         y,x=np.unravel_index(np.argmin(score),a.shape)
         ys,xs=np.nonzero(region);cx=float(xs.mean());cy=float(ys.mean())
+        margin=float(clearance[y,x]-radius)
+        risk=1/(.05+max(0.,margin))
+        utility=float(n*resolution/(1+score[y,x]+.08*risk))
         out.append(dict(x=origin[0]+(x+.5)*resolution,y=origin[1]+(y+.5)*resolution,
                         yaw=math.atan2(cy-y,cx-x),path_distance_m=float(distances[y,x]),
-                        frontier_cells=n,score=float(n*resolution/(1+score[y,x]))))
+                        frontier_cells=n,information_gain_cells=n,clearance_m=float(clearance[y,x]),
+                        risk_cost=float(risk),score=utility,
+                        policy='risk_adjusted_information_gain'))
     return sorted(out,key=lambda p:-p['score'])[:30]

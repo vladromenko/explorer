@@ -1,11 +1,19 @@
 #!/bin/bash
 set -e
 case "${1:-status}" in
+ arm) shift; source /home/vlad/Explorer/bin/env.sh; exec python3 /home/vlad/Explorer/bin/manual-reference.py "$@";;
  start) systemctl --user start explorer.target;;
  stop) systemctl --user stop explorer.target;;
  status) systemctl --user --no-pager --plain list-units 'explorer-*' ;;
  logs) journalctl --user -f -u "explorer-${2:-control}";;
  url) printf 'http://explorer.local:8080/#'; cat /home/vlad/Explorer/config/access_token; printf '\n';;
+ mobile-url)
+   ip=$(hostname -I | awk '{print $1}')
+   printf 'Локально: http://%s:8080/mobile#' "$ip"; cat /home/vlad/Explorer/config/access_token; printf '\n'
+   /home/vlad/Explorer/bin/remote-access url 2>/dev/null || true
+   ;;
+ delivery) exec python3 /home/vlad/Explorer/bin/delivery-command.py "${2:-status}";;
+ readiness) exec python3 /home/vlad/Explorer/bin/readiness.py;;
  estop) source /home/vlad/Explorer/bin/env.sh; ros2 topic pub --once /explorer/request std_msgs/msg/String '{data: "{\"op\":\"stop\"}"}' ;;
- *) echo 'Usage: explorer {start|stop|status|logs [component]|url|estop}' >&2; exit 2;;
+ *) echo 'Usage: explorer {arm ...|start|stop|status|readiness|logs [component]|url|mobile-url|estop|delivery [start|status|cancel]}' >&2; exit 2;;
 esac

@@ -1,0 +1,1 @@
+SUBSYSTEM=="tty", ENV{ID_VENDOR_ID}=="10c4", ENV{ID_MODEL_ID}=="ea60", ENV{ID_SERIAL_SHORT}=="@SERIAL@", SYMLINK+="explorer_mcu", GROUP="dialout", MODE="0660"

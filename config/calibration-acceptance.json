@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-09-30T01:17:15+03:00",
+  "records": {
+    "chassis": {
+      "state": "accepted",
+      "scope": "holonomic_command_directions_scale_and_stop_after_valid_command_gap",
+      "evidence": [
+        "data/factory-acceptance-20260929/lidar-motion-comparison.json",
+        "config/factory-runtime.json"
+      ],
+      "evidence_sha256": {
+        "data/factory-acceptance-20260929/lidar-motion-comparison.json": "4c731911b79d4867fd9637a37d332a015a31e76a94f06b9564f9cf3805a6d554",
+        "config/factory-runtime.json": "7088214801e6a0c7e29eabb8a2ac41a00e83df0118f3fb7984709120c42fd9ca"
+      },
+      "detail": "Forward, backward, left and right motion agreed independently in both lidars; clockwise and counter-clockwise directions were physically observed; final commanded velocity returned to zero."
+    },
+    "command_validity_stop": {
+      "state": "accepted",
+      "scope": "stop_when_valid_jetson_command_stream_expires",
+      "evidence": ["config/factory-runtime.json"],
+      "evidence_sha256": {"config/factory-runtime.json": "7088214801e6a0c7e29eabb8a2ac41a00e83df0118f3fb7984709120c42fd9ca"},
+      "detail": "The command-gap stop is accepted. Reconnection after a transport failure remains a separate unaccepted behavior."
+    },
+    "lidar_geometry": {
+      "state": "accepted",
+      "scope": "dual_lidar_navigation_mapping",
+      "evidence": ["data/factory-acceptance-20260929/lidar-motion-comparison.json"],
+      "evidence_sha256": {"data/factory-acceptance-20260929/lidar-motion-comparison.json": "4c731911b79d4867fd9637a37d332a015a31e76a94f06b9564f9cf3805a6d554"},
+      "detail": "Official frame geometry plus four physical translations produced at most 5.918 mm registration residual. Precision manipulation geometry is not included."
+    },
+    "arm_motion": {
+      "state": "accepted",
+      "scope": "finite_factory_robotio_commands_and_timed_trajectories",
+      "evidence": ["data/handeye-validations/20260930-001104/result.json"],
+      "evidence_sha256": {"data/handeye-validations/20260930-001104/result.json": "45d3ee22ca4686d460e9b8ab1df2c41897930bb6713394fd91ce562c6a3c3375"},
+      "detail": "Joints 1-4 physically moved during hand-eye validation. Joint state is still a command estimate, so physical attainment is not measured."
+    },
+    "hand_eye": {
+      "state": "accepted",
+      "scope": "stationary_frames_after_completed_factory_robotio_commands",
+      "evidence": ["config/handeye-accepted.json", "data/handeye-validations/20260930-001104/result.json"],
+      "evidence_sha256": {
+        "config/handeye-accepted.json": "89c3370055d6436911de5f394048ac2d1d3892585e1fc773c6eb666070d07a77",
+        "data/handeye-validations/20260930-001104/result.json": "45d3ee22ca4686d460e9b8ab1df2c41897930bb6713394fd91ce562c6a3c3375"
+      },
+      "detail": "Maximum physical validation error was 5.621 mm and 1.684 degrees for joints 1-4. Images acquired while a command is executing remain invalid."
+    },
+    "localization": {
+      "state": "partial",
+      "scope": "slam_map_and_live_pose_only",
+      "evidence": ["config/verification.json"],
+      "detail": "SLAM, map storage and live pose work, but relocalization after physical displacement and autonomous navigation acceptance are not recorded."
+    },
+    "arm_feedback": {
+      "state": "missing",
+      "scope": "measured_joint_position",
+      "evidence": ["config/factory-runtime.json"],
+      "detail": "Factory robotio reports no measured six-joint pose; the host stores the last completed command estimate."
+    },
+    "gripper": {
+      "state": "missing",
+      "scope": "aperture_contact_retention_and_release",
+      "evidence": [],
+      "detail": "No accepted aperture calibration or successful retained-object grasp record exists."
+    },
+    "pick_and_deliver": {
+      "state": "blocked",
+      "scope": "autonomous_search_pick_transport_place",
+      "evidence": [],
+      "detail": "Blocked by localization/relocalization and gripper acceptance; command acknowledgement is not counted as a grasp or delivery."
+    }
+  }
+}

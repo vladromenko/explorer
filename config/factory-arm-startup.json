@@ -1,0 +1,9 @@
+{
+  "enabled": true,
+  "pose_deg": [90, 90, 90, 90, 90, 90],
+  "delay_after_web_start_s": 8.0,
+  "startup_window_s": 180.0,
+  "motion_time_ms": 4000,
+  "requires_latched_stop": true,
+  "note": "Factory robotio has no measured joint feedback or torque-disable ROS command. On a full Jetson boot, send the physically accepted factory 90-degree pose once and retain it as a command estimate."
+}

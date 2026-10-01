@@ -1,0 +1,542 @@
+"""ROS 2 bridge for the new, separately approved STM32 image.
+
+Opt-in replacement for the serial micro-ROS agent. Legacy /cmd_vel and
+/arm6_joints are NEVER subscribed, so they cannot bypass session/deadline checks.
+No motion is enabled by connecting or reconnecting this node.
+"""
+import json
+import hashlib
+import math
+import os
+from pathlib import Path
+import secrets
+import signal
+import struct
+import time
+
+import rclpy
+from rclpy.node import Node
+from rclpy.signals import SignalHandlerOptions
+from rclpy.qos import qos_profile_sensor_data
+from sensor_msgs.msg import Imu, JointState, LaserScan, MagneticField
+from nav_msgs.msg import Odometry
+from std_msgs.msg import Float32, String
+from builtin_interfaces.msg import Time
+import serial
+
+from controller_protocol import ClockMapping, Kind, Parser, Session, arm_payload, base_payload, encode, RESULT_NAMES
+from controller_feedback import ArmFeedback, ScanAssembler, decode_status, decode_arm_diagnostics, load_calibration
+from controller_requests import PendingRequests
+from controller_release import select_controller_profile
+from controller_arm_commissioning import arm_commissioning_allowed
+from manual_reference_host import decode_reference, effective_calibration, manual_request_allowed
+from command_arm_state import describe as command_arm_state, execution_state
+
+ROOT = Path(os.environ.get('EXPLORER_ROOT', '/home/vlad/Explorer'))
+
+
+class ControllerDriver(Node):
+    def __init__(self):
+        super().__init__('explorer_controller_driver')
+        self.profile = json.loads((ROOT/'config/controller-profile.json').read_text())
+        if self.profile.get('transport') != 'controller_v1':
+            raise ValueError('controller v1 profile is not selected')
+        self.expected_source = self.profile['firmware_source_sha256']
+        if len(self.expected_source) != 64:
+            raise ValueError('exact approved source identity is required')
+        calibration_path = ROOT/'config/controller-calibration.json'
+        if hashlib.sha256(calibration_path.read_bytes()).hexdigest() != self.profile['calibration_sha256']:
+            raise ValueError('calibration changed since profile approval')
+        self.calibration = load_calibration(calibration_path)
+        self.parser, self.session, self.arm = Parser(), Session(), ArmFeedback(self.calibration)
+        self.pending_requests = PendingRequests()
+        self.reference_epoch=None
+        self.scans = [ScanAssembler(), ScanAssembler()]
+        self.challenges = {}
+        self.identity = None
+        self.state = {}
+        self.last_status_ns = None
+        self.last_odom_us = None
+        self.pose = [0., 0., 0.]
+        self.fault = None
+        self.sensor_health = {}
+        self.manual_reference = None
+        self.source_sha256 = None
+        self.serial = None
+        self.connection_generation = 0
+        self.connected_ns = None
+        self.command_not_before_ns = time.monotonic_ns()
+        self.next_connect_ns = 0
+        self.reconnect_delay_ns = 500_000_000
+        self.odom_pub = self.create_publisher(Odometry, '/odom_raw', qos_profile_sensor_data)
+        self.imu_pub = self.create_publisher(Imu, '/imu/data_raw', qos_profile_sensor_data)
+        self.mag_pub = self.create_publisher(MagneticField, '/imu/mag', qos_profile_sensor_data)
+        self.battery_pub = self.create_publisher(Float32, '/battery', qos_profile_sensor_data)
+        self.scan_pub = [self.create_publisher(LaserScan, '/scan'+str(i), qos_profile_sensor_data) for i in range(2)]
+        self.joint_pub = self.create_publisher(JointState, '/joint_states', qos_profile_sensor_data)
+        self.actuator_pub = self.create_publisher(JointState, '/explorer/actuator_states', qos_profile_sensor_data)
+        self.state_pub = self.create_publisher(String, '/explorer/controller_state', 10)
+        self.result_pub = self.create_publisher(String, '/explorer/controller_result', 10)
+        self.arm_pub = self.create_publisher(String, '/explorer/arm_measurements', 10)
+        self.servo_sample_pub = self.create_publisher(String, '/explorer/servo_sample', 100)
+        self.create_subscription(String, '/explorer/controller_request', self.command, 10)
+        self.create_timer(.005, self.poll)
+        self.create_timer(.5, self.handshake)
+        self.create_timer(.05, self.publish_state)
+        self.handshake()
+
+    def send(self, packet):
+        if self.serial is None:
+            raise OSError('controller serial port is disconnected')
+        if self.serial.write(packet) != len(packet):
+            raise IOError('partial serial write: command will not be retried')
+
+    def connect(self, now):
+        if self.serial is not None:
+            return True
+        if now < self.next_connect_ns:
+            return False
+        port = None
+        try:
+            port = serial.Serial(port=None, baudrate=2000000, timeout=0, write_timeout=0,
+                                 exclusive=True)
+            port.dtr = False
+            port.rts = False
+            port.port = self.profile.get('device', '/dev/explorer_mcu')
+            port.open()
+            # Never inherit buffered commands or sensor fragments from a prior
+            # process/connection. No command is retained for retransmission.
+            port.reset_output_buffer()
+            port.reset_input_buffer()
+        except (OSError, serial.SerialException) as exc:
+            if port is not None:
+                try:
+                    port.close()
+                except (OSError, serial.SerialException):
+                    pass
+            self.disconnect(str(exc), now)
+            return False
+        self.serial = port
+        self.connected_ns = now
+        self.command_not_before_ns = now
+        self.fault = 'awaiting fresh controller identity and status'
+        return True
+
+    def handshake(self):
+        now = time.monotonic_ns()
+        if not self.connect(now):
+            return
+        self.challenges = {key: value for key, value in self.challenges.items() if now-value < 100_000_000}
+        nonce = secrets.randbits(64)
+        self.challenges[nonce] = now
+        try:
+            self.send(encode(Kind.HELLO, struct.pack('<Q', nonce)))
+        except (OSError, serial.SerialException) as exc:
+            self.disconnect(str(exc))
+
+    def reset_observations(self, now):
+        self.connection_generation += 1
+        self.parser = Parser()
+        self.pending_requests.clear()
+        self.session.disconnected()
+        self.challenges.clear()
+        self.identity = None
+        self.state = {}
+        self.source_sha256 = None
+        self.sensor_health = {}
+        self.manual_reference = None
+        self.last_status_ns = None
+        self.command_not_before_ns = now
+        self.arm = ArmFeedback(self.calibration)
+        self.last_odom_us = None
+        self.scans = [ScanAssembler(), ScanAssembler()]
+
+    def identity_boot(self, boot, now, source=None):
+        if self.session.clock is None:
+            self.command_not_before_ns = now
+        elif self.session.clock.boot != boot or (source is not None and self.source_sha256 not in (None, source)):
+            self.reset_observations(now)
+            self.connected_ns = now
+
+    def disconnect(self, reason, now=None):
+        now = time.monotonic_ns() if now is None else now
+        port, self.serial = self.serial, None
+        if port is not None:
+            try:
+                port.close()
+            except (OSError, serial.SerialException):
+                pass
+        self.reset_observations(now)
+        self.connected_ns = None
+        self.next_connect_ns = now + self.reconnect_delay_ns
+        self.reconnect_delay_ns = min(5_000_000_000, self.reconnect_delay_ns * 2)
+        self.fault = reason
+
+    def stamp(self, mcu_us, ttl_ns=500_000_000):
+        now = time.monotonic_ns()
+        acquired = self.session.clock.source_host_ns(mcu_us, now, ttl_ns)
+        # Epoch is used only when publishing ROS messages. A late NTP correction
+        # never changes the monotonic command lease or source sample age.
+        epoch = self.get_clock().now().nanoseconds - (now-acquired)
+        return Time(sec=epoch//1_000_000_000, nanosec=epoch%1_000_000_000)
+
+    def command(self, message):
+        request = {}
+        try:
+            parsed = json.loads(message.data)
+            if not isinstance(parsed, dict):
+                raise ValueError('controller request must be an object')
+            request = parsed
+            kind = Kind[request['operation']]
+            if self.profile.get('manual_reference_version')==1 and kind in (Kind.RECOVERY_ENABLE,Kind.ARM_RECOVER):
+                raise ValueError('CommandOnly: используйте ручную исходную позу, readback recovery отсутствует')
+            if kind == Kind.ESTOP:
+                self.send(encode(Kind.ESTOP))
+                self.pending_requests.clear()
+                self.session.state = 'fault'
+                return
+            now = time.monotonic_ns()
+            manual_authorized = False
+            if self.profile.get('manual_reference_version') == 1:
+                manual_authorized = manual_request_allowed(ROOT, self.profile, self.identity, self.state, request, now)
+            restricted=self.profile.get('base_telemetry_only',self.profile.get('telemetry_only',True)) if kind==Kind.BASE or request.get('source_id')=='explorer_control' else self.profile.get('telemetry_only',True)
+            if restricted and not manual_authorized and not arm_commissioning_allowed(
+                ROOT, self.profile, self.identity, self.state, self.arm.samples,
+                self.calibration, request, now):
+                raise ValueError('controller commissioning: telemetry only')
+            if self.last_status_ns is None or now-self.last_status_ns > 200_000_000:
+                raise ValueError('controller telemetry unavailable')
+            if request['source_monotonic_ns'] <= self.command_not_before_ns:
+                raise ValueError('command originated before current controller connection was ready')
+            if self.profile.get('manual_reference_version') == 1 and kind in (
+                Kind.ARM, Kind.ARM_ENABLE, Kind.CALIBRATION, Kind.MR_BEGIN, Kind.MR_CAPTURE, Kind.MR_MOVE, Kind.MR_KEEPALIVE
+            ) and not manual_authorized:
+                raise ValueError('Режим ручной опорной установки требует штатного операторского пути')
+            data = b''
+            if kind == Kind.BASE:
+                data = base_payload(request['velocity'], request.get('finite_us', 0))
+            elif kind in (Kind.ARM, Kind.ARM_RECOVER):
+                position = request['position_rad']
+                if len(position) != 6:
+                    raise ValueError('all six actuator positions required')
+                if kind == Kind.ARM:
+                    if self.profile.get('manual_reference_version') == 1:
+                        for c, q in zip(self.arm.calibration, position):
+                            c.target_raw(q)
+                        # Preserve sub-tick continuous coordinates for velocity/
+                        # acceleration checks; MCU alone quantizes the target.
+                    else:
+                        position = [calibration.target_position(q)
+                                    for calibration, q in zip(self.arm.calibration, position)]
+                data = arm_payload(position)
+            elif kind == Kind.CALIBRATION:
+                data = b''.join(cal.payload() for cal in self.calibration)
+            elif kind == Kind.MR_MOVE:
+                positions = request['position_rad']
+                duration = float(request.get('duration_s', 1.0))
+                if len(positions) != 6 or not all(math.isfinite(x) for x in positions) or not 0 <= duration <= 60:
+                    raise ValueError('Некорректная конечная команда руки')
+                for c, q in zip(self.arm.calibration, positions):
+                    c.target_raw(q)
+                data = struct.pack('<7f', *positions, duration)
+            elif kind == Kind.RGB:
+                data = bytes(request['rgb'])
+                if len(data) != 3:
+                    raise ValueError('RGB requires three bytes')
+            elif kind == Kind.BEEP:
+                if type(request['enabled']) is not bool:
+                    raise ValueError('beeper state must be boolean')
+                data = bytes([request['enabled']])
+            elif kind not in (Kind.OPEN, Kind.HOLD, Kind.CANCEL, Kind.CLEAR, Kind.ARM_ENABLE, Kind.ARM_CANCEL, Kind.RECOVERY_ENABLE, Kind.MR_BEGIN, Kind.MR_CAPTURE,
+                                Kind.MR_ABORT, Kind.MR_KEEPALIVE, Kind.MR_STOP, Kind.MR_DIAGNOSTIC):
+                raise ValueError('unsupported command')
+            packet = self.session.prepare(kind, request['source_monotonic_ns'], request['expires_monotonic_ns'],
+                                          now, data, source_id=request['source_id'],
+                                          source_sequence=request['source_sequence'])
+            self.pending_requests.remember(boot=self.session.clock.boot, session=self.session.session,
+                sequence=self.session.sequence, operation=kind, request=request, now_ns=now,
+                earliest_result_us=self.session.clock.interval(now, now)[0])
+            self.send(packet)
+        except (ValueError, KeyError, TypeError, OverflowError, OSError, serial.SerialException) as exc:
+            self.result_pub.publish(String(data=json.dumps(dict(
+                source_id=request.get('source_id'), source_sequence=request.get('source_sequence'),
+                operation=request.get('operation'), error=None, rejection_stage='jetson_validation',
+                accepted=False, reached=False, reason=str(exc)))))
+            if isinstance(exc, (OSError, serial.SerialException)) and self.serial is not None:
+                self.disconnect(str(exc))
+
+    def poll(self):
+        try:
+            now = time.monotonic_ns()
+            if self.serial is None:
+                if self.connect(now):
+                    self.handshake()
+                return
+            generation = self.connection_generation
+            for kind, payload in self.parser.feed(self.serial.read(8192)):
+                if self.connection_generation == generation:
+                    self.receive(kind, payload, now)
+                else:
+                    break
+        except (ValueError, struct.error) as exc:
+            self.fault = str(exc)
+        except (OSError, serial.SerialException) as exc:
+            self.disconnect(str(exc))
+        # Invalid but continuously arriving packets must not defer the link
+        # deadline. They cannot make old status/clock observations fresh.
+        now = time.monotonic_ns()
+        if self.serial is not None:
+            if self.last_status_ns is not None and now-self.last_status_ns > 250_000_000:
+                self.disconnect('controller status deadline missed', now)
+            elif self.last_status_ns is None and now-self.connected_ns > 2_000_000_000:
+                self.disconnect('controller startup identity/status deadline missed', now)
+
+    def receive(self, kind, payload, now):
+        if kind == Kind.IDENTITY:
+            if len(payload) != 88:
+                raise ValueError('incompatible controller identity')
+            nonce, mcu_us, boot, device, revision, flash_kib = struct.unpack_from('<QQQIIH', payload)
+            sent = self.challenges.pop(nonce, None)
+            if sent is None:
+                raise ValueError('unsolicited/replayed clock observation')
+            source = payload[49:81].hex()
+            if payload[48] != 1 or device != 0x450:
+                self.disconnect('controller build/protocol/chip identity mismatch')
+                return
+            identity=dict(boot=boot,device=device,revision=revision,flash_kib=flash_kib,
+                uid=payload[36:48].hex(),source_sha256=source,reset_flags=struct.unpack_from('<I',payload,84)[0])
+            try:
+                self.profile=select_controller_profile(ROOT,self.profile,identity)
+                self.expected_source=self.profile['firmware_source_sha256']
+            except (OSError,ValueError,KeyError,TypeError) as exc:
+                self.disconnect('controller release selection: '+str(exc))
+                return
+            clock = ClockMapping.observation(boot, sent, now, mcu_us)
+            if self.session.clock is None or self.session.clock.boot != boot:
+                self.pending_requests.clear()
+            self.identity_boot(boot,now,source)
+            self.session.synchronize(clock, self.state.get('highest_session', 0))
+            self.source_sha256 = source
+            self.identity = identity
+            self.fault = None
+        elif self.session.clock is not None:
+            if kind == Kind.MR_STATUS:
+                ref = decode_reference(payload, now)
+                if ref['boot'] != self.session.clock.boot:
+                    raise ValueError('Ручная привязка принадлежит другой загрузке')
+                self.stamp(ref['acquired_us'])
+                self.manual_reference = ref
+                if ref['reference_valid']:
+                    epoch=(ref['boot'],ref['session'],tuple(ref['raw_reference']))
+                    if self.reference_epoch is None or self.reference_epoch[0]!=epoch:
+                        self.reference_epoch=(epoch,ref['generation'])
+                    ref['reference_generation']=self.reference_epoch[1]
+                else:self.reference_epoch=None
+                if ref['reference_valid']:
+                    revised = effective_calibration(self.calibration, ref)
+                    if self.arm.calibration != revised:
+                        # Do not relabel old samples after rebasing the coordinate system.
+                        # Their raw history remains in servo_sample logs; fresh diagnostic
+                        # reads populate this new calibration without synthetic timestamps.
+                        self.arm = ArmFeedback(revised)
+                    contract=command_arm_state(dict(identity=self.identity,manual_reference=ref,controller=self.state,
+                        telemetry_fresh=self.last_status_ns is not None and now-self.last_status_ns<250_000_000,
+                        session_state=self.session.state,fault=self.fault),self.calibration,now,self.profile)
+                    if contract['reference_valid']:
+                        msg = JointState()
+                        msg.header.stamp = self.stamp(ref['acquired_us'])
+                        msg.name = ['arm'+str(i)+'_Joint' for i in range(1, 6)]
+                        msg.position = contract['q_estimated'][:5]
+                        self.joint_pub.publish(msg)
+                        msg.name=['servo'+str(i) for i in range(1,7)]
+                        msg.position=contract['q_estimated']
+                        self.actuator_pub.publish(msg)
+                else:
+                    self.arm.calibration = self.calibration
+            elif kind == Kind.ARM_DIAGNOSTICS:
+                diagnostic = decode_arm_diagnostics(payload)
+                self.stamp(diagnostic['acquired_us'])
+                self.sensor_health['arm_bus'] = dict(diagnostic, received_ns=now)
+            elif kind == Kind.SENSOR_DIAGNOSTICS:
+                if len(payload) != 64:
+                    raise ValueError('bad sensor diagnostics record')
+                self.sensor_health['startup'] = dict(received_ns=now,
+                    imu_stage=payload[8], imu_id=payload[9], gyro_config=payload[10],
+                    accel_config=payload[11], spi_status=payload[12],
+                    imu_ready=bool(payload[13]), mag_ready=bool(payload[14]), battery_ready=bool(payload[15]),
+                    lidar=[dict(zip(('rx_bytes','valid_packets','parser_errors','overruns','uart_errors','start_attempts'),
+                        struct.unpack_from('<6I', payload, 16+24*i))) for i in range(2)])
+            elif kind == Kind.STATUS:
+                state = decode_status(payload)
+                if state['boot'] != self.session.clock.boot:
+                    self.disconnect('MCU rebooted')
+                    return
+                self.stamp(state['acquired_us'])
+                if self.last_status_ns is None:
+                    self.command_not_before_ns = now
+                self.reconnect_delay_ns = 500_000_000
+                self.last_status_ns = now
+                self.state = state
+                self.session.highest = max(self.session.highest, state['highest_session'])
+                if state['mode'] == 2:
+                    self.session.state = 'fault'
+                if state['encoder_measurement_valid']:
+                    self.publish_odom(state)
+                else:
+                    self.last_odom_us = None
+                    self.fault = 'encoder measurement invalid; odometry not published'
+            elif kind == Kind.RESULT:
+                if len(payload) != 20:
+                    raise ValueError('bad result record')
+                acquired, sequence, operation, result, mode, fault = struct.unpack('<QQBBBB', payload)
+                self.stamp(acquired)
+                source = self.pending_requests.match(boot=self.session.clock.boot,
+                    session=self.session.session, sequence=sequence, operation=operation,
+                    acquired_us=acquired, now_ns=now)
+                if source is not None:
+                    # A rejected manual arm request is not a latched BASE fault.
+                    # Keep the transport session usable for explicit STOP/retry.
+                    # Real MCU fault/mode changes and OPEN/CLEAR keep old handling.
+                    benign_manual_rejection = (self.profile.get('manual_reference_version') == 1 and
+                        result != 0 and mode == 1 and fault == 0 and self.session.state == 'active' and
+                        operation not in (int(Kind.OPEN), int(Kind.CLEAR)))
+                    if not benign_manual_rejection:
+                        self.session.result(Kind(operation), sequence, result)
+                self.result_pub.publish(String(data=json.dumps(dict(sequence=sequence, operation=operation,
+                    acquired_us=acquired, rejection_stage='stm32' if result else None,
+                    reason=RESULT_NAMES[result] if result < len(RESULT_NAMES) else 'unknown_controller_result',
+                    accepted=result == 0, error=result, mode=mode, fault=fault, reached=False,
+                    matched_request=source is not None,
+                    **(source or dict(source_id=None, source_sequence=None))))))
+            elif kind == Kind.SERVO:
+                sample = self.arm.consume(payload, self.session.clock, now)
+                self.servo_sample_pub.publish(String(data=json.dumps(dict(sample, boot_id=self.session.clock.boot),allow_nan=False)))
+                if sample['position_valid'] and sample['joint'] <= 5 and self.profile.get('manual_reference_version') != 1:
+                    msg = JointState()
+                    msg.header.stamp = self.stamp(struct.unpack_from('<Q', payload, 13)[0], 250_000_000)
+                    msg.name = ['arm'+str(sample['joint'])+'_Joint']
+                    msg.position = [sample['position_rad']]
+                    self.joint_pub.publish(msg)
+            elif kind == Kind.BATTERY:
+                if len(payload) != 15:
+                    raise ValueError('bad battery record')
+                acquired, error, raw, volts = struct.unpack('<QB Hf', payload)
+                self.sensor_health['battery'] = dict(error=error, received_ns=now)
+                self.stamp(acquired, 2_000_000_000)
+                if error == 0 and 0 < raw < 4096 and math.isfinite(volts) and 0 < volts < 20:
+                    self.battery_pub.publish(Float32(data=volts))
+            elif kind == Kind.IMU:
+                if len(payload) != 44:
+                    raise ValueError('bad IMU record')
+                self.sensor_health['imu'] = dict(error=payload[8], mag_error=payload[9], received_ns=now)
+                self.publish_imu(payload)
+            elif kind in (Kind.LIDAR0, Kind.LIDAR1):
+                index = int(kind)-int(Kind.LIDAR0)
+                complete = self.scans[index].packet(payload)
+                self.sensor_health['lidar'+str(index)] = dict(received_ns=now)
+                if complete is not None:
+                    self.publish_scan(index, complete)
+
+    def publish_odom(self, state):
+        sample = state['acquired_us']
+        vx, vy, wz = state['velocity']
+        if self.last_odom_us is not None:
+            dt = (sample-self.last_odom_us)/1e6
+            if not 0 < dt < .2:
+                self.last_odom_us = sample
+                raise ValueError('odometry sample gap; no extrapolated travel')
+            yaw = self.pose[2] + wz*dt/2
+            self.pose[0] += (vx*math.cos(yaw)-vy*math.sin(yaw))*dt
+            self.pose[1] += (vx*math.sin(yaw)+vy*math.cos(yaw))*dt
+            self.pose[2] += wz*dt
+        self.last_odom_us = sample
+        msg = Odometry()
+        msg.header.stamp = self.stamp(sample)
+        msg.header.frame_id, msg.child_frame_id = 'odom', 'base_footprint'
+        msg.pose.pose.position.x, msg.pose.pose.position.y = self.pose[:2]
+        msg.pose.pose.orientation.z, msg.pose.pose.orientation.w = math.sin(self.pose[2]/2), math.cos(self.pose[2]/2)
+        msg.twist.twist.linear.x, msg.twist.twist.linear.y, msg.twist.twist.angular.z = vx, vy, wz
+        for i in (0, 7, 35):
+            msg.pose.covariance[i], msg.twist.covariance[i] = .05, .02
+        self.odom_pub.publish(msg)
+
+    def publish_imu(self, payload):
+        if len(payload) != 44:
+            raise ValueError('bad IMU record')
+        acquired = struct.unpack_from('<Q', payload)[0]
+        stamp = self.stamp(acquired)
+        if payload[8] == 0:
+            raw = struct.unpack_from('>7h', payload, 10)
+            msg = Imu()
+            msg.header.stamp, msg.header.frame_id = stamp, 'imu_frame'
+            msg.orientation_covariance[0] = -1.0  # orientation is not measured here
+            msg.linear_acceleration.x, msg.linear_acceleration.y, msg.linear_acceleration.z = [v*9.80665/2048 for v in raw[:3]]
+            msg.angular_velocity.x, msg.angular_velocity.y, msg.angular_velocity.z = [math.radians(v/16.4) for v in raw[3:6]]
+            for i in (0, 4, 8):
+                msg.angular_velocity_covariance[i], msg.linear_acceleration_covariance[i] = .01, .1
+            self.imu_pub.publish(msg)
+        if payload[9] == 0:
+            mag = struct.unpack_from('<3h', payload, 25)
+            msg = MagneticField()
+            msg.header.stamp, msg.header.frame_id = self.stamp(struct.unpack_from('<Q', payload, 36)[0]), 'imu_frame'
+            msg.magnetic_field.x, msg.magnetic_field.y, msg.magnetic_field.z = [v*.15e-6 for v in mag]
+            self.mag_pub.publish(msg)
+
+    def publish_scan(self, index, scan):
+        msg = LaserScan()
+        msg.header.stamp = self.stamp(scan['acquired_us'], 600_000_000)
+        msg.header.frame_id = 'laser'+str(index)+'_frame'
+        msg.angle_min, msg.angle_increment = 0., 2*math.pi/666
+        msg.angle_max = 665*msg.angle_increment
+        msg.scan_time = (scan['ended_us']-scan['acquired_us'])/1e6
+        msg.time_increment = msg.scan_time/666
+        msg.range_min, msg.range_max = .02, 12.
+        msg.ranges, msg.intensities = scan['ranges'], scan['intensities']
+        self.scan_pub[index].publish(msg)
+
+    def publish_state(self):
+        now = time.monotonic_ns()
+        self.pending_requests.expire(now)
+        arm = self.arm.snapshot(now)
+        state = dict(at=time.time(), monotonic_ns=now, identity=self.identity,
+                     telemetry_only=self.profile.get('telemetry_only', True),
+                     base_telemetry_only=self.profile.get('base_telemetry_only',self.profile.get('telemetry_only',True)),sensors=self.sensor_health,
+                     session_state=self.session.state, fault=self.fault, controller=self.state,
+                     telemetry_fresh=self.last_status_ns is not None and now-self.last_status_ns < 250_000_000,
+                     parser_errors=self.parser.errors, arm=arm, manual_reference=self.manual_reference)
+        if self.profile.get('manual_reference_version') == 1:
+            arm=execution_state(command_arm_state(state,self.calibration,now,self.profile),ROOT)
+            state['arm']=arm
+            state['arm_command_enabled']=arm['command_enabled']
+            state['firmware_compatible']=arm['firmware_compatible']
+        self.arm_pub.publish(String(data=json.dumps(arm, allow_nan=False)))
+        self.state_pub.publish(String(data=json.dumps(state, allow_nan=False)))
+        target = ROOT/'data/controller-state.json'
+        temporary = target.with_suffix('.tmp')
+        temporary.write_text(json.dumps(state, allow_nan=False))
+        temporary.replace(target)
+
+
+def main():
+    rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
+    def interrupted(signum,frame):raise KeyboardInterrupt
+    signal.signal(signal.SIGTERM,interrupted)
+    signal.signal(signal.SIGINT,interrupted)
+    driver = ControllerDriver()
+    try:
+        rclpy.spin(driver)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        try:
+            driver.send(encode(Kind.ESTOP))
+        except (OSError, serial.SerialException):
+            pass
+        if driver.serial is not None:
+            driver.serial.close()
+        driver.destroy_node()
+        rclpy.try_shutdown()
+
+
+if __name__ == '__main__':
+    main()

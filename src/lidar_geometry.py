@@ -2,7 +2,8 @@
 
 The virtual scan is an approximation: its ray origin differs from each real
 scanner by about 15 cm. Keep raw scans for obstacle clearing in costmaps.
-Extrinsics remain provisional until externally measured.
+Navigation extrinsics are accepted only when the configuration contains the
+physical motion evidence.  Precision manipulation remains a separate scope.
 """
 import json
 import math
@@ -74,7 +75,14 @@ class Geometry(Node):
         # Unknown angular bins must not become free-space clearing rays.
         ranges[~np.isfinite(ranges)]=np.nan
         out.ranges=ranges.tolist();self.pub.publish(out)
-        status=dict(at=time.time(),provisional=True,paired_stamp_delta_ms=abs(key[0]-key[1])/1e6,valid_bins=int(np.isfinite(ranges).sum()))
+        navigation_validated=(self.config.get('navigation_validated') is True and
+                              self.config.get('physically_calibrated') is True and
+                              bool(self.config.get('validation',{}).get('evidence')))
+        status=dict(at=time.time(),provisional=not navigation_validated,
+                    navigation_validated=navigation_validated,
+                    precision_manipulation_validated=self.config.get('precision_manipulation_validated') is True,
+                    validation_scope=self.config.get('validation',{}).get('scope'),
+                    paired_stamp_delta_ms=abs(key[0]-key[1])/1e6,valid_bins=int(np.isfinite(ranges).sum()))
         tmp=ROOT/'data/lidar_geometry.tmp';tmp.write_text(json.dumps(status));tmp.replace(ROOT/'data/lidar_geometry.json')
 
 def main():

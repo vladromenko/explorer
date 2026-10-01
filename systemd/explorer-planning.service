@@ -1,16 +1,17 @@
 [Unit]
 Description=Explorer planning
 PartOf=explorer.target
-StartLimitIntervalSec=60
-StartLimitBurst=3
+StartLimitIntervalSec=0
+Wants=explorer-mcu.service explorer-state.service explorer-ekf.service explorer-geometry.service explorer-slam.service
+After=explorer-mcu.service explorer-state.service explorer-ekf.service explorer-geometry.service explorer-slam.service
 
 [Service]
 Type=simple
 WorkingDirectory=/home/vlad/Explorer
 ExecStart=/bin/bash /home/vlad/Explorer/bin/run.sh planning
-Restart=on-failure
+Restart=always
 RestartSec=3
-TimeoutStopSec=8
+TimeoutStopSec=12
 KillMode=control-group
 UMask=0077
 

@@ -90,12 +90,14 @@ def fit(paths):
     translation=[float(np.linalg.norm(e[:3,3])) for e in errors]
     angle=[float(np.degrees(Rotation.from_matrix(e[:3,:3]).magnitude())) for e in errors]
     accepted=bool(max(translation)<.01 and max(angle)<2 and np.linalg.norm(result[:3,3])<.25)
+    measured=all(bool(s.get('measured_joint_positions',False)) for s in samples)
     return dict(camera_to_mount_reference=result.tolist(),reference_mount=mount_frame,
                 samples=[str(p) for p in paths],visual_quality=metrics,
                 translation_residual_m=translation,rotation_residual_deg=angle,
                 held_out_indices=[len(samples)-2,len(samples)-1],consistent=accepted,
-                measured_joint_positions=False,execution_authorized=False,
-                note='Command-estimated joint poses; fit consistency is not independent absolute joint calibration')
+                measured_joint_positions=measured,joint_state_source='servo_readback' if measured else 'command_estimate',execution_authorized=False,
+                note=('Measured joint samples; independent absolute joint/depth calibration and acceptance still required' if measured else
+                      'Command-estimated joint poses; fit consistency is not independent absolute joint calibration'))
 
 
 if __name__=='__main__':
