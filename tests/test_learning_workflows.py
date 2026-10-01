@@ -56,12 +56,27 @@ class WorkflowTests(unittest.TestCase):
             with self.assertRaises(ValueError):manager.finish_autonomous_episode(job['id'],'failure',{})
             state=manager.mark_replanned(job['id'],{'scene_version':'scene-2'})
             self.assertEqual(state['state'],'autonomous')
+            state=manager.finish_autonomous_episode(job['id'],'success',{'fresh':True})
+            self.assertEqual(state['state'],'queued_autonomous')
+            manager.begin_autonomous_episode(job['id'],'scene-3')
+            state=manager.finish_autonomous_episode(job['id'],'failure',{'fresh':True},'missed_grasp',0.)
+            self.assertEqual(state['state'],'complete')
 
     def test_needs_reset_resumes_same_series_after_visual_evidence(self):
         with tempfile.TemporaryDirectory() as folder:
             manager=LearningWorkflows(folder);job=manager.start('AUTONOMOUS','grasp','sock',0,2)
             manager.needs_reset(job['id']);state=manager.reset_observed(job['id'],{'target_visible':True,'fresh':True})
             self.assertEqual(state['state'],'queued_autonomous')
+
+    def test_autonomous_only_completes_bounded_series(self):
+        with tempfile.TemporaryDirectory() as folder:
+            manager=LearningWorkflows(folder);job=manager.start('AUTONOMOUS','grasp','sock',0,2)
+            for index,outcome in enumerate(('failure','success')):
+                manager.begin_autonomous_episode(job['id'],'scene-'+str(index))
+                state=manager.finish_autonomous_episode(job['id'],outcome,{'fresh':True},
+                                                        'missed_grasp' if outcome=='failure' else '',
+                                                        0. if outcome=='failure' else 1.)
+            self.assertEqual(state['state'],'complete');self.assertEqual(state['autonomous_done'],2)
 
     def test_human_only_waits_for_real_training_completion(self):
         with tempfile.TemporaryDirectory() as folder,patch('learning_workflows.time.sleep',return_value=None):
@@ -84,6 +99,10 @@ class WorkflowTests(unittest.TestCase):
             deadline=time.time()+1
             while manager.get(job['id'])['state']=='training' and time.time()<deadline:time.sleep(.01)
             self.assertEqual(manager.get(job['id'])['state'],'queued_autonomous')
+            for index in range(2):
+                manager.begin_autonomous_episode(job['id'],'scene-'+str(index))
+                state=manager.finish_autonomous_episode(job['id'],'success',{'fresh':True},reward=1.)
+            self.assertEqual(state['state'],'complete')
 
 
 if __name__=='__main__':unittest.main()
