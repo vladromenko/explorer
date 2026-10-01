@@ -892,6 +892,11 @@ delivery_task=DeliveryTask(ROOT,delivery_robot,semantic_world)
 missions.compound_guard=delivery_robot.permit
 
 from robot_readiness import status as robot_readiness
+from capability_readiness import CapabilityReadiness
+capability_readiness=CapabilityReadiness(ROOT)
+
+@app.get('/api/capabilities')
+def capability_status():return capability_readiness.status()
 
 def autonomy_permissions():
     try:value=json.loads((ROOT/'data/autonomy-permissions.json').read_text())
