@@ -34,7 +34,7 @@ class Demonstrations:
                     episodes=[dict(id=e['id'],name=e['name'],outcome=e['outcome'],
                                    steps=len(e['steps']),state=e['state']) for e in episodes][-30:],
                     framework='LeRobot 0.6.1',policy_type='ACT',
-                    training_required_successful_demonstrations=10,
+                    training_required_successful_demonstrations=1,
                     joint_state_source='per_episode_provenance',automatic_motion_enabled=False)
 
 

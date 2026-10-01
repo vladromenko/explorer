@@ -97,15 +97,17 @@ def run():
         source=ROOT/('data/mobile-demonstrations' if mobile else 'data/demonstrations')
         episodes=[json.loads((source/e/'episode.json').read_text()) for e in state['episodes']]
         expected_source='operator_mobile_demonstration' if mobile else 'operator_demonstration'
-        if len(episodes)<10 or any(e['outcome']!='success' or e['label_source']!='operator' or
+        if not episodes or any(e['outcome']!='success' or e['label_source']!='operator' or
                                   e['state']!='complete' or e['name']!=state['task'] or e['source']!=expected_source for e in episodes):
             raise ValueError('Demonstrations changed or were not verified by their operator')
-        heldout=max(2,len(episodes)//5)
+        heldout=max(1,len(episodes)//5) if len(episodes)>1 else 0
         exporter=export_mobile_dataset if mobile else export_dataset
-        exporter(episodes[:-heldout],source,folder/'train','explorer/train')
-        exporter(episodes[-heldout:],source,folder/'validation','explorer/validation')
-        write_json(folder/'split.json',dict(train=[e['id'] for e in episodes[:-heldout]],
-                   validation=[e['id'] for e in episodes[-heldout:]]))
+        training=episodes[:-heldout] if heldout else episodes
+        validation=episodes[-heldout:] if heldout else episodes
+        exporter(training,source,folder/'train','explorer/train')
+        exporter(validation,source,folder/'validation','explorer/validation')
+        write_json(folder/'split.json',dict(train=[e['id'] for e in training],
+                   validation=[e['id'] for e in validation],heldout_independent=bool(heldout)))
         config=dict(dataset=dict(repo_id='explorer/train',root=str(folder/'train'),video_backend='pyav'),
             policy=dict(type='act',device='cuda',push_to_hub=False,chunk_size=1,n_action_steps=1,
                         dim_model=256,n_heads=4,dim_feedforward=1024,n_encoder_layers=2,
@@ -123,8 +125,10 @@ def run():
             if child.returncode:raise RuntimeError('LeRobot завершился с ошибкой; см. журнал обучения')
         state.update(state='validating');write_json(folder/'job.json',state)
         state['validation']=validate(folder)
-        state.update(state='validated_offline',finished=time.time(),
-                     note='Проверка по отдельным показам завершена. Физическое исполнение не разрешено')
+        terminal='validated_offline' if heldout else 'trained_unvalidated'
+        note=('Проверка по отдельным показам завершена. Физическое исполнение не разрешено' if heldout else
+              'Модель обучена на единственном показе; независимой offline-выборки нет, продвижение запрещено')
+        state.update(state=terminal,finished=time.time(),note=note)
     except (Exception,KeyboardInterrupt) as exc:
         state.update(state='interrupted' if isinstance(exc,(InterruptedError,KeyboardInterrupt)) else 'failed',
                      error=str(exc),finished=time.time())
@@ -159,15 +163,16 @@ def validate(folder,check_budget=True):
     if not errors or not np.isfinite(errors).all():raise ValueError('Проверка не дала корректных результатов')
     mobile=json.loads((folder/'job.json').read_text()).get('dataset_kind')=='mobile_manipulation_9dof'
     split=json.loads((folder/'split.json').read_text())
-    total=len(split['train'])+len(split['validation'])
+    independent=split.get('heldout_independent',True)
+    total=len(set(split['train'])|set(split['validation']))
     result=dict(samples=len(ds),held_out_episodes=len(split['validation']),
-                held_out_fraction=len(split['validation'])/total,
+                held_out_fraction=len(split['validation'])/total if independent else 0.,
                 mean_absolute_error=float(np.mean(errors)),
                 p95_absolute_error=float(np.percentile(errors,95)),
                 hold_position_baseline_mae=float(np.mean(baseline)),units='mixed_degrees_and_body_velocity' if mobile else 'degrees',
-                improves_hold_baseline=bool(np.mean(errors)<np.mean(baseline)),
+                improves_hold_baseline=bool(independent and np.mean(errors)<np.mean(baseline)),
                 measured_joint_ground_truth=False,physical_success_evaluated=False,
-                automatic_execution_allowed=False)
+                automatic_execution_allowed=False,heldout_independent=independent)
     write_json(folder/'validation.json',result)
     return result
 

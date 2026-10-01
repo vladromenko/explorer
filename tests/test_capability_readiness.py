@@ -28,7 +28,8 @@ class CapabilityReadinessTests(unittest.TestCase):
    root=self.prepare(folder);now=time.time()
    (root/'config/local-grasp-profile.json').write_text(json.dumps({'experimental_execution_authorized':True}))
    (root/'data/autonomy-permissions.json').write_text(json.dumps({'expires_at':now+100,'scopes':['arm_motion','target_contact']}))
-   row=self.rows(root)['LEARN_GRASP_LOCAL'];self.assertTrue(row['experimental_ready']);self.assertTrue(row['production_accepted'])
+   row=self.rows(root)['LEARN_GRASP_LOCAL'];self.assertTrue(row['experimental_ready']);self.assertIsNone(row['production_accepted'])
+   self.assertIsNone(row['learned_policy_validated'])
    pick=self.rows(root)['PICK_LOCAL'];self.assertTrue(pick['capability_available']);self.assertFalse(pick['learned_policy_validated']);self.assertFalse(pick['production_accepted'])
  def test_missing_evidence_exposes_specific_workflow(self):
   with tempfile.TemporaryDirectory() as folder:

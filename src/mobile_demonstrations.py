@@ -14,6 +14,9 @@ from lerobot_bridge import write_json
 
 STAGES=('travel_to_object','grasp','carry','place')
 
+def required_stages(name):
+    return {'grasp'} if str(name).startswith('grasp ') else set(STAGES)
+
 
 def sample(root,now):
     state=json.loads((root/'data/status.json').read_text())
@@ -69,11 +72,12 @@ class MobileDemonstrations:
             try:episodes.append(json.loads(path.read_text()))
             except (OSError,ValueError,TypeError):pass
         eligible=[e for e in episodes if e.get('state')=='complete' and e.get('outcome')=='success' and
-                  e.get('label_source')=='operator' and set(e.get('stages',[]))==set(STAGES) and e.get('samples',0)>=20]
+                  e.get('label_source')=='operator' and required_stages(e.get('name')).issubset(set(e.get('stages',[]))) and
+                  e.get('samples',0)>=20]
         skills={name:sum(e.get('name')==name for e in eligible) for name in {e.get('name') for e in episodes if e.get('name')}}
         with self.lock:return dict(active=self.active,last=self.last,automatic_replay=False,
             format='explorer_mobile_episode_v2',trainable=True,successful=len(eligible),skills=skills,
-            training_required_successful_demonstrations=10,recommended_demonstrations='30–100',
+            training_required_successful_demonstrations=1,recommended_demonstrations='5–100; больше разнообразия обычно лучше',
             observations=['wrist_rgb','arm_command_estimate','body_velocity_command','odometry','dual_lidar_summary','stage'],
             policy='LeRobot ACT 9-DoF candidate; offline validation before supervised execution')
 
@@ -117,8 +121,9 @@ class MobileDemonstrations:
         if outcome not in ('success','failure','unknown'):raise ValueError('Неизвестный результат')
         with self.lock:
             if not self.active:return self.status()
-            if outcome=='success' and (self.active['samples']<20 or set(self.active['stages'])!=set(STAGES)):
-                raise ValueError('Для полного успешного показа запишите поездку, захват, перевозку и размещение')
+            stages=required_stages(self.active['name'])
+            if outcome=='success' and (self.active['samples']<20 or not stages.issubset(set(self.active['stages']))):
+                raise ValueError('Для успешного показа запишите не менее 20 синхронных кадров и все этапы выбранного навыка')
             self.active.update(state='complete' if reason is None else 'interrupted',outcome=outcome,
                                label_source='operator' if reason is None else 'recorder',ended=time.time(),reason=reason)
             self.save();self.last=self.active;completed=self.active;self.active=None

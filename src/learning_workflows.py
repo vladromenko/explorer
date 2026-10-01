@@ -13,11 +13,11 @@ TERMINAL=('complete','cancelled','failed')
 
 
 class LearningWorkflows:
-    def __init__(self,root,autonomy_submit=None,train_submit=None):
+    def __init__(self,root,autonomy_submit=None,train_submit=None,train_status=None):
         self.root=Path(root);self.folder=self.root/'data/learning-workflows';self.folder.mkdir(parents=True,exist_ok=True)
         self.database=self.folder/'workflows.sqlite3';self.episodes=EpisodeStore(self.root)
-        self.autonomy_submit=autonomy_submit;self.train_submit=train_submit;self.lock=threading.RLock()
-        self._schema();self._interrupt_active()
+        self.autonomy_submit=autonomy_submit;self.train_submit=train_submit;self.train_status=train_status;self.lock=threading.RLock()
+        self._schema();self._interrupt_active();self._restore_training_monitors()
 
     def db(self):
         connection=sqlite3.connect(self.database,timeout=10);connection.row_factory=sqlite3.Row
@@ -39,10 +39,17 @@ class LearningWorkflows:
 
     def _interrupt_active(self):
         with self.db() as db:
-            rows=db.execute("SELECT id FROM workflows WHERE state NOT IN ('complete','cancelled','failed','waiting_demo','needs_reset')").fetchall()
+            rows=db.execute("SELECT id FROM workflows WHERE state NOT IN ('complete','cancelled','failed','waiting_demo','needs_reset','training')").fetchall()
             for row in rows:
                 db.execute("UPDATE workflows SET state='interrupted',updated=?,detail=? WHERE id=?",
                            (time.time(),json.dumps({'reason':'Process restarted; no action replayed'}),row['id']))
+
+    def _restore_training_monitors(self):
+        with self.db() as db:rows=db.execute("SELECT id,detail FROM workflows WHERE state='training'").fetchall()
+        for row in rows:
+            detail=json.loads(row['detail'] or '{}');job=detail.get('job');target=detail.get('after_training')
+            if job and target:
+                threading.Thread(target=self._wait_training,args=(row['id'],job,target),daemon=True).start()
 
     def start(self,mode,skill,target,human_demonstrations=0,autonomous_trials=0):
         if mode not in MODES:raise ValueError('Unknown learning mode')
@@ -72,7 +79,7 @@ class LearningWorkflows:
             outcome=imported['outcome'];human=workflow['human_done']+1
             next_state='waiting_demo'
             if human>=workflow['human_target']:
-                next_state='training' if workflow['autonomous_target'] else 'complete'
+                next_state='training'
             with self.db() as db:
                 db.execute('UPDATE workflows SET human_done=?,state=?,updated=? WHERE id=?',
                            (human,next_state,time.time(),identifier))
@@ -166,11 +173,37 @@ class LearningWorkflows:
         workflow=self.get(identifier)
         result={'queued':False,'reason':'training backend callback is not bound'}
         if self.train_submit is not None:result=self.train_submit(workflow)
-        state='queued_autonomous' if result.get('queued') is True else 'training_blocked'
+        target='queued_autonomous' if workflow['autonomous_target'] else 'complete'
+        state='training' if result.get('queued') is True and self.train_status is not None else target if result.get('queued') is True else 'training_blocked'
         with self.db() as db:
             db.execute('UPDATE workflows SET state=?,training_state=?,updated=?,detail=? WHERE id=?',
-                       (state,'queued' if result.get('queued') else 'blocked',time.time(),json.dumps(result),identifier))
+                       (state,'queued' if result.get('queued') else 'blocked',time.time(),
+                        json.dumps(dict(result,after_training=target)),identifier))
             self.event(db,identifier,'bootstrap_training',result)
+        if state=='training':threading.Thread(target=self._wait_training,args=(identifier,result['job'],target),daemon=True).start()
+
+    def _wait_training(self,identifier,job_id,target):
+        deadline=time.monotonic()+12*3600
+        while time.monotonic()<deadline:
+            workflow=self.get(identifier)
+            if workflow['state']!='training':return
+            try:job=self.train_status(job_id)
+            except (OSError,ValueError,KeyError,TypeError):job={}
+            state=job.get('state')
+            if state in ('validated_offline','trained_unvalidated','completed','accepted'):
+                with self.db() as db:
+                    db.execute("UPDATE workflows SET state=?,training_state=?,updated=? WHERE id=?",
+                               (target,state,time.time(),identifier));self.event(db,identifier,'training_completed',
+                               {'job':job_id,'state':state,'validation':job.get('validation',{})})
+                return
+            if state in ('failed','interrupted','cancelled','rejected'):
+                with self.db() as db:
+                    db.execute("UPDATE workflows SET state='training_blocked',training_state=?,updated=?,detail=? WHERE id=?",
+                               (state,time.time(),json.dumps({'job':job_id,'reason':'training did not complete'}),identifier))
+                    self.event(db,identifier,'training_blocked',{'job':job_id,'state':state})
+                return
+            time.sleep(5)
+        self.fail(identifier,'training time budget expired')
 
     @staticmethod
     def _increment(db,identifier,outcome):

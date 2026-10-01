@@ -3,6 +3,7 @@ from pathlib import Path
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 from episode_store import EpisodeStore
 from learning_workflows import LearningWorkflows
 
@@ -61,6 +62,28 @@ class WorkflowTests(unittest.TestCase):
             manager=LearningWorkflows(folder);job=manager.start('AUTONOMOUS','grasp','sock',0,2)
             manager.needs_reset(job['id']);state=manager.reset_observed(job['id'],{'target_visible':True,'fresh':True})
             self.assertEqual(state['state'],'queued_autonomous')
+
+    def test_human_only_waits_for_real_training_completion(self):
+        with tempfile.TemporaryDirectory() as folder,patch('learning_workflows.time.sleep',return_value=None):
+            states=iter(({'state':'training'},{'state':'validated_offline','validation':{'mae':1.}}))
+            manager=LearningWorkflows(folder,train_submit=lambda workflow:{'queued':True,'job':'train'},
+                                      train_status=lambda job:next(states))
+            job=manager.start('HUMAN_DEMONSTRATION','grasp','sock',1,0)
+            manager.attach_demonstration(job['id'],self.legacy(folder))
+            deadline=time.time()+1
+            while manager.get(job['id'])['state']=='training' and time.time()<deadline:time.sleep(.01)
+            done=manager.get(job['id'])
+            self.assertEqual(done['state'],'complete');self.assertEqual(done['training_state'],'validated_offline')
+
+    def test_bootstrap_waits_then_queues_autonomy(self):
+        with tempfile.TemporaryDirectory() as folder,patch('learning_workflows.time.sleep',return_value=None):
+            manager=LearningWorkflows(folder,train_submit=lambda workflow:{'queued':True,'job':'train'},
+                                      train_status=lambda job:{'state':'trained_unvalidated'})
+            job=manager.start('BOOTSTRAP_THEN_AUTONOMOUS','grasp','sock',1,2)
+            manager.attach_demonstration(job['id'],self.legacy(folder))
+            deadline=time.time()+1
+            while manager.get(job['id'])['state']=='training' and time.time()<deadline:time.sleep(.01)
+            self.assertEqual(manager.get(job['id'])['state'],'queued_autonomous')
 
 
 if __name__=='__main__':unittest.main()

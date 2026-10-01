@@ -966,12 +966,14 @@ from learning_workflows import LearningWorkflows
 def workflow_train(workflow):
     try:
         task=workflow['skill']+' '+workflow['target']
-        result=(learning_jobs.start_mobile if workflow['skill']=='mobile_pick_place' else learning_jobs.start)(1000,task)
+        result=learning_jobs.start_mobile(1000,task)
         return dict(queued=True,job=result['id'])
     except (OSError,ValueError,KeyError,subprocess.SubprocessError) as exc:
         return dict(queued=False,reason=str(exc))
 
-learning_workflows=LearningWorkflows(ROOT,train_submit=workflow_train)
+def workflow_train_status(identifier):
+    return next((item for item in learning_jobs.status()['jobs'] if item['id']==identifier),{})
+learning_workflows=LearningWorkflows(ROOT,train_submit=workflow_train,train_status=workflow_train_status)
 def completed_demonstration(record,path):
     identifier=record.get('workflow_id')
     if identifier:learning_workflows.attach_demonstration(identifier,path)
@@ -1049,7 +1051,9 @@ def learning_workflow_start(c:LearningWorkflowStart):
 def learning_workflow_demonstration(identifier:str,c:LearningDemoStart):
     workflow=map_operation(learning_workflows.get,identifier);task=workflow['skill']+' '+workflow['target']
     if c.mobile:
-        return map_operation(mobile_demonstrations.start,task,c.observing,workflow['target'],'unknown','medium','',identifier)
+        result=map_operation(mobile_demonstrations.start,task,c.observing,workflow['target'],'unknown','medium','',identifier)
+        if workflow['skill']=='grasp':mobile_demonstrations.stage('grasp')
+        return result
     return map_operation(teaching.start,task,c.observing,identifier)
 
 @app.post('/api/learning/workflows/{identifier}/intervention')

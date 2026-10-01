@@ -104,10 +104,10 @@ class CapabilityReadiness:
             runtime_missing=[key for key in spec['runtime'] if facts['runtime'].get(key) is not True]
             evidence_missing=[key for key in spec['evidence'] if facts['evidence'].get(key) is not True]
             permission_missing=[key for key in spec['permissions'] if key not in facts['permissions']]
-            policy=spec['policy'];policy_validated=policy is None or policy in facts['accepted']
+            policy=spec['policy'];policy_validated=None if policy is None else policy in facts['accepted']
             available=not runtime_missing and not evidence_missing
             experimental_ready=available and not permission_missing
-            operate_accepted=experimental_ready and (policy_validated if spec['operate'] else True)
+            operate_accepted=experimental_ready and policy_validated if spec['operate'] else None
             workflow=[dict(id=key,instruction=WORKFLOWS[key]) for key in evidence_missing]
             rows.append(dict(id=name,runtime_ready=not runtime_missing,runtime_missing=runtime_missing,
                 evidence_ready=not evidence_missing,evidence_missing=evidence_missing,

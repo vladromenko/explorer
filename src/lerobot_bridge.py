@@ -74,8 +74,9 @@ class LearningJobs:
         source=self.root/'data/mobile-demonstrations';episodes=[]
         for path in sorted(source.glob('*/episode.json')):
             episode=json.loads(path.read_text())
+            stage_ready=(set(episode.get('stages',[]))==set(STAGES) or task.startswith('grasp ') and 'grasp' in episode.get('stages',[]))
             if (episode.get('name')==task and episode.get('state')=='complete' and episode.get('outcome')=='success' and
-                    episode.get('label_source')=='operator' and set(episode.get('stages',[]))==set(STAGES) and episode.get('samples',0)>=20):episodes.append(episode)
+                    episode.get('label_source')=='operator' and stage_ready and episode.get('samples',0)>=20):episodes.append(episode)
         if not episodes:raise ValueError('Нужен хотя бы один успешный полный показ для ACT; фиксированного минимума нет')
         if not self.status()['backend'].get('ready'):raise ValueError('Среда LeRobot ещё не прошла проверку')
         training_budget(self.root)

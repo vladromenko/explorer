@@ -31,6 +31,14 @@ class MobileTests(unittest.TestCase):
             r=MobileDemonstrations(root);self.assertIsNone(r.active)
             saved=json.loads(next(r.folder.glob('*/episode.json')).read_text());self.assertEqual(saved['state'],'interrupted')
 
+    def test_local_grasp_demo_needs_only_grasp_stage(self):
+        with tempfile.TemporaryDirectory() as path,patch('mobile_demonstrations.threading.Thread'):
+            root=Path(path);self.setup_files(root);m=MobileDemonstrations(root);m.start('grasp sock',True)
+            m.stage('grasp');m.active['samples']=20
+            result=m.finish('success')
+            self.assertEqual(result['last']['outcome'],'success')
+            self.assertEqual(result['successful'],1)
+
     def test_invalid_sensor_age_and_unknown_power_rejected(self):
         with tempfile.TemporaryDirectory() as path:
             root=Path(path);state,now=self.setup_files(root)
