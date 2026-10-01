@@ -12,6 +12,7 @@ import subprocess
 import time
 import yaml
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from sensor_msgs.msg import BatteryState
 from std_msgs.msg import String
@@ -64,6 +65,7 @@ class PowerManager(Node):
         self.last_llm_check = 0.
         self.last_mode_check = 0.
         self.mode = 'unknown'
+        self.started = time.monotonic()
         self.shutdown_available = False
         self.create_timer(1., self.tick)
 
@@ -157,11 +159,18 @@ class PowerManager(Node):
             self.last_llm_check = now
             if now-self.last_llm_request > self.config['workloads']['llm_idle_timeout_s']:self.optional_stop(('llm',))
         resources = self.resources()
+        policy=read_json(ROOT/'data/power-policy.json');velocity=status.get('velocity') or [0,0,0]
+        arm=status.get('arm_command_state',{});activity='IDLE'
+        if any(abs(float(value))>.001 for value in velocity):activity='NAVIGATION' if status.get('mode')=='AUTONOMOUS' else 'BASE'
+        elif arm.get('phase')=='command_in_progress':activity='ARM'
+        elif read_json(ROOT/'data/perception.json').get('image_stamp',0)>time.time()-3:activity='OBSERVE'
         record = dict(at=time.time(), state=state, battery_voltage_v=voltage, battery_current_a=None,
                       soc=None, runtime_minutes=None, charging=power.get('charging'), resources=resources,
                       commanded_velocity=status.get('velocity'), arm_activity=status.get('arm_command_state',{}),
                       perception=read_json(ROOT/'data/perception.json').get('inference_ms'),
-                      robot_mode=status.get('mode'), shutdown=read_json(ROOT/'data/critical-shutdown.json'))
+                      robot_mode=status.get('mode'),activity=activity,power_profile=policy.get('profile','AUTO'),
+                      shutdown=read_json(ROOT/'data/critical-shutdown.json'))
+        atomic_json(ROOT/'data/runtime.json',dict(at=time.time(),uptime_s=time.monotonic()-self.started))
         record['automatic_shutdown_available']=self.shutdown_available
         record['shutdown_setup_required']=not self.shutdown_available
         atomic_json(ROOT/'data/power.json', record)
@@ -175,8 +184,10 @@ def main():
     rclpy.init()
     node = PowerManager()
     try:rclpy.spin(node)
-    except KeyboardInterrupt:pass
-    finally:node.destroy_node();rclpy.shutdown()
+    except (KeyboardInterrupt,ExternalShutdownException):pass
+    finally:
+        node.destroy_node()
+        if rclpy.ok():rclpy.shutdown()
 
 
 if __name__ == '__main__':main()

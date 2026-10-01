@@ -65,12 +65,12 @@ class Engine:
         if out.shape != (1,300,6):raise RuntimeError('Unexpected model output '+str(out.shape))
         detections=[]
         for x1,y1,x2,y2,score,cls in out[0]:
-            if score<.4:continue
-            idx=int(cls)
-            if not 0<=idx<len(LABELS):continue
-            box=[float(np.clip((x1-px)/scale,0,w-1)),float(np.clip((y1-py)/scale,0,h-1)),
-                 float(np.clip((x2-px)/scale,0,w-1)),float(np.clip((y2-py)/scale,0,h-1))]
-            detections.append(dict(label=LABELS[idx],confidence=round(float(score),3),bbox=box))
+            if score>=.4:
+                idx=int(cls)
+                if 0<=idx<len(LABELS):
+                    box=[float(np.clip((x1-px)/scale,0,w-1)),float(np.clip((y1-py)/scale,0,h-1)),
+                         float(np.clip((x2-px)/scale,0,w-1)),float(np.clip((y2-py)/scale,0,h-1))]
+                    detections.append(dict(label=LABELS[idx],confidence=round(float(score),3),bbox=box))
         return detections
 
 def stamp(msg):return msg.header.stamp.sec+msg.header.stamp.nanosec/1e9
@@ -122,65 +122,70 @@ def run():
         if rgb is None and rgbs and (not depths or time.time()-rgbs[-1][1]>.3):rgb=rgbs[-1]
         if rgb is None or rgb[1]<=previous:
             time.sleep(.01)
-            continue
-        raw,ts,frame_id=rgb
-        frame=raw.copy()
-        previous=ts
-        ok,raw_jpg=cv2.imencode('.jpg',raw,[cv2.IMWRITE_JPEG_QUALITY,82])
-        if ok:
-            temp=ROOT/'data/frame-raw.tmp';temp.write_bytes(raw_jpg.tobytes());temp.replace(ROOT/'data/frame-raw.jpg')
-        detections=engine.infer(frame)
-        registered=(depth is not None and info is not None and abs(ts-depth[1])<.05
-                    and depth[0].shape==raw.shape[:2] and depth[2]==frame_id)
-        if registered:
-            # One atomic, synchronized snapshot for demand-loaded object grounding.
-            snapshot=ROOT/'data/rgbd-snapshot.tmp'
-            with snapshot.open('wb') as stream:
-                np.savez_compressed(stream,rgb=raw,depth=depth[0].astype(np.float32)*depth[3],
-                                    k=np.array(info.k).reshape(3,3),d=np.array(info.d),
-                                    stamp=ts,frame=frame_id)
-            snapshot.replace(ROOT/'data/rgbd-snapshot.npz')
-        used=set()
-        for d in detections:
-            box=d['bbox']; center=np.array([(box[0]+box[2])/2,(box[1]+box[3])/2])
-            matches=[(np.linalg.norm(center-t['center']),key) for key,t in tracks.items() if key not in used and t['label']==d['label'] and ts-t['seen']<1.]
-            distance,tid=min(matches,default=(math.inf,None))
-            if distance>70:tid=next_id;next_id+=1
-            used.add(tid)
-            tracks[tid]=dict(center=center,label=d['label'],seen=ts)
-            d['track']=tid
-            d['position']=None
-            # Never index unregistered depth with RGB pixel coordinates.
-            aligned=(depth is not None and info is not None and abs(ts-depth[1])<.1
-                     and depth[0].shape==frame.shape[:2] and depth[2]==frame_id)
-            if aligned and info.k[0]>0 and info.k[4]>0:
-                u,v=map(int,center)
-                patch=depth[0][max(0,v-8):v+9,max(0,u-8):u+9].astype(float)*depth[3]
-                valid=patch[np.isfinite(patch)&(patch>.15)&(patch<5)]
-                if valid.size>=10:
-                    z=float(np.median(valid))
-                    d['position']=dict(x=(u-info.k[2])*z/info.k[0],y=(v-info.k[5])*z/info.k[4],z=z,frame=frame_id)
-            a,b,c,e=map(int,box)
-            cv2.rectangle(frame,(a,b),(c,e),(66,225,137),2)
-            cv2.putText(frame,f"{d['label']} {d['confidence']:.2f}",(a,max(15,b-5)),cv2.FONT_HERSHEY_SIMPLEX,.5,(66,225,137),1)
-        tracks={k:v for k,v in tracks.items() if ts-v['seen']<2}
-        if time.monotonic()-last_save>2:
+        else:
+            raw,ts,frame_id=rgb
+            frame=raw.copy()
+            previous=ts
+            ok,raw_jpg=cv2.imencode('.jpg',raw,[cv2.IMWRITE_JPEG_QUALITY,82])
+            if ok:
+                temp=ROOT/'data/frame-raw.tmp';temp.write_bytes(raw_jpg.tobytes());temp.replace(ROOT/'data/frame-raw.jpg')
+            detections=engine.infer(frame)
+            registered=(depth is not None and info is not None and abs(ts-depth[1])<.05
+                        and depth[0].shape==raw.shape[:2] and depth[2]==frame_id)
+            if registered:
+                # One atomic, synchronized snapshot for demand-loaded object grounding.
+                snapshot=ROOT/'data/rgbd-snapshot.tmp'
+                with snapshot.open('wb') as stream:
+                    np.savez_compressed(stream,rgb=raw,depth=depth[0].astype(np.float32)*depth[3],
+                                        k=np.array(info.k).reshape(3,3),d=np.array(info.d),
+                                        stamp=ts,frame=frame_id)
+                snapshot.replace(ROOT/'data/rgbd-snapshot.npz')
+            used=set()
             for d in detections:
-                p=d['position'] or {}
-                db.execute('INSERT INTO observations(seen,track,label,confidence,frame,x,y,z) VALUES(?,?,?,?,?,?,?,?)',
-                           (time.time(),d['track'],d['label'],d['confidence'],p.get('frame',frame_id),p.get('x'),p.get('y'),p.get('z')))
-            db.commit();last_save=time.monotonic()
-        ms=(time.monotonic()-started)*1000
-        state=dict(at=time.time(),image_stamp=ts,inference_ms=round(ms,2),objects=detections,
-                   depth_sync_ms=round(abs(ts-depth[1])*1000,2) if depth else None,
-                   frame=frame_id,world_coordinates_validated=False)
-        tmp=ROOT/'data/perception.tmp';tmp.write_text(json.dumps(state));tmp.replace(ROOT/'data/perception.json')
-        ok,jpg=cv2.imencode('.jpg',frame,[cv2.IMWRITE_JPEG_QUALITY,78])
-        if ok:
-            tmp=ROOT/'data/frame.tmp';tmp.write_bytes(jpg.tobytes());tmp.replace(ROOT/'data/frame.jpg')
-        try:power=json.loads((ROOT/'data/power.json').read_text()).get('state','UNKNOWN')
-        except (OSError,ValueError):power='UNKNOWN'
-        fps=workload['perception_low_fps'] if power in ('LOW_POWER','UNKNOWN') else workload['perception_idle_fps'] if power=='IDLE' else workload['perception_fps']
-        time.sleep(max(0,1/max(.2,float(fps))-(time.monotonic()-started)))
+                box=d['bbox']; center=np.array([(box[0]+box[2])/2,(box[1]+box[3])/2])
+                matches=[(np.linalg.norm(center-t['center']),key) for key,t in tracks.items() if key not in used and t['label']==d['label'] and ts-t['seen']<1.]
+                distance,tid=min(matches,default=(math.inf,None))
+                if distance>70:tid=next_id;next_id+=1
+                used.add(tid)
+                tracks[tid]=dict(center=center,label=d['label'],seen=ts)
+                d['track']=tid
+                d['position']=None
+                # Never index unregistered depth with RGB pixel coordinates.
+                aligned=(depth is not None and info is not None and abs(ts-depth[1])<.1
+                         and depth[0].shape==frame.shape[:2] and depth[2]==frame_id)
+                if aligned and info.k[0]>0 and info.k[4]>0:
+                    u,v=map(int,center)
+                    patch=depth[0][max(0,v-8):v+9,max(0,u-8):u+9].astype(float)*depth[3]
+                    valid=patch[np.isfinite(patch)&(patch>.15)&(patch<5)]
+                    if valid.size>=10:
+                        z=float(np.median(valid))
+                        d['position']=dict(x=(u-info.k[2])*z/info.k[0],y=(v-info.k[5])*z/info.k[4],z=z,frame=frame_id)
+                a,b,c,e=map(int,box)
+                cv2.rectangle(frame,(a,b),(c,e),(66,225,137),2)
+                cv2.putText(frame,f"{d['label']} {d['confidence']:.2f}",(a,max(15,b-5)),cv2.FONT_HERSHEY_SIMPLEX,.5,(66,225,137),1)
+            tracks={k:v for k,v in tracks.items() if ts-v['seen']<2}
+            if time.monotonic()-last_save>2:
+                for d in detections:
+                    p=d['position'] or {}
+                    db.execute('INSERT INTO observations(seen,track,label,confidence,frame,x,y,z) VALUES(?,?,?,?,?,?,?,?)',
+                               (time.time(),d['track'],d['label'],d['confidence'],p.get('frame',frame_id),p.get('x'),p.get('y'),p.get('z')))
+                db.commit();last_save=time.monotonic()
+            ms=(time.monotonic()-started)*1000
+            state=dict(at=time.time(),image_stamp=ts,inference_ms=round(ms,2),objects=detections,
+                       depth_sync_ms=round(abs(ts-depth[1])*1000,2) if depth else None,
+                       frame=frame_id,world_coordinates_validated=False)
+            tmp=ROOT/'data/perception.tmp';tmp.write_text(json.dumps(state));tmp.replace(ROOT/'data/perception.json')
+            ok,jpg=cv2.imencode('.jpg',frame,[cv2.IMWRITE_JPEG_QUALITY,78])
+            if ok:
+                tmp=ROOT/'data/frame.tmp';tmp.write_bytes(jpg.tobytes());tmp.replace(ROOT/'data/frame.jpg')
+            try:power=json.loads((ROOT/'data/power.json').read_text()).get('state','UNKNOWN')
+            except (OSError,ValueError):power='UNKNOWN'
+            try:policy=json.loads((ROOT/'data/power-policy.json').read_text())
+            except (OSError,ValueError):policy={}
+            selected=policy.get('profile','AUTO');active=policy.get('perception_active_fps',workload['perception_fps'])
+            idle=policy.get('perception_idle_fps',workload['perception_idle_fps'])
+            if selected=='AUTO':idle=.5
+            fps=workload['perception_low_fps'] if power in ('LOW_POWER','UNKNOWN') else idle if power=='IDLE' else active
+            time.sleep(max(0,1/max(.2,float(fps))-(time.monotonic()-started)))
 
 if __name__=='__main__':run()

@@ -34,6 +34,14 @@ class CapabilityReadinessTests(unittest.TestCase):
   with tempfile.TemporaryDirectory() as folder:
    row=self.rows(self.prepare(folder))['LEARN_PLACE_LOCAL']
    self.assertEqual([item['id'] for item in row['evidence_workflow']],['local_grasp_profile','local_reset_profile'])
+ def test_persistent_day_profile_grants_only_listed_capability_scopes(self):
+  with tempfile.TemporaryDirectory() as folder:
+   root=self.prepare(folder);hour=time.localtime().tm_hour
+   (root/'config/local-grasp-profile.json').write_text(json.dumps({'experimental_execution_authorized':True}))
+   (root/'config/autonomous-day.json').write_text(json.dumps({'enabled':True,'start_hour':hour,
+       'end_hour':min(24,hour+1),'allowed_capabilities':['LEARN_GRASP_LOCAL']}))
+   row=self.rows(root)['LEARN_GRASP_LOCAL'];self.assertTrue(row['experimental_permission'])
+   navigate=self.rows(root)['NAVIGATE'];self.assertFalse(navigate['experimental_permission'])
 
 
 if __name__=='__main__':unittest.main()

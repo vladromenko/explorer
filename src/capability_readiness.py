@@ -62,6 +62,13 @@ class CapabilityReadiness:
         permissions=read(self.root/'data/autonomy-permissions.json');day=read(self.root/'config/autonomous-day.json')
         graduation=read(self.root/'data/autonomy-graduation-status.json').get('accepted',[])
         scopes=set(permissions.get('scopes',[])) if permissions.get('expires_at',0)>now else set()
+        hour=time.localtime(now).tm_hour
+        day_active=(day.get('enabled') is True and day.get('start_hour',24)<=hour<day.get('end_hour',0))
+        day_capabilities=set(day.get('allowed_capabilities',[])) if day_active else set()
+        if day_capabilities&{'LEARN_GRASP_LOCAL','LEARN_PLACE_LOCAL','PICK_LOCAL','PLACE_LOCAL'}:
+            scopes.update(('arm_motion','target_contact'))
+        if day_capabilities&{'EXPLORE_LOCAL','NAVIGATE','PICK_AND_DELIVER'}:scopes.add('base_motion')
+        if 'LEARN_PUSH_LOCAL' in day_capabilities:scopes.update(('arm_motion','target_contact','scene_preparation'))
         sensors=status.get('sensor_age',{}) if fresh(status,now,2) else {}
         arm_ready=(arm.get('boot_id')==status.get('boot_id') and
                    arm.get('phase')=='command_elapsed_observation_required' and
@@ -88,7 +95,7 @@ class CapabilityReadiness:
             localization='localization' in graduation or commissioning.get('localization_verified') is True,
             delivery_setup=(self.root/'config/delivery-acceptance.json').exists(),
             day_profile=day.get('enabled') is True,
-          ),permissions=scopes,accepted=set(graduation),day_profile=day,
+          ),permissions=scopes,accepted=set(graduation),day_profile=day,day_profile_active=day_active,
           provenance=dict(joint_state='command_estimate',battery_soc='unavailable',camera_world_geometry='accepted_stationary_handeye'))
 
     def status(self,now=None):

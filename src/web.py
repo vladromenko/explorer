@@ -101,6 +101,8 @@ def heavy_jobs():
     if any(j.get('state') in ('queued','exporting','training','validating') for j in learning_jobs.status()['jobs']):jobs.append('train')
     return jobs
 profiles=ResourceProfiles(ROOT,heavy_jobs)
+from power_endurance import PowerEndurance
+power_endurance=PowerEndurance(ROOT,heavy_jobs)
 from resource_scheduler import ResourceScheduler
 resource_scheduler=ResourceScheduler(ROOT)
 from appearance import MODES as APPEARANCE_MODES,read as read_appearance,write as write_appearance
@@ -110,6 +112,13 @@ def resource_profile():return profiles.status()
 
 @app.get('/api/resources/jobs')
 def resource_jobs():return resource_scheduler.status()
+
+@app.get('/api/power/endurance')
+def power_endurance_status():return power_endurance.status()
+
+class EnduranceProfileRequest(BaseModel):profile:str
+@app.post('/api/power/endurance')
+def power_endurance_select(c:EnduranceProfileRequest):return map_operation(power_endurance.select,c.profile)
 
 class ProfileRequest(BaseModel):mode:str
 @app.post('/api/resources/profile')
@@ -973,12 +982,50 @@ from local_grasp_experiment import LocalGraspExperiment
 local_grasp_experiment=LocalGraspExperiment(ROOT,learning_workflows,capability_readiness,object_finder,
     measured_vision,manual_arm,trajectory_execution,reference_arm)
 
+from autonomous_day import AutonomousDayRuntime
+def autonomous_day_inputs():
+    status=read_state('status.json',2);power=power_endurance.status()
+    capabilities={item['id']:item for item in capability_readiness.status()['capabilities']}
+    queued=next((item['id'] for item in learning_workflows.status()['workflows']
+                 if item['skill']=='grasp' and item['state']=='queued_autonomous'),None)
+    return dict(battery_voltage_v=power.get('battery_voltage_v'),manual_takeover=gamepad_panel.teleop.status()['owner'] is not None,
+        emergency_stop=status.get('reason')=='EMERGENCY STOP',localization_valid=capabilities['NAVIGATE']['evidence_ready'],
+        local_grasp_ready=capabilities['LEARN_GRASP_LOCAL']['experimental_ready'],queued_grasp_workflow=queued,
+        training_ready=False,unknown_object_query=False)
+def autonomous_day_dispatch(decision,profile):
+    if decision['activity']=='learn_grasp_local':
+        if local_grasp_experiment.lock.locked():return {'accepted':False,'reason':'local grasp already active'}
+        return dict(accepted=True,status=local_grasp_experiment.start(decision['workflow_id']))
+    if decision['activity']=='observe_and_update_memory':return {'accepted':True,'background_semantic_memory':True}
+    return {'accepted':False,'reason':'activity requires an evidence workflow or unavailable capability'}
+autonomous_day=AutonomousDayRuntime(ROOT,autonomous_day_inputs,resource_scheduler.status,
+    curriculum_provider=lambda:{'queue':[]},dispatch=autonomous_day_dispatch)
+
 class LearningWorkflowStart(BaseModel):
     mode:str
     skill:str
     target:str=Field(min_length=1,max_length=80)
     human_demonstrations:int=Field(default=0,ge=0,le=500)
     autonomous_trials:int=Field(default=0,ge=0,le=500)
+
+class AutonomousDayProfile(BaseModel):
+    enabled:bool=False
+    start_hour:int=Field(ge=0,le=23)
+    end_hour:int=Field(ge=1,le=24)
+    allowed_capabilities:list[str]=Field(default_factory=list,max_length=12)
+    allowed_objects:list[str]=Field(default_factory=list,max_length=30)
+    allowed_zones:list[str]=Field(default_factory=list,max_length=20)
+    max_attempts:int=Field(default=50,ge=1,le=500)
+    max_continuous_motion_s:int=Field(default=300,ge=10,le=1800)
+    minimum_voltage_v:float=Field(default=11.4,ge=10.8,le=12.6)
+    storage_quota_gb:float=Field(default=40,ge=2,le=200)
+    takeover_behavior:str='pause_reobserve_replan'
+
+@app.get('/api/autonomous-day')
+def autonomous_day_status():return autonomous_day.status()
+
+@app.post('/api/autonomous-day')
+def autonomous_day_save(c:AutonomousDayProfile):return map_operation(autonomous_day.save,c.model_dump())
 
 class LearningDemoStart(BaseModel):
     observing:bool=False

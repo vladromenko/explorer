@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "enabled": false,
+  "start_hour": 8,
+  "end_hour": 18,
+  "allowed_capabilities": ["OBSERVE_LOCAL", "SEARCH_OBJECT"],
+  "allowed_objects": ["sock", "training objects"],
+  "allowed_zones": ["operator-defined training zone"],
+  "max_attempts": 50,
+  "max_continuous_motion_s": 300,
+  "minimum_voltage_v": 11.4,
+  "storage_quota_gb": 40,
+  "takeover_behavior": "pause_reobserve_replan"
+}
