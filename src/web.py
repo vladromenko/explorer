@@ -969,6 +969,10 @@ def completed_demonstration(record,path):
 teaching.on_complete=completed_demonstration
 mobile_demonstrations.on_complete=completed_demonstration
 
+from local_grasp_experiment import LocalGraspExperiment
+local_grasp_experiment=LocalGraspExperiment(ROOT,learning_workflows,capability_readiness,object_finder,
+    measured_vision,manual_arm,trajectory_execution,reference_arm)
+
 class LearningWorkflowStart(BaseModel):
     mode:str
     skill:str
@@ -988,7 +992,7 @@ class LearningIntervention(BaseModel):
     metadata:dict=Field(default_factory=dict)
 
 @app.get('/api/learning/workflows')
-def learning_workflow_status():return learning_workflows.status()
+def learning_workflow_status():return dict(**learning_workflows.status(),local_grasp=local_grasp_experiment.status())
 
 @app.post('/api/learning/workflows')
 def learning_workflow_start(c:LearningWorkflowStart):
@@ -1007,7 +1011,17 @@ def learning_workflow_intervention(identifier:str,c:LearningIntervention):
                          c.started_at,c.ended_at,c.metadata)
 
 @app.post('/api/learning/workflows/{identifier}/cancel')
-def learning_workflow_cancel(identifier:str):return map_operation(learning_workflows.cancel,identifier)
+def learning_workflow_cancel(identifier:str):
+    if local_grasp_experiment.active==identifier:local_grasp_experiment.stop()
+    return map_operation(learning_workflows.cancel,identifier)
+
+@app.post('/api/learning/workflows/{identifier}/autonomous/start')
+def learning_workflow_autonomous_start(identifier:str):return map_operation(local_grasp_experiment.start,identifier)
+
+@app.post('/api/learning/workflows/{identifier}/autonomous/stop')
+def learning_workflow_autonomous_stop(identifier:str):
+    if local_grasp_experiment.active!=identifier:raise HTTPException(404,'This local experiment is not active')
+    return local_grasp_experiment.stop()
 
 @app.get('/api/readiness')
 def readiness_status():return robot_readiness(ROOT,delivery_task.status())

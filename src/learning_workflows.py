@@ -155,6 +155,13 @@ class LearningWorkflows:
                        (time.time(),identifier));self.event(db,identifier,'cancelled',{})
         return self.get(identifier)
 
+    def fail(self,identifier,reason):
+        with self.db() as db:
+            db.execute("UPDATE workflows SET state='failed',updated=?,active_episode='',detail=? WHERE id=?",
+                       (time.time(),json.dumps({'reason':str(reason)},ensure_ascii=False),identifier))
+            self.event(db,identifier,'failed',{'reason':str(reason)})
+        return self.get(identifier)
+
     def _train_then_autonomy(self,identifier):
         workflow=self.get(identifier)
         result={'queued':False,'reason':'training backend callback is not bound'}

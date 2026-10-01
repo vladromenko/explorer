@@ -55,21 +55,33 @@ class CandidateScorer:
         reach=max(0.,1.-float(action.get('trajectory_cost',1))/10)
         return max(0.,min(1.,.45*reach+.35*min(1.,clearance/.03)+.2*max(0.,1.-uncertainty/.03)))
 
-    def score(self, context, action):
-        x=self.vector(context,action);logit=float(x@self.weights+self.bias)
+    def score(self, context, action, checkpoint=None):
+        weights=self.weights if checkpoint is None else np.asarray(checkpoint['weights'],dtype=float)
+        bias=self.bias if checkpoint is None else float(checkpoint['bias'])
+        version=self.version if checkpoint is None else checkpoint['id']
+        x=self.vector(context,action);logit=float(x@weights+bias)
         learned=1/(1+math.exp(-max(-30,min(30,logit))))
-        return dict(score=learned if self.version!='geometry-baseline' else self.geometry_baseline(context,action),
+        return dict(score=learned if version!='geometry-baseline' else self.geometry_baseline(context,action),
                     learned_score=learned,baseline_score=self.geometry_baseline(context,action),
-                    policy_version=self.version,feature_version=self.FEATURE_VERSION)
+                    policy_version=version,feature_version=self.FEATURE_VERSION)
 
-    def choose(self, context, candidates, exploration=0., seed=None):
+    def choose(self, context, candidates, exploration=0., seed=None, checkpoint=None):
         if not candidates:raise ValueError('At least one candidate is required')
-        rows=[dict(candidate=item,prediction=self.score(context,item)) for item in candidates]
+        rows=[dict(candidate=item,prediction=self.score(context,item,checkpoint)) for item in candidates]
         rng=np.random.default_rng(seed)
         exploratory=exploration>0 and float(rng.random())<exploration
         selected=int(rng.integers(len(rows))) if exploratory else int(np.argmax([row['prediction']['score'] for row in rows]))
         return dict(selected=selected,rows=rows,method='epsilon_contextual_bandit' if exploratory else 'ranked_contextual_scorer',
-                    exploration=float(exploration),policy_version=self.version)
+                    exploration=float(exploration),policy_version=rows[selected]['prediction']['policy_version'])
+
+    def latest_candidate(self):
+        paths=sorted(self.root.glob('*.json'),key=lambda path:path.stat().st_mtime,reverse=True)
+        for path in paths:
+            try:item=json.loads(path.read_text())
+            except (OSError,ValueError,TypeError):item={}
+            if item.get('backend')=='contextual_logistic_scorer' and item.get('id')!=self.version:
+                return item
+        return None
 
     def train(self, samples, epochs=300, learning_rate=.04):
         usable=[row for row in samples if row.get('outcome') in ('success','failure')]
