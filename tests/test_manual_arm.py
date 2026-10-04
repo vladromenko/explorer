@@ -88,9 +88,12 @@ class ManualArmTests(unittest.TestCase):
         with patch('factory_trajectory.compile_path',return_value=path) as compile_path:
             self.arm.move(self.start,self.goal,speed='fast')
         motion=compile_path.call_args.args[4]
-        self.assertEqual(motion['velocity_deg_s'][0],112.)
-        self.assertEqual(motion['acceleration_deg_s2'][0],400.)
-        self.assertEqual(motion['jerk_deg_s3'][0],4000.)
+        self.assertEqual(motion['velocity_deg_s'][0],448.)
+        self.assertEqual(motion['acceleration_deg_s2'][0],6400.)
+        self.assertEqual(motion['jerk_deg_s3'][0],256000.)
+        self.assertEqual(motion['min_duration_s'],.0875)
+        self.assertEqual(motion['publish_period_s'],.04)
+        self.assertAlmostEqual(motion['lookahead_s'],.08)
 
     def test_observed_reference_never_publishes_or_claims_measurement(self):
         result=self.arm.accept_reference([90]*6,True)
