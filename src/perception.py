@@ -21,6 +21,13 @@ import tensorrt as trt
 ROOT=Path('/home/vlad/Explorer')
 LABELS='person,bicycle,car,motorcycle,airplane,bus,train,truck,boat,traffic light,fire hydrant,stop sign,parking meter,bench,bird,cat,dog,horse,sheep,cow,elephant,bear,zebra,giraffe,backpack,umbrella,handbag,tie,suitcase,frisbee,skis,snowboard,sports ball,kite,baseball bat,baseball glove,skateboard,surfboard,tennis racket,bottle,wine glass,cup,fork,knife,spoon,bowl,banana,apple,sandwich,orange,broccoli,carrot,hot dog,pizza,donut,cake,chair,couch,potted plant,bed,dining table,toilet,tv,laptop,mouse,remote,keyboard,cell phone,microwave,oven,toaster,sink,refrigerator,book,clock,vase,scissors,teddy bear,hair drier,toothbrush'.split(',')
 
+def demonstration_recording():
+    for path in (ROOT/'data/mobile-demonstrations').glob('*/episode.json'):
+        try:
+            if json.loads(path.read_text()).get('state')=='recording':return True
+        except (OSError,ValueError,TypeError):pass
+    return False
+
 class Engine:
     def __init__(self):
         self.cuda=C.CDLL('libcudart.so.13')
@@ -195,7 +202,7 @@ def run():
             selected=policy.get('profile','AUTO');active=policy.get('perception_active_fps',workload['perception_fps'])
             idle=policy.get('perception_idle_fps',workload['perception_idle_fps'])
             if selected=='AUTO':idle=.5
-            fps=workload['perception_low_fps'] if power in ('LOW_POWER','UNKNOWN') else idle if power=='IDLE' else active
+            fps=workload['perception_low_fps'] if power in ('LOW_POWER','UNKNOWN') else active if demonstration_recording() else idle if power=='IDLE' else active
             time.sleep(max(0,1/max(.2,float(fps))-(time.monotonic()-started)))
 
 if __name__=='__main__':run()

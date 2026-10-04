@@ -39,6 +39,15 @@ class MobileTests(unittest.TestCase):
             self.assertEqual(result['last']['outcome'],'success')
             self.assertEqual(result['successful'],1)
 
+    def test_status_exposes_latest_episode_and_storage_location(self):
+        with tempfile.TemporaryDirectory() as path,patch('mobile_demonstrations.threading.Thread'):
+            root=Path(path);self.setup_files(root);m=MobileDemonstrations(root);m.start('grasp sock',True)
+            identifier=m.active['id'];m.stage('grasp');m.active['samples']=20;m.finish('success')
+            restored=MobileDemonstrations(root).status()
+            self.assertEqual(restored['last']['id'],identifier)
+            self.assertEqual(restored['recent'][0]['id'],identifier)
+            self.assertEqual(restored['storage_root'],str(root/'data/mobile-demonstrations'))
+
     def test_invalid_sensor_age_and_unknown_power_rejected(self):
         with tempfile.TemporaryDirectory() as path:
             root=Path(path);state,now=self.setup_files(root)

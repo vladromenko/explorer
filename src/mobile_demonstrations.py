@@ -72,14 +72,16 @@ class MobileDemonstrations:
 
     def status(self):
         episodes=[]
-        for path in sorted(self.folder.glob('*/episode.json')):
+        for path in self.folder.glob('*/episode.json'):
             try:episodes.append(json.loads(path.read_text()))
             except (OSError,ValueError,TypeError):pass
+        episodes.sort(key=lambda item:item.get('started',0),reverse=True)
         eligible=[e for e in episodes if e.get('state')=='complete' and e.get('outcome')=='success' and
                   e.get('label_source')=='operator' and required_stages(e.get('name')).issubset(set(e.get('stages',[]))) and
                   e.get('samples',0)>=20]
         skills={name:sum(e.get('name')==name for e in eligible) for name in {e.get('name') for e in episodes if e.get('name')}}
-        with self.lock:return dict(active=self.active,last=self.last,automatic_replay=False,
+        with self.lock:return dict(active=self.active,last=self.last or (episodes[0] if episodes else None),
+            recent=episodes[:10],storage_root=str(self.folder),automatic_replay=False,
             format='explorer_mobile_episode_v2',trainable=True,successful=len(eligible),skills=skills,
             training_required_successful_demonstrations=1,recommended_demonstrations='5–100; больше разнообразия обычно лучше',
             observations=['wrist_rgb','arm_command_estimate','body_velocity_command','odometry','dual_lidar_summary','stage'],
@@ -136,21 +138,27 @@ class MobileDemonstrations:
             return self.status()
 
     def run(self,ident):
-        previous=-1
+        previous=-1;last_good=time.monotonic()
         try:
             while True:
                 with self.lock:
                     if not self.active or self.active['id']!=ident:return
                     if time.monotonic()>self.lease:raise ValueError('Панель записи отключена')
                     if time.time()-self.active['started']>900:raise ValueError('Достигнут предел 15 минут')
-                    record,image=sample(self.root,time.time())
-                    if record['image_stamp']>previous:
+                    record=image=None
+                    try:record,image=sample(self.root,time.time())
+                    except ValueError as exc:
+                        transient=str(exc) in ('Камера и состояние слишком далеко разнесены по времени','Нет свежего кадра камеры')
+                        if not transient or time.monotonic()-last_good>3:raise
+                        self.active['sampling_warning']=str(exc);self.save()
+                    if record is not None and record['image_stamp']>previous:
                         index=self.active['samples'];folder=self.folder/ident
                         filename=f'{index:06d}.jpg'
                         if not cv2.imwrite(str(folder/filename),image):raise ValueError('Не удалось записать изображение')
                         record.update(image=filename,stage=self.active['stage'])
                         with (folder/'samples.jsonl').open('a') as stream:stream.write(json.dumps(record)+'\n')
-                        self.active['samples']+=1;self.save();previous=record['image_stamp']
+                        self.active['samples']+=1;self.active.pop('sampling_warning',None)
+                        self.save();previous=record['image_stamp'];last_good=time.monotonic()
                 time.sleep(.2)
         except (OSError,ValueError,KeyError) as exc:
             with self.lock:

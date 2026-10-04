@@ -35,6 +35,10 @@ class WebJavascriptTests(unittest.TestCase):
         self.assertIn('function prepareSockTraining()',html)
         self.assertIn('async function enableTrainingManual()',html)
         self.assertIn("$('workflowSkill').value='mobile_pick_place'",html)
+        self.assertIn('id="recordingBadge"',html)
+        self.assertIn('id="trainingDetections"',html)
+        self.assertIn('function renderTrainingStatus(',html)
+        self.assertIn("api('frame')",html)
 
 
 if __name__=='__main__':unittest.main()

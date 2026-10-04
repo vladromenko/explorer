@@ -1074,6 +1074,11 @@ def autonomous_day_save(c:AutonomousDayProfile):return map_operation(autonomous_
 class LearningDemoStart(BaseModel):
     observing:bool=False
     mobile:bool=True
+    name:str=''
+    object_label:str=''
+    object_class:str='unknown'
+    size_class:str='medium'
+    destination:str=''
 
 class LearningIntervention(BaseModel):
     proposed_action:dict
@@ -1091,9 +1096,10 @@ def learning_workflow_start(c:LearningWorkflowStart):
 
 @app.post('/api/learning/workflows/{identifier}/demonstration')
 def learning_workflow_demonstration(identifier:str,c:LearningDemoStart):
-    workflow=map_operation(learning_workflows.get,identifier);task=workflow['skill']+' '+workflow['target']
+    workflow=map_operation(learning_workflows.get,identifier);task=c.name.strip() or workflow['skill']+' '+workflow['target']
     if c.mobile:
-        result=map_operation(mobile_demonstrations.start,task,c.observing,workflow['target'],'unknown','medium','',identifier)
+        result=map_operation(mobile_demonstrations.start,task,c.observing,c.object_label or workflow['target'],
+            c.object_class,c.size_class,c.destination,identifier)
         if workflow['skill']=='grasp':mobile_demonstrations.stage('grasp')
         return result
     return map_operation(teaching.start,task,c.observing,identifier)
