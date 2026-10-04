@@ -39,6 +39,10 @@ class WebJavascriptTests(unittest.TestCase):
         self.assertIn('id="trainingDetections"',html)
         self.assertIn('function renderTrainingStatus(',html)
         self.assertIn("api('frame')",html)
+        self.assertIn("book('/learning-implementation')",html)
+        self.assertTrue((ROOT/'docs/LEARNING-IMPLEMENTATION.ru.md').is_file())
+        web=(ROOT/'src/web.py').read_text()
+        self.assertIn("@app.get('/learning-implementation')",web)
 
 
 if __name__=='__main__':unittest.main()

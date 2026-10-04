@@ -371,6 +371,9 @@ def operator_guide():return HTMLResponse((ROOT/'docs/operator-guide.html').read_
 @app.get('/training-guide')
 def training_guide():return Response((ROOT/'docs/TRAINING-GUIDE.ru.md').read_text(),media_type='text/plain; charset=utf-8')
 
+@app.get('/learning-implementation')
+def learning_implementation():return Response((ROOT/'docs/LEARNING-IMPLEMENTATION.ru.md').read_text(),media_type='text/plain; charset=utf-8')
+
 @app.get('/mobile')
 def mobile_interface():return HTMLResponse((ROOT/'src/mobile.html').read_text())
 
@@ -379,7 +382,7 @@ def mobile_guide():return Response((ROOT/'docs/MOBILE-REMOTE.ru.md').read_text()
 
 @app.middleware('http')
 async def auth(request:Request,call_next):
-    if request.url.path not in ('/','/mobile','/mobile-guide','/guide','/training-guide','/delivery-guide','/lab.js'):
+    if request.url.path not in ('/','/mobile','/mobile-guide','/guide','/training-guide','/learning-implementation','/delivery-guide','/lab.js'):
         supplied=request.headers.get('authorization','').removeprefix('Bearer ')
         if not secrets.compare_digest(supplied,TOKEN):
             from fastapi.responses import JSONResponse
@@ -1096,7 +1099,7 @@ def learning_workflow_start(c:LearningWorkflowStart):
 
 @app.post('/api/learning/workflows/{identifier}/demonstration')
 def learning_workflow_demonstration(identifier:str,c:LearningDemoStart):
-    workflow=map_operation(learning_workflows.get,identifier);task=c.name.strip() or workflow['skill']+' '+workflow['target']
+    workflow=map_operation(learning_workflows.get,identifier);task=workflow['skill']+' '+workflow['target']
     if c.mobile:
         result=map_operation(mobile_demonstrations.start,task,c.observing,c.object_label or workflow['target'],
             c.object_class,c.size_class,c.destination,identifier)

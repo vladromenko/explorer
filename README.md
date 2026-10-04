@@ -62,6 +62,7 @@ bin/install-all.sh --assets /путь/к/Explorer-assets
 - [Понятное управление](docs/operator-guide.ru.md)
 - [Полная раскладка клавиатуры и джойстика](docs/MANUAL-CONTROLS.ru.md)
 - [Обучение захвату и перевозке](docs/TRAINING-GUIDE.ru.md)
+- [Технический свод реализации обучения](docs/LEARNING-IMPLEMENTATION.ru.md)
 - [Телефон, LAN, Tailscale и Telegram](docs/MOBILE-REMOTE.ru.md)
 - [Автоматические допуски](docs/AUTONOMY-GRADUATION.ru.md)
 - [Исследовательские идеи: реализовано и не реализовано](docs/research_coverage.md)
