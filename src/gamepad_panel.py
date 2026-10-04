@@ -92,6 +92,13 @@ class GamepadPanel:
     def drive_tick(self,now):self.feed(now)
     def perform(self,*_args,**_kwargs):raise ValueError('Discrete gamepad arm mode replaced by shared Cartesian teleop')
 
+    def poll_device(self,device,now):
+        keys=set(device.active_keys())
+        codes={item['code'] for item in self.config['axes'].values()}|{16,17}
+        axes={str(code):device.absinfo(code).value for code in codes}
+        with self.lock:
+            self.keys=keys;self.axes=axes;self.last_event=now
+
     def run(self):
         import select
         from evdev import InputDevice
@@ -108,6 +115,7 @@ class GamepadPanel:
                         if ready:
                             for event in device.read():
                                 with self.lock:self.last_event=now;self.sequence+=1;self.decide(event.code,event.value,event.type,now)
+                        self.poll_device(device,now)
                         self.feed(now)
             except (OSError,ValueError,KeyError) as exc:
                 with self.lock:

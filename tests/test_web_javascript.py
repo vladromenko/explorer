@@ -19,5 +19,10 @@ class WebJavascriptTests(unittest.TestCase):
             result=subprocess.run([node,'--check',str(script)],capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stderr)
 
+    def test_manual_view_and_both_inputs_share_explicit_resume(self):
+        html=(ROOT/'src/index.html').read_text()
+        self.assertIn("showTab('manual');selectInput('keyboard')",html)
+        self.assertIn("api('teleop/resume',{source:input,observing:true})",html)
+
 
 if __name__=='__main__':unittest.main()
