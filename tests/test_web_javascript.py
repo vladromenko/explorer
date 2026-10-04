@@ -28,5 +28,13 @@ class WebJavascriptTests(unittest.TestCase):
         self.assertIn('id="loginDialog"',html)
         self.assertNotIn("prompt('Ключ",html)
 
+    def test_sock_training_has_a_single_visible_quick_start(self):
+        html=(ROOT/'src/index.html').read_text()
+        self.assertIn('Подготовить: носок → корзина',html)
+        self.assertIn('НАЧАТЬ СЕРИЮ И ПЕРВЫЙ ПОКАЗ',html)
+        self.assertIn('function prepareSockTraining()',html)
+        self.assertIn('async function enableTrainingManual()',html)
+        self.assertIn("$('workflowSkill').value='mobile_pick_place'",html)
+
 
 if __name__=='__main__':unittest.main()
