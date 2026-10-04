@@ -62,12 +62,12 @@ def coordinated_status(s, now):
         raise ValueError('Совместное управление требует ручного режима без STOP')
     if not isinstance(velocity,list) or len(velocity)!=3 or any(
             not isinstance(v,(int,float)) or not math.isfinite(v) or abs(v)>limit
-            for v,limit in zip(velocity,[.16,.16,.42])):
-        raise ValueError('Снизьте скорость шасси для движения рукой')
+            for v,limit in zip(velocity,[1.21,1.09,2.51])):
+        raise ValueError('Команда шасси вне диапазона совместного управления')
     if not isinstance(observed,list) or len(observed)!=3 or any(
             not isinstance(v,(int,float)) or not math.isfinite(v) or abs(v)>limit
-            for v,limit in zip(observed,[.20,.20,.50])):
-        raise ValueError('Фактическая скорость шасси слишком велика для руки')
+            for v,limit in zip(observed,[1.35,1.22,2.8])):
+        raise ValueError('Фактическая скорость шасси вне диапазона совместного управления')
     if s.get('power',{}).get('state') in ('CRITICAL','CHARGING','UNKNOWN','LOW_POWER'):
         raise ValueError('Power policy blocks mobile manipulation')
     battery=s.get('battery')

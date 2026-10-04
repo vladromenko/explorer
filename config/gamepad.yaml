@@ -11,10 +11,9 @@ axes:
   right_y: {code: 5, center: 128, minimum: 0, maximum: 255, inverted: true}
 buttons: {a: 304, b: 305, x: 308, y: 307, l1: 310, r1: 311, l2: 312, r2: 313, select: 314, start: 315, left_stick: 317, right_stick: 318}
 mapping:
-  chassis: {forward_back: left_y, strafe: left_x, turn_left: l1, turn_right: r1}
-  cartesian: {z: right_y, y: right_x, x: dpad_y}
-  wrist: {pitch_up: y, pitch_down: a, rotation: dpad_x}
-  gripper: {open: l2, close: r2}
+  chassis: {forward_back: left_y, strafe: left_x, proportional_turn: right_x}
+  arm_modifier: r1
+  direct_arm: {joint1: dpad_x, joint2: dpad_y, joint3: right_y, joint4: right_x, joint5: y_a, joint6: l2_r2}
   precision_toggle: x
   stop: b
   resume_after_neutral: start
@@ -24,16 +23,16 @@ drive_profile: normal
 arm_speed: normal
 watchdog_timeout: 0.25
 profiles:
-  precision: {linear: 0.04, angular: 0.1}
-  normal: {linear: 0.10, angular: 0.25}
-  fast: {linear: 0.15, angular: 0.4}
+  precision: {linear: 0.12, angular: 0.25}
+  normal: {linear: 1.20, angular: 2.50}
+  fast: {linear: 1.20, angular: 2.50}
 radio_loss_verified: false
 continuous_motion_enabled: true
 operator_chassis_accepted: true
 operator_acceptance_scope: manual_and_local_autonomy_without_radio_loss_claim
 arm_step_deg: 5
 gripper_step_deg: 5
-notes: Physical Linux event mapping recorded with the operator. MODE produced no event. The web lease and fresh evdev events are both required; a USB receiver alone is not radio-link evidence.
+notes: Physical Linux event mapping recorded with the operator. Axes are proportional. Hold R1 for direct arm joints while the left stick continues to drive the base. MODE produced no event.
 
 bounded_arm_steps_verified: true
 bounded_steps_evidence: data/arm-short-step-validation.json

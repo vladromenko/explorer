@@ -182,13 +182,13 @@ class ManualArm:
                     if not self.model().path(start[:5],goal[:5],shape)['valid']:raise ValueError('MoveIt: столкновение с роботом или полом')
                 from factory_trajectory import compile_path,motion_profile
                 motion=motion_profile(self.motion_config)
-                factors={'precision':(.65,.65,.65),'normal':(1.,1.,1.),'fast':(16.,64.,256.)}
+                factors={'precision':(.65,.65,.65),'normal':(1.,1.,1.),'fast':(32.,256.,2048.)}
                 for key,factor in zip(('velocity_deg_s','acceleration_deg_s2','jerk_deg_s3'),factors[speed]):
                     motion[key]=[float(v)*factor for v in motion[key]]
                 if speed=='fast':
-                    motion['min_duration_s']=float(motion['min_duration_s'])/4
+                    motion['min_duration_s']=float(motion['min_duration_s'])/8
                     motion['publish_period_s']=max(.04,float(motion['publish_period_s'])/2)
-                    motion['lookahead_s']=max(motion['publish_period_s'],float(motion['lookahead_s'])*.4)
+                    motion['lookahead_s']=max(motion['publish_period_s'],float(motion['lookahead_s'])*.2)
                 path=compile_path(start,goal,None,self.model(),motion)
                 self.reference(status_check)
                 if self.cancelled.is_set() or (expected_stop_revision is not None and expected_stop_revision!=self.stop_revision) or deadline is not None and time.monotonic()>deadline:

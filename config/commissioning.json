@@ -5,14 +5,14 @@
   "camera_tf_validated": true,
   "mcu_watchdog_verified": true,
   "max_velocity": [
-    0.15,
-    0.15,
-    0.4
+    1.2,
+    1.08,
+    2.5
   ],
   "max_acceleration": [
-    0.3,
-    0.3,
-    0.7
+    3.6,
+    3.24,
+    6.0
   ],
   "battery_stop_voltage": 10.8,
   "notes": "Accepted scope is recorded in calibration-acceptance.json. Chassis directions/scale, command-gap stop, navigation lidar geometry, finite robotio arm commands and stationary hand-eye are accepted. Localization/relocalization, measured arm feedback, gripper aperture/contact and autonomous pick-and-deliver remain unaccepted.",

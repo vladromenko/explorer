@@ -28,11 +28,11 @@ class OperatorLearningTests(unittest.TestCase):
         with patch.object(threading.Thread,'start'):
             return GamepadPanel(ROOT,None,lambda:None)
 
-    def test_dpad_is_continuous_cartesian_and_needs_no_modifier(self):
+    def test_r1_dpad_directly_controls_shoulder_and_base_joint(self):
         panel=self.panel();panel.axes={str(a['code']):a['center'] for a in panel.config['axes'].values()}
-        panel.decide(17,-1,3,10);self.assertEqual(panel._inputs()['arm_x_forward'],1)
-        panel.decide(16,1,3,10);self.assertEqual(panel._inputs()['wrist_right'],1)
-        self.assertNotIn(panel.config['buttons']['r1'],panel.keys)
+        panel.decide(panel.config['buttons']['r1'],1,1,10)
+        panel.decide(17,-1,3,10);self.assertEqual(panel._inputs()['joint2_increase'],1)
+        panel.decide(16,1,3,10);self.assertEqual(panel._inputs()['joint1_increase'],1)
 
     def test_select_and_stick_click_do_not_create_motion(self):
         panel=self.panel();panel.axes={str(a['code']):a['center'] for a in panel.config['axes'].values()}
@@ -42,20 +42,20 @@ class OperatorLearningTests(unittest.TestCase):
 
     def test_device_poll_keeps_held_axes_live_and_clears_stale_buttons(self):
         panel=self.panel();b=panel.config['buttons'];panel.keys={b['l1']}
-        device=Mock();device.active_keys.return_value=[]
+        device=Mock();device.active_keys.return_value=[b['r1']]
         device.absinfo.side_effect=lambda code:Mock(value=0 if code==1 else (-1 if code==17 else 128))
         panel.poll_device(device,10.)
-        self.assertEqual(panel.keys,set());self.assertEqual(panel.last_event,10.)
+        self.assertEqual(panel.keys,{b['r1']});self.assertEqual(panel.last_event,10.)
         self.assertGreater(panel._inputs()['forward'],.9)
-        self.assertEqual(panel._inputs()['arm_x_forward'],1.)
+        self.assertEqual(panel._inputs()['joint2_increase'],1.)
 
-    def test_normal_manual_arm_control_uses_fourfold_segments_and_profile(self):
+    def test_normal_manual_arm_control_uses_direct_eight_degree_segment_and_fast_profile(self):
         with tempfile.TemporaryDirectory() as directory:
             controller=TeachingController(directory);controller.pose=Mock(return_value=[90]*6)
             controller.move=Mock(return_value={'command_completed':True})
-            controller.teleop(Mock(),[0,0,0],[1,0,0],True)
+            controller.teleop(Mock(),[0,0,0],[0,1,0,0,0,0],True)
             args=controller.move.call_args
-            self.assertEqual(args.args[1][3],98)
+            self.assertEqual(args.args[1][1],98)
             self.assertEqual(args.kwargs['speed'],'fast')
 
     def test_low_or_stale_power_rejects_learning(self):

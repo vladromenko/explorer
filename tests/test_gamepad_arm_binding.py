@@ -13,8 +13,10 @@ class GamepadBindingTests(unittest.TestCase):
  def press(self,name,value=1):self.p.decide(self.b[name],value,1,self.now)
  def test_full_mapping_and_simultaneous_inputs(self):
   self.p.select('TELEOP');self.p.teleop.stop_latched=False
-  self.p.axes.update({'1':0,'0':0,'2':0,'5':0,'16':-1,'17':-1});self.press('l1');self.press('y');self.press('r2')
-  v=self.p._inputs();self.assertGreater(v['forward'],0);self.assertGreater(v['left'],0);self.assertEqual(v['turn_left'],1);self.assertGreater(v['arm_x_forward'],0);self.assertGreater(v['arm_y_left'],0);self.assertGreater(v['arm_z_up'],0);self.assertEqual(v['wrist_left'],1);self.assertEqual(v['pitch_up'],1);self.assertEqual(v['grip_close'],1)
+  self.p.axes.update({'1':0,'0':0,'2':0,'5':0,'16':-1,'17':-1});self.press('r1');self.press('y');self.press('r2')
+  v=self.p._inputs();self.assertGreater(v['forward'],0);self.assertGreater(v['left'],0);self.assertEqual(v['turn_left'],0);self.assertEqual(v['joint1_decrease'],1);self.assertEqual(v['joint2_increase'],1);self.assertGreater(v['joint3_increase'],0);self.assertEqual(v['pitch_down'],1);self.assertEqual(v['wrist_left'],1);self.assertEqual(v['grip_close'],1)
+ def test_right_stick_turn_is_proportional_without_arm_modifier(self):
+  self.p.axes['2']=64;value=self.p._inputs()['turn_left'];self.assertGreater(value,.4);self.assertLess(value,.7)
  def test_x_toggles_precision_b_stops_and_start_requires_neutral(self):
   self.p.select('TELEOP');self.press('x');self.assertTrue(self.p.precision);self.press('b');self.assertTrue(self.p.teleop.stop_latched)
   self.p.axes['1']=0

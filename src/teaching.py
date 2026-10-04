@@ -131,7 +131,7 @@ class TeachingController:
     def teleop(self,model,xyz,joints,observing,deadline=None,precision=False):
         """One combined velocity-like XYZ/wrist/gripper segment."""
         if observing is not True:raise ValueError('Подтвердите присутствие рядом с роботом')
-        if len(xyz)!=3 or len(joints)!=3:raise ValueError('Неверный вектор teleop')
+        if len(xyz)!=3 or len(joints)!=6:raise ValueError('Неверный вектор teleop')
         if not self.lock.acquire(blocking=False):raise ValueError('Предыдущий сегмент руки ещё выполняется')
         try:
             if self.move is None:raise ValueError('Контроллер руки не готов')
@@ -143,7 +143,7 @@ class TeachingController:
                 scale=distance/max(1.,math.sqrt(sum(float(v)**2 for v in xyz)))
                 goal=propose_delta(model,pose,[float(v)*scale for v in xyz],maximum_distance=distance)['goal_deg']
             step=1 if precision else 8
-            for index,value in zip((3,4,5),joints):
+            for index,value in enumerate(joints):
                 if abs(float(value))>.08:
                     requested=goal[index]+step*(1 if value>0 else -1)
                     goal[index]=max(pose[index]-10,min(pose[index]+10,requested))

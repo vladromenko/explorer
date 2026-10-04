@@ -15,7 +15,7 @@ def test_main_panel_exposes_arm_recovery_and_gamepad_instructions():
     page=(ROOT/'src/index.html').read_text()
     assert 'id="prepareArmButton"' in page and "api('arm/prepare'" in page
     assert 'Исходное положение руки не подтверждено' not in page
-    for text in ('левый стик — ход','L1/R1 — поворот','крестовина ↑/↓ — X','Y/A — наклон кисти','L2/R2 — открыть/закрыть','START возобновляет'):
+    for text in ('левый стик пропорционально','Удерживайте R1 для руки','сустав 2','L2/R2 — захват','START — возобновить'):
         assert text in page
     assert "heldKeys=new Set()" in page and "api('teleop/input'" in page
 

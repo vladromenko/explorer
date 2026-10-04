@@ -32,7 +32,7 @@ class GamepadPanel:
                 sequence=self.sequence,error=self.error,proposal=self.proposal,drive_blocked_by=self.drive_readiness(),
                 drive_velocity=self.teleop._drive_vector(self._inputs(),self.precision),precision=self.precision,
                 drive_profile='precision' if self.precision else 'normal',arm_speed='precision' if self.precision else 'normal',
-                control_scheme='left stick chassis; L1/R1 rotate; right stick+D-pad XYZ; Y/A pitch; D-pad left/right wrist; L2/R2 gripper',
+                control_scheme='left stick proportional chassis; right stick X turns; hold R1 for direct arm joints; L2/R2 gripper',
                 shared_backend=self.teleop.status())
 
     def heartbeat(self,enabled):
@@ -59,12 +59,16 @@ class GamepadPanel:
     def _inputs(self):
         b=self.config['buttons'];dpx=float(self.axes.get('16',0));dpy=float(self.axes.get('17',0))
         ly=self._axis('left_y');lx=self._axis('left_x');rx=self._axis('right_x');ry=self._axis('right_y')
+        arm=b['r1'] in self.keys
         return dict(forward=max(0.,ly),backward=max(0.,-ly),left=max(0.,lx),right=max(0.,-lx),
-            turn_left=float(b['l1'] in self.keys),turn_right=float(b['r1'] in self.keys),
-            arm_x_forward=max(0.,-dpy),arm_x_back=max(0.,dpy),arm_y_left=max(0.,rx),arm_y_right=max(0.,-rx),
-            arm_z_up=max(0.,ry),arm_z_down=max(0.,-ry),wrist_left=max(0.,-dpx),wrist_right=max(0.,dpx),
-            pitch_up=float(b['y'] in self.keys),pitch_down=float(b['a'] in self.keys),
-            grip_open=float(b['l2'] in self.keys),grip_close=float(b['r2'] in self.keys))
+            turn_left=0. if arm else max(0.,rx),turn_right=0. if arm else max(0.,-rx),
+            arm_x_forward=0.,arm_x_back=0.,arm_y_left=0.,arm_y_right=0.,arm_z_up=0.,arm_z_down=0.,
+            joint1_increase=max(0.,dpx) if arm else 0.,joint1_decrease=max(0.,-dpx) if arm else 0.,
+            joint2_increase=max(0.,-dpy) if arm else 0.,joint2_decrease=max(0.,dpy) if arm else 0.,
+            joint3_increase=max(0.,ry) if arm else 0.,joint3_decrease=max(0.,-ry) if arm else 0.,
+            pitch_up=max(0.,-rx) if arm else 0.,pitch_down=max(0.,rx) if arm else 0.,
+            wrist_left=float(arm and b['y'] in self.keys),wrist_right=float(arm and b['a'] in self.keys),
+            grip_open=float(arm and b['l2'] in self.keys),grip_close=float(arm and b['r2'] in self.keys))
 
     def _moving(self):return self.teleop._moving(self._inputs())
 

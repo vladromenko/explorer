@@ -5,12 +5,14 @@ import time
 
 
 MOTION_KEYS=frozenset(('w','s','a','d','q','e','arrowup','arrowdown','arrowleft','arrowright',
-                       'r','f','t','g','z','c','v','b'))
+                       'r','f','t','g','z','c','v','b','y','h','u','j','i','k'))
 
 KEY_ACTIONS={'w':'forward','s':'backward','a':'left','d':'right','q':'turn_left','e':'turn_right',
              'r':'arm_x_forward','f':'arm_x_back','arrowleft':'arm_y_left','arrowright':'arm_y_right',
              'arrowup':'arm_z_up','arrowdown':'arm_z_down','t':'pitch_up','g':'pitch_down',
-             'z':'wrist_left','c':'wrist_right','v':'grip_open','b':'grip_close'}
+             'z':'wrist_left','c':'wrist_right','v':'grip_open','b':'grip_close',
+             'y':'joint1_increase','h':'joint1_decrease','u':'joint2_increase','j':'joint2_decrease',
+             'i':'joint3_increase','k':'joint3_decrease'}
 
 def keyboard_inputs(keys):
     clean={str(k).lower() for k in keys}
@@ -88,11 +90,11 @@ class ManualTeleop:
             backend='shared_manual_teleop',measured_joint_feedback=False)
 
     def _drive_vector(self,v,precision):
-        scale=.4 if precision else 1.
-        x=(v.get('forward',0)-v.get('backward',0))*0.10*scale
-        y=(v.get('left',0)-v.get('right',0))*0.09*scale
-        yaw=(v.get('turn_left',0)-v.get('turn_right',0))*0.25*scale
-        norm=math.hypot(x/.10,y/.09)
+        scale=.1 if precision else 1.
+        x=(v.get('forward',0)-v.get('backward',0))*1.20*scale
+        y=(v.get('left',0)-v.get('right',0))*1.08*scale
+        yaw=(v.get('turn_left',0)-v.get('turn_right',0))*2.50*scale
+        norm=math.hypot(x/1.20,y/1.08)
         if norm>1:x/=norm;y/=norm
         return [x,y,yaw]
 
@@ -100,7 +102,10 @@ class ManualTeleop:
         xyz=[v.get('arm_x_forward',0)-v.get('arm_x_back',0),
              v.get('arm_y_left',0)-v.get('arm_y_right',0),
              v.get('arm_z_up',0)-v.get('arm_z_down',0)]
-        joints=[v.get('pitch_up',0)-v.get('pitch_down',0),
+        joints=[v.get('joint1_increase',0)-v.get('joint1_decrease',0),
+                v.get('joint2_increase',0)-v.get('joint2_decrease',0),
+                v.get('joint3_increase',0)-v.get('joint3_decrease',0),
+                v.get('pitch_up',0)-v.get('pitch_down',0),
                 v.get('wrist_left',0)-v.get('wrist_right',0),
                 v.get('grip_close',0)-v.get('grip_open',0)]
         factor=.45 if precision else 1.

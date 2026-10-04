@@ -20,7 +20,7 @@ def motion_profile(value=None):
             raise ValueError('Invalid factory arm '+key)
         arrays.append(array)
     period=float(value['publish_period_s']);lookahead=float(value['lookahead_s']);minimum=float(value['min_duration_s'])
-    if not .04<=period<=.15 or not period<=lookahead<=.35 or not .08<=minimum<=1.:
+    if not .04<=period<=.15 or not period<=lookahead<=.35 or not .04<=minimum<=1.:
         raise ValueError('Invalid factory arm timing profile')
     return dict(value,velocity_deg_s=arrays[0].tolist(),acceleration_deg_s2=arrays[1].tolist(),
                 jerk_deg_s3=arrays[2].tolist(),publish_period_s=period,lookahead_s=lookahead,min_duration_s=minimum)
