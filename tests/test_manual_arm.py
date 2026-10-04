@@ -95,6 +95,19 @@ class ManualArmTests(unittest.TestCase):
         self.assertEqual(motion['publish_period_s'],.04)
         self.assertAlmostEqual(motion['lookahead_s'],.04)
 
+    def test_teleop_profile_is_explicit_and_smooth(self):
+        path=dict(commands=[dict(at=0.,pose=self.goal,runtime_ms=80)],duration=.08,
+                  source_sha256='test',profile='coordinated_quintic_lookahead')
+        with patch('factory_trajectory.compile_path',return_value=path) as compile_path:
+            self.arm.move(self.start,self.goal,speed='teleop')
+        motion=compile_path.call_args.args[4]
+        self.assertEqual(motion['velocity_deg_s'][0],112.)
+        self.assertEqual(motion['acceleration_deg_s2'][0],800.)
+        self.assertEqual(motion['jerk_deg_s3'][0],16000.)
+        self.assertEqual(motion['min_duration_s'],.12)
+        self.assertEqual(motion['publish_period_s'],.04)
+        self.assertEqual(motion['lookahead_s'],.08)
+
     def test_observed_reference_never_publishes_or_claims_measurement(self):
         result=self.arm.accept_reference([90]*6,True)
         self.pub.publish.assert_not_called()

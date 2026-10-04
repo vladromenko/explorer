@@ -25,6 +25,8 @@ class WebJavascriptTests(unittest.TestCase):
         self.assertIn("api('teleop/resume',{source:input,observing:true})",html)
         self.assertIn("e.code==='Digit1'",html)
         self.assertIn("frame?raw=true",html)
+        self.assertIn('id="loginDialog"',html)
+        self.assertNotIn("prompt('Ключ",html)
 
 
 if __name__=='__main__':unittest.main()
