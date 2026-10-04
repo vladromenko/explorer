@@ -8,10 +8,13 @@ import math
 import numpy as np
 
 
-def propose_delta(model,start,delta_xyz):
+def propose_delta(model,start,delta_xyz,maximum_distance=.006):
     delta=np.asarray(delta_xyz,dtype=float)
-    if delta.shape!=(3,) or not np.isfinite(delta).all() or not 0<np.linalg.norm(delta)<=.006:
-        raise ValueError('Нужен конечный локальный XYZ-сдвиг до 6 мм')
+    if (not isinstance(maximum_distance,(int,float)) or not math.isfinite(maximum_distance)
+            or not 0<maximum_distance<=.020):
+        raise ValueError('Неверный предел локального XYZ-сдвига')
+    if delta.shape!=(3,) or not np.isfinite(delta).all() or not 0<np.linalg.norm(delta)<=maximum_distance:
+        raise ValueError('Нужен конечный локальный XYZ-сдвиг в разрешённом диапазоне')
     if len(start)!=6 or any(type(v) is not int for v in start):
         raise ValueError('Нужно известное исходное положение команды')
     initial=model.fk(start[:5],-.3);origin=np.array(initial['xyz']);target=origin+delta

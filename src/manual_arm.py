@@ -181,7 +181,7 @@ class ManualArm:
                 for shape in (0.,-.2,-.4,-.6,-.8):
                     if not self.model().path(start[:5],goal[:5],shape)['valid']:raise ValueError('MoveIt: столкновение с роботом или полом')
                 from factory_trajectory import compile_path,motion_profile
-                factors={'precision':.65,'normal':1.,'fast':1.5};factor=factors[speed]
+                factors={'precision':.65,'normal':1.,'fast':4.};factor=factors[speed]
                 motion=motion_profile(self.motion_config)
                 for key in ('velocity_deg_s','acceleration_deg_s2','jerk_deg_s3'):
                     motion[key]=[float(v)*factor for v in motion[key]]

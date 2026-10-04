@@ -82,6 +82,16 @@ class ManualArmTests(unittest.TestCase):
         self.assertEqual(result['motion_profile'],'coordinated_quintic_lookahead')
         self.assertFalse(result['measured']);self.assertFalse(result['attained'])
 
+    def test_fast_manual_profile_has_fourfold_dynamics(self):
+        path=dict(commands=[dict(at=0.,pose=self.goal,runtime_ms=20)],duration=.02,
+                  source_sha256='test',profile='coordinated_quintic_lookahead')
+        with patch('factory_trajectory.compile_path',return_value=path) as compile_path:
+            self.arm.move(self.start,self.goal,speed='fast')
+        motion=compile_path.call_args.args[4]
+        self.assertEqual(motion['velocity_deg_s'][0],112.)
+        self.assertEqual(motion['acceleration_deg_s2'][0],400.)
+        self.assertEqual(motion['jerk_deg_s3'][0],4000.)
+
     def test_observed_reference_never_publishes_or_claims_measurement(self):
         result=self.arm.accept_reference([90]*6,True)
         self.pub.publish.assert_not_called()

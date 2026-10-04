@@ -139,9 +139,10 @@ class TeachingController:
             magnitude=max(abs(float(v)) for v in xyz)
             if magnitude>.08:
                 from cartesian_jog import propose_delta
-                scale=(.003 if precision else .005)/max(1.,math.sqrt(sum(float(v)**2 for v in xyz)))
-                goal=propose_delta(model,pose,[float(v)*scale for v in xyz])['goal_deg']
-            step=1 if precision else 2
+                distance=.003 if precision else .020
+                scale=distance/max(1.,math.sqrt(sum(float(v)**2 for v in xyz)))
+                goal=propose_delta(model,pose,[float(v)*scale for v in xyz],maximum_distance=distance)['goal_deg']
+            step=1 if precision else 8
             for index,value in zip((3,4,5),joints):
                 if abs(float(value))>.08:
                     requested=goal[index]+step*(1 if value>0 else -1)
@@ -149,7 +150,7 @@ class TeachingController:
             if goal==pose:raise ValueError('Нет исполнимого движения руки')
             revision=self.stop_revision()
             return self.move(pose,goal,deadline=deadline,expected_stop_revision=revision,
-                             source='coordinated_operator',speed='precision' if precision else 'normal')
+                             source='coordinated_operator',speed='precision' if precision else 'fast')
         finally:self.lock.release()
 
     def step(self,joint,delta,deadline=None):

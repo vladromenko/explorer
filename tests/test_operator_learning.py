@@ -4,7 +4,7 @@ import tempfile
 import threading
 import unittest
 from unittest.mock import Mock,patch
-from teaching import Demonstrations
+from teaching import Demonstrations,TeachingController
 from gamepad_panel import GamepadPanel
 from lerobot_bridge import training_budget
 
@@ -48,6 +48,15 @@ class OperatorLearningTests(unittest.TestCase):
         self.assertEqual(panel.keys,set());self.assertEqual(panel.last_event,10.)
         self.assertGreater(panel._inputs()['forward'],.9)
         self.assertEqual(panel._inputs()['arm_x_forward'],1.)
+
+    def test_normal_manual_arm_control_uses_fourfold_segments_and_profile(self):
+        with tempfile.TemporaryDirectory() as directory:
+            controller=TeachingController(directory);controller.pose=Mock(return_value=[90]*6)
+            controller.move=Mock(return_value={'command_completed':True})
+            controller.teleop(Mock(),[0,0,0],[1,0,0],True)
+            args=controller.move.call_args
+            self.assertEqual(args.args[1][3],98)
+            self.assertEqual(args.kwargs['speed'],'fast')
 
     def test_low_or_stale_power_rejects_learning(self):
         with tempfile.TemporaryDirectory() as directory:
