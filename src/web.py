@@ -368,7 +368,7 @@ async def auth(request:Request,call_next):
     return await call_next(request)
 
 @app.get('/')
-def index():return HTMLResponse((ROOT/'src/index.html').read_text())
+def index():return HTMLResponse((ROOT/'src/index.html').read_text(),headers={'Cache-Control':'no-store'})
 
 @app.get('/api/mobile/goals')
 def mobile_goals():return json.loads((ROOT/'config/mobile-training-goals.json').read_text())
