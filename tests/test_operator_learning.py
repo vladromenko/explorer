@@ -28,16 +28,18 @@ class OperatorLearningTests(unittest.TestCase):
         with patch.object(threading.Thread,'start'):
             return GamepadPanel(ROOT,None,lambda:None)
 
-    def test_r1_dpad_directly_controls_shoulder_and_base_joint(self):
+    def test_select_enables_dpad_wrist_joints_while_r1_turns_base(self):
         panel=self.panel();panel.axes={str(a['code']):a['center'] for a in panel.config['axes'].values()}
+        panel.decide(panel.config['buttons']['select'],1,1,10);panel.decide(panel.config['buttons']['select'],0,1,10)
         panel.decide(panel.config['buttons']['r1'],1,1,10)
-        panel.decide(17,-1,3,10);self.assertEqual(panel._inputs()['joint2_increase'],1)
-        panel.decide(16,1,3,10);self.assertEqual(panel._inputs()['joint1_increase'],1)
+        panel.decide(17,-1,3,10);self.assertEqual(panel._inputs()['pitch_up'],1)
+        panel.decide(16,1,3,10);self.assertEqual(panel._inputs()['wrist_right'],1)
+        self.assertEqual(panel._inputs()['turn_right'],1)
 
-    def test_select_and_stick_click_do_not_create_motion(self):
+    def test_stick_clicks_do_not_create_motion(self):
         panel=self.panel();panel.axes={str(a['code']):a['center'] for a in panel.config['axes'].values()}
         before=panel._inputs();b=panel.config['buttons']
-        for name in ('select','left_stick','right_stick'):panel.decide(b[name],1,1,10)
+        for name in ('left_stick','right_stick'):panel.decide(b[name],1,1,10)
         self.assertEqual(before,panel._inputs())
 
     def test_device_poll_keeps_held_axes_live_and_clears_stale_buttons(self):
@@ -47,16 +49,16 @@ class OperatorLearningTests(unittest.TestCase):
         panel.poll_device(device,10.)
         self.assertEqual(panel.keys,{b['r1']});self.assertEqual(panel.last_event,10.)
         self.assertGreater(panel._inputs()['forward'],.9)
-        self.assertEqual(panel._inputs()['joint2_increase'],1.)
+        self.assertEqual(panel._inputs()['turn_right'],1.)
 
-    def test_normal_manual_arm_control_uses_direct_eight_degree_segment_and_fast_profile(self):
+    def test_manual_arm_control_uses_integrated_delta_and_teleop_profile(self):
         with tempfile.TemporaryDirectory() as directory:
             controller=TeachingController(directory);controller.pose=Mock(return_value=[90]*6)
             controller.move=Mock(return_value={'command_completed':True})
-            controller.teleop(Mock(),[0,0,0],[0,1,0,0,0,0],True)
+            controller.teleop(Mock(),[0,0,0],[0,2,0,0,0,0],True,arm_mode='joint')
             args=controller.move.call_args
-            self.assertEqual(args.args[1][1],98)
-            self.assertEqual(args.kwargs['speed'],'fast')
+            self.assertEqual(args.args[1][1],92)
+            self.assertEqual(args.kwargs['speed'],'teleop')
 
     def test_low_or_stale_power_rejects_learning(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -83,11 +83,24 @@ class Perception(Node):
         self.depth=deque(maxlen=8)
         self.info=None
         self.lock=threading.Lock()
+        self.preview_lock=threading.Lock()
+        self.preview_at=0.
         self.create_subscription(Image,'/camera/color/image_raw',self.color_cb,qos_profile_sensor_data)
         self.create_subscription(Image,'/camera/depth/image_raw',self.depth_cb,qos_profile_sensor_data)
         self.create_subscription(CameraInfo,'/camera/color/camera_info',self.info_cb,qos_profile_sensor_data)
     def color_cb(self,msg):
-        with self.lock:self.rgb.append((self.bridge.imgmsg_to_cv2(msg,'bgr8'),stamp(msg),msg.header.frame_id))
+        frame=self.bridge.imgmsg_to_cv2(msg,'bgr8')
+        with self.lock:self.rgb.append((frame,stamp(msg),msg.header.frame_id))
+        now=time.monotonic()
+        if now-self.preview_at>=.12 and self.preview_lock.acquire(False):
+            try:
+                ok,jpg=cv2.imencode('.jpg',frame,[cv2.IMWRITE_JPEG_QUALITY,82])
+                if ok:
+                    temporary=ROOT/'data/frame-raw.tmp'
+                    temporary.write_bytes(jpg.tobytes())
+                    temporary.replace(ROOT/'data/frame-raw.jpg')
+                    self.preview_at=now
+            finally:self.preview_lock.release()
     def depth_cb(self,msg):
         scale=.001 if msg.encoding in ('16UC1','mono16') else 1.
         with self.lock:self.depth.append((self.bridge.imgmsg_to_cv2(msg),stamp(msg),msg.header.frame_id,scale))
@@ -126,9 +139,6 @@ def run():
             raw,ts,frame_id=rgb
             frame=raw.copy()
             previous=ts
-            ok,raw_jpg=cv2.imencode('.jpg',raw,[cv2.IMWRITE_JPEG_QUALITY,82])
-            if ok:
-                temp=ROOT/'data/frame-raw.tmp';temp.write_bytes(raw_jpg.tobytes());temp.replace(ROOT/'data/frame-raw.jpg')
             detections=engine.infer(frame)
             registered=(depth is not None and info is not None and abs(ts-depth[1])<.05
                         and depth[0].shape==raw.shape[:2] and depth[2]==frame_id)

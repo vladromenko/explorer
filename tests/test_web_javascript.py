@@ -21,8 +21,10 @@ class WebJavascriptTests(unittest.TestCase):
 
     def test_manual_view_and_both_inputs_share_explicit_resume(self):
         html=(ROOT/'src/index.html').read_text()
-        self.assertIn("showTab('manual');selectInput('keyboard')",html)
+        self.assertIn("showTab('manual');loadControlScheme();updateControlHelp();selectInput('keyboard')",html)
         self.assertIn("api('teleop/resume',{source:input,observing:true})",html)
+        self.assertIn("e.code==='Digit1'",html)
+        self.assertIn("frame?raw=true",html)
 
 
 if __name__=='__main__':unittest.main()

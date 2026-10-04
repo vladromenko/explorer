@@ -1,31 +1,74 @@
-import threading,time,unittest
-from unittest.mock import Mock
-from manual_teleop import ManualTeleop,keyboard_inputs
+import threading
+import time
+import unittest
+from unittest.mock import Mock, patch
+
+from manual_controls import keyboard_inputs
+from manual_teleop import ManualTeleop
+
 
 class ManualTeleopTests(unittest.TestCase):
- def panel(self):
-  t=ManualTeleop.__new__(ManualTeleop);t.drive=Mock();t.release=Mock();t.stop_all=Mock();t.teaching=Mock();t.lock=threading.RLock();t.owner=None;t.lease=0;t.inputs={};t.precision=False;t.stop_latched=True;t.neutral_seen=False;t.drive_active=False;t.arm_busy=False;t.error=None;t.arm=None;t.model=None;t.last_arm=0;t.closed=True;t.resume_callback=Mock();t.takeover_callback=Mock();t.takeover_active=False;return t
- def test_keyboard_multikey_and_keyup_keeps_remaining_action(self):
-  t=self.panel();t.update('keyboard',{},True);t.resume('keyboard',True);v=keyboard_inputs(['w','a','e','arrowup','b']);t.update('keyboard',v,True);t.tick()
-  t.drive.assert_called_with([.8/2**.5,.72/2**.5,-1.67])
-  v=keyboard_inputs(['w','e','arrowup','b']);t.update('keyboard',v,True);t.tick();t.drive.assert_called_with([.8,0,-1.67])
- def test_precision_scales_chassis_and_arm(self):
-  t=self.panel();t.update('keyboard',{},True);t.resume('keyboard',True);v=keyboard_inputs(['w','arrowup','b']);t.update('keyboard',v,True,True)
-  self.assertAlmostEqual(t._drive_vector(v,True)[0],.08);xyz,j=t._arm_intent(v,True);self.assertEqual(xyz,[0,0,.45]);self.assertEqual(j,[0,0,0,0,0,.45])
- def test_keyboard_direct_shoulder_control(self):
-  xyz,joints=self.panel()._arm_intent(keyboard_inputs(['u']),False)
-  self.assertEqual(xyz,[0,0,0]);self.assertEqual(joints,[0,1,0,0,0,0])
- def test_stop_held_key_and_explicit_neutral_resume(self):
-  t=self.panel();t.update('keyboard',keyboard_inputs(['w']),True);t.stop();t.tick();t.drive.assert_not_called()
-  with self.assertRaisesRegex(ValueError,'отпустите'):t.resume('keyboard',True)
-  t.update('keyboard',{},True);t.resume('keyboard',True);self.assertFalse(t.stop_latched)
- def test_first_motion_announces_manual_takeover_once(self):
-  t=self.panel();t.update('keyboard',keyboard_inputs(['w']),True);t.update('keyboard',keyboard_inputs(['w']),True)
-  t.takeover_callback.assert_called_once();t.update('keyboard',{},True);t.update('keyboard',keyboard_inputs(['a']),True)
-  self.assertEqual(t.takeover_callback.call_count,2)
- def test_focus_loss_releases_without_global_stop(self):
-  t=self.panel();t.owner='keyboard';t.drive_active=True;t.disconnect('keyboard');t.release.assert_called_once();t.stop_all.assert_not_called()
- def test_owner_transfer_releases_old_stream(self):
-  t=self.panel();t.owner='keyboard';t.drive_active=True;t.update('gamepad',{},True);self.assertEqual(t.owner,'gamepad');t.release.assert_called_once()
+    def panel(self):
+        with patch('manual_teleop.threading.Thread'):
+            return ManualTeleop(Mock(), Mock(), Mock(), Mock(), Mock(), Mock())
+
+    def select(self, panel, source='keyboard'):
+        panel.select_source(source, True, True)
+        panel.update(source, {}, True)
+        panel.resume(source, True)
+
+    def test_physical_keyboard_codes_and_both_arm_modes(self):
+        cart=keyboard_inputs(['KeyW','KeyI','KeyJ','KeyM'],'cartesian')
+        self.assertEqual(set(cart),{'forward','arm_x_forward','arm_y_left','grip_close'})
+        joint=keyboard_inputs(['KeyW','KeyI','KeyJ','KeyU','KeyY','Comma','KeyM'],'joint')
+        self.assertEqual(set(joint),{'forward','joint2_increase','joint1_decrease','joint3_increase','pitch_up','wrist_left','grip_close'})
+        with self.assertRaises(ValueError):keyboard_inputs(['ц'],'cartesian')
+
+    def test_multiaxis_drive_is_normalized_before_precision(self):
+        panel=self.panel()
+        values=keyboard_inputs(['KeyW','KeyA','KeyE'],'cartesian')
+        normal=panel._drive_vector(values,False);precision=panel._drive_vector(values,True)
+        self.assertLessEqual(max(abs(normal[0]/.8-normal[1]/.72-normal[2]/1.67),
+                                 abs(normal[0]/.8+normal[1]/.72+normal[2]/1.67)),1.000001)
+        self.assertEqual([round(value*.1,8) for value in normal],[round(value,8) for value in precision])
+
+    def test_packets_cannot_steal_owner(self):
+        panel=self.panel();panel.select_source('keyboard',True,True)
+        with self.assertRaisesRegex(ValueError,'не выбран'):panel.update('gamepad',{},True)
+        self.assertEqual(panel.owner,'keyboard')
+
+    def test_stop_requires_observed_neutral(self):
+        panel=self.panel();panel.select_source('keyboard',True,True)
+        panel.update('keyboard',keyboard_inputs(['KeyW']),True);panel.stop()
+        with self.assertRaisesRegex(ValueError,'отпустите'):panel.resume('keyboard',True)
+        panel.update('keyboard',{},True);panel.resume('keyboard',True)
+        self.assertFalse(panel.stop_latched)
+
+    def test_mode_change_invalidates_arm_but_preserves_base_and_gripper(self):
+        panel=self.panel();self.select(panel)
+        panel.update('keyboard',keyboard_inputs(['KeyW','KeyI','KeyM'],'cartesian'),True)
+        generation=panel.generation;panel.set_arm_mode('keyboard','joint')
+        self.assertGreater(panel.generation,generation)
+        self.assertEqual(set(panel.inputs),{'forward','grip_close'})
+
+    def test_fractional_joint_motion_is_proportional_without_eight_degree_jump(self):
+        panel=self.panel();self.select(panel);panel.set_arm_mode('keyboard','joint')
+        panel.last_integrator=10.0
+        small={'joint2_increase':.2};medium={'joint2_increase':.6};large={'joint2_increase':1.0}
+        steps=[]
+        for values in (small,medium,large):
+            panel.joint_residual=[0.0]*6;panel.last_integrator=10.0
+            segment=panel._prepare_arm_segment_locked(values,10.1,False)
+            steps.append(0 if segment is None else segment[1][1])
+        self.assertEqual(steps,[0,1,2])
+        self.assertNotIn(8,steps)
+
+    def test_release_clears_fractional_remainder(self):
+        panel=self.panel();self.select(panel);panel.set_arm_mode('keyboard','joint')
+        panel.last_integrator=10.0
+        self.assertIsNone(panel._prepare_arm_segment_locked({'joint2_increase':.2},10.1,False))
+        panel._prepare_arm_segment_locked({},10.2,False)
+        self.assertEqual(panel.joint_residual,[0.0]*6)
+
 
 if __name__=='__main__':unittest.main()

@@ -45,7 +45,11 @@ class MapTools:
         age=(self.node.get_clock().now().nanoseconds-Time.from_msg(t.header.stamp).nanoseconds)/1e9
         if not -.5<age<1:raise ValueError('Map pose stale')
         q=t.transform.rotation;p=t.transform.translation
-        return dict(x=p.x,y=p.y,yaw=math.atan2(2*(q.w*q.z+q.x*q.y),1-2*(q.y*q.y+q.z*q.z)),frame='map',provisional=True)
+        try:verified=json.loads((ROOT/'config/commissioning.json').read_text()).get('localization_verified') is True
+        except (OSError,ValueError,TypeError):verified=False
+        return dict(x=p.x,y=p.y,yaw=math.atan2(2*(q.w*q.z+q.x*q.y),1-2*(q.y*q.y+q.z*q.z)),
+                    frame='map',source='slam_toolbox_lidar_map_tf',age_s=max(0.,age),
+                    localization_verified=verified,provisional=not verified)
 
     def preview(self,x,y):
         if not all(math.isfinite(v) for v in (x,y)) or max(abs(x),abs(y))>100:raise ValueError('Invalid map coordinate')

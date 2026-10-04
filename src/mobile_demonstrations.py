@@ -48,12 +48,16 @@ def sample(root,now):
         # simultaneous.  Larger gaps are rejected rather than relabelled.
         if abs(camera_state_offset)>1.5:raise ValueError('Камера и состояние слишком далеко разнесены по времени')
         image=frame['rgb'].copy()
+    try:manual=json.loads((root/'data/manual-teleop.json').read_text())
+    except (OSError,ValueError,TypeError):manual={}
+    if now-manual.get('at',0)>1:manual={}
     return dict(at=now,image_stamp=stamp,state_stamp=state['at'],command=action.tolist(),
                 camera_state_offset_s=camera_state_offset,
                 arm_in_progress=arm['phase'] in ('command_in_progress','EXECUTING'),raw_odometry_pose=state.get('raw_pose'),
                 q_estimated=arm.get('q_estimated'),state_source=arm.get('state_source','command_estimate'),
                 lidar=state.get('lidar'),sensor_age=state.get('sensor_age'),
-                measured_arm_angles=False,velocity_source='commanded_body_velocity'),image
+                measured_arm_angles=False,velocity_source='commanded_body_velocity',
+                manual_control=manual or None),image
 
 
 class MobileDemonstrations:
@@ -96,6 +100,7 @@ class MobileDemonstrations:
                 stage='travel_to_object',stages=['travel_to_object'],samples=0,
                 source='operator_mobile_demonstration',joint_state_source='commanded_not_measured',
                 physical_sample_rate_hz=2,automatic_replay_allowed=False,dataset_kind='mobile_manipulation_9dof',
+                control_metadata_schema='explorer-manual-v2',legacy_action_vector_unchanged=True,
                 object_label=object_label[:80],object_class=object_class,size_class=size_class,destination=destination[:80],
                 workflow_id=workflow_id,
                 transfer_context=dict(grasp_family='learned_from_operator',contact_feedback='visual_only'))

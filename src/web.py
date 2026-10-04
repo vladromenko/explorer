@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import cv2
+import io
 import json
 import math
 import os
@@ -23,6 +24,7 @@ from missions import Missions
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse, Response
 from pydantic import BaseModel, Field
+from PIL import Image, ImageDraw
 import uvicorn
 
 ROOT=Path('/home/vlad/Explorer')
@@ -220,10 +222,18 @@ class TeleopInput(BaseModel):
     source:str
     keys:list[str]=Field(default_factory=list,max_length=20)
     observing:bool=False
+    arm_mode:str='cartesian'
 
 class TeleopAction(BaseModel):
     source:str
     observing:bool=False
+
+class TeleopSelect(TeleopAction):
+    neutral:bool=False
+
+class TeleopMode(BaseModel):
+    source:str
+    mode:str
 
 class MobileStage(BaseModel):
     stage:str
@@ -311,11 +321,24 @@ def gamepad_mode(c:GamepadMode):return map_operation(gamepad_panel.select,c.mode
 @app.get('/api/teleop')
 def teleop_status():return gamepad_panel.teleop.status()
 
+@app.get('/api/teleop/controls')
+def teleop_controls():
+    from manual_controls import scheme
+    return scheme()
+
+@app.post('/api/teleop/select')
+def teleop_select(c:TeleopSelect):return map_operation(gamepad_panel.teleop.select_source,c.source,c.observing,c.neutral)
+
+@app.post('/api/teleop/mode')
+def teleop_mode(c:TeleopMode):return map_operation(gamepad_panel.teleop.set_arm_mode,c.source,c.mode)
+
 @app.post('/api/teleop/input')
 def teleop_input(c:TeleopInput):
     if c.source!='keyboard':raise HTTPException(400,'Browser endpoint accepts keyboard only')
     from manual_teleop import keyboard_inputs
-    return map_operation(gamepad_panel.teleop.update,'keyboard',keyboard_inputs(c.keys),c.observing,'shift' in {x.lower() for x in c.keys})
+    if gamepad_panel.teleop.arm_mode!=c.arm_mode:raise HTTPException(409,'Сначала явно переключите режим руки')
+    precision=bool({'ShiftLeft','ShiftRight'} & set(c.keys))
+    return map_operation(gamepad_panel.teleop.update,'keyboard',keyboard_inputs(c.keys,c.arm_mode),c.observing,precision)
 
 @app.post('/api/teleop/stop')
 def teleop_stop():return gamepad_panel.teleop.stop()
@@ -447,14 +470,33 @@ def control(c:Command):
     raise HTTPException(400,'Invalid command')
 
 @app.get('/api/frame')
-def frame():
-    if read_state('perception.json',2)['stale']:raise HTTPException(503,'No fresh camera frame')
-    return Response((ROOT/'data/frame.jpg').read_bytes(),media_type='image/jpeg',headers={'Cache-Control':'no-store'})
+def frame(raw:bool=False):
+    path=ROOT/'data'/('frame-raw.jpg' if raw else 'frame.jpg')
+    try:fresh=0<=time.time()-path.stat().st_mtime<2
+    except OSError:fresh=False
+    if not fresh:raise HTTPException(503,'No fresh camera frame')
+    return Response(path.read_bytes(),media_type='image/jpeg',headers={'Cache-Control':'no-store'})
 
 @app.get('/api/map')
 def map_image():
-    if read_state('map.json',15)['stale']:raise HTTPException(503,'No fresh map')
-    return Response((ROOT/'data/map.png').read_bytes(),media_type='image/png',headers={'Cache-Control':'no-store'})
+    metadata=read_state('map.json',15)
+    if metadata['stale']:raise HTTPException(503,'No fresh map')
+    image=Image.open(ROOT/'data/map.png').convert('RGB')
+    scale=max(4,min(12,720//max(1,image.width)))
+    image=image.resize((image.width*scale,image.height*scale),Image.Resampling.NEAREST)
+    try:
+        pose=maps.pose();resolution=float(metadata['resolution']);origin=metadata['origin']
+        px=(pose['x']-origin[0])/resolution*scale
+        py=(float(metadata['height'])-1-(pose['y']-origin[1])/resolution)*scale
+        if 0<=px<image.width and 0<=py<image.height:
+            draw=ImageDraw.Draw(image);radius=max(7,scale)
+            draw.ellipse((px-radius,py-radius,px+radius,py+radius),fill='#8296ff',outline='white',width=max(2,scale//3))
+            length=radius*2.4;tip=(px+math.cos(pose['yaw'])*length,py-math.sin(pose['yaw'])*length)
+            draw.line((px,py,*tip),fill='#ffcf66',width=max(3,scale//2))
+            draw.ellipse((tip[0]-2,tip[1]-2,tip[0]+2,tip[1]+2),fill='#ffcf66')
+    except (OSError,ValueError,KeyError,TypeError):pass
+    output=io.BytesIO();image.save(output,format='PNG')
+    return Response(output.getvalue(),media_type='image/png',headers={'Cache-Control':'no-store'})
 
 class MapPoint(BaseModel):
     x:float

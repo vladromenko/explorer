@@ -161,7 +161,7 @@ class ManualArm:
     def move(self,start,goal,deadline=None,expected_stop_revision=None,execution_permit=None,source="operator",speed='normal'):
         if source not in ('operator','coordinated_operator','supervised_policy','supervised_trajectory','local_mission'):raise ValueError('Неверный источник команды')
         if source=='local_mission' and not callable(execution_permit):raise ValueError('Нет разрешения локальной миссии')
-        if speed not in ('precision','normal','fast'):raise ValueError('Неизвестная скорость руки')
+        if speed not in ('precision','normal','teleop','fast'):raise ValueError('Неизвестная скорость руки')
         if not self.ready:raise ValueError('Сначала дождитесь подготовки геометрии руки')
         if len(start)!=6 or len(goal)!=6 or any(type(v) is not int for v in start+goal):raise ValueError('Нужны шесть целых углов')
         if not any(a!=b for a,b in zip(start,goal)):raise ValueError('Нулевой шаг')
@@ -182,13 +182,20 @@ class ManualArm:
                     if not self.model().path(start[:5],goal[:5],shape)['valid']:raise ValueError('MoveIt: столкновение с роботом или полом')
                 from factory_trajectory import compile_path,motion_profile
                 motion=motion_profile(self.motion_config)
-                factors={'precision':(.65,.65,.65),'normal':(1.,1.,1.),'fast':(32.,256.,2048.)}
+                teleop=self.motion_config.get('teleop',{})
+                factors={'precision':(.65,.65,.65),'normal':(1.,1.,1.),
+                         'teleop':(float(teleop.get('velocity_scale',4.)),float(teleop.get('acceleration_scale',8.)),float(teleop.get('jerk_scale',16.))),
+                         'fast':(32.,256.,2048.)}
                 for key,factor in zip(('velocity_deg_s','acceleration_deg_s2','jerk_deg_s3'),factors[speed]):
                     motion[key]=[float(v)*factor for v in motion[key]]
                 if speed=='fast':
                     motion['min_duration_s']=float(motion['min_duration_s'])/8
                     motion['publish_period_s']=max(.04,float(motion['publish_period_s'])/2)
                     motion['lookahead_s']=max(motion['publish_period_s'],float(motion['lookahead_s'])*.2)
+                if speed=='teleop':
+                    motion['min_duration_s']=float(teleop.get('min_duration_s',.12))
+                    motion['publish_period_s']=float(teleop.get('publish_period_s',.04))
+                    motion['lookahead_s']=float(teleop.get('lookahead_s',.08))
                 path=compile_path(start,goal,None,self.model(),motion)
                 self.reference(status_check)
                 if self.cancelled.is_set() or (expected_stop_revision is not None and expected_stop_revision!=self.stop_revision) or deadline is not None and time.monotonic()>deadline:

@@ -128,29 +128,32 @@ class TeachingController:
             return dict(proposal,executed=True,command=result,attainment_verified=result.get('attained') is True)
         finally:self.lock.release()
 
-    def teleop(self,model,xyz,joints,observing,deadline=None,precision=False):
-        """One combined velocity-like XYZ/wrist/gripper segment."""
+    def teleop(self,model,xyz_delta,joint_delta,observing,deadline=None,precision=False,arm_mode='cartesian'):
+        """Execute one bounded segment already integrated from proportional input."""
         if observing is not True:raise ValueError('Подтвердите присутствие рядом с роботом')
-        if len(xyz)!=3 or len(joints)!=6:raise ValueError('Неверный вектор teleop')
+        if arm_mode not in ('cartesian','joint') or len(xyz_delta)!=3 or len(joint_delta)!=6:
+            raise ValueError('Неверный вектор teleop')
+        if not all(math.isfinite(float(v)) for v in xyz_delta) or any(type(v) is not int for v in joint_delta):
+            raise ValueError('Неверный шаг teleop')
         if not self.lock.acquire(blocking=False):raise ValueError('Предыдущий сегмент руки ещё выполняется')
         try:
             if self.move is None:raise ValueError('Контроллер руки не готов')
             pose=self.pose(coordinated=True);goal=list(pose)
-            magnitude=max(abs(float(v)) for v in xyz)
-            if magnitude>.08:
+            xyz_error=None
+            magnitude=math.sqrt(sum(float(value)**2 for value in xyz_delta))
+            if arm_mode=='cartesian' and magnitude>0:
                 from cartesian_jog import propose_delta
-                distance=.003 if precision else .020
-                scale=distance/max(1.,math.sqrt(sum(float(v)**2 for v in xyz)))
-                goal=propose_delta(model,pose,[float(v)*scale for v in xyz],maximum_distance=distance)['goal_deg']
-            step=1 if precision else 8
-            for index,value in enumerate(joints):
-                if abs(float(value))>.08:
-                    requested=goal[index]+step*(1 if value>0 else -1)
-                    goal[index]=max(pose[index]-10,min(pose[index]+10,requested))
+                try:goal=propose_delta(model,pose,[float(value) for value in xyz_delta],maximum_distance=.010)['goal_deg']
+                except ValueError as exc:xyz_error=str(exc)
+            indices=range(6) if arm_mode=='joint' else (5,)
+            for index in indices:
+                goal[index]=max(pose[index]-10,min(pose[index]+10,goal[index]+joint_delta[index]))
             if goal==pose:raise ValueError('Нет исполнимого движения руки')
             revision=self.stop_revision()
-            return self.move(pose,goal,deadline=deadline,expected_stop_revision=revision,
-                             source='coordinated_operator',speed='precision' if precision else 'fast')
+            result=self.move(pose,goal,deadline=deadline,expected_stop_revision=revision,
+                             source='coordinated_operator',speed='precision' if precision else 'teleop')
+            if xyz_error:result['cartesian_rejected']=xyz_error
+            return result
         finally:self.lock.release()
 
     def step(self,joint,delta,deadline=None):

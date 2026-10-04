@@ -5,5 +5,13 @@
   "publish_period_s": 0.08,
   "lookahead_s": 0.20,
   "min_duration_s": 0.35,
-  "profile": "coordinated_quintic_lookahead"
+  "profile": "coordinated_quintic_lookahead",
+  "teleop": {
+    "velocity_scale": 4.0,
+    "acceleration_scale": 8.0,
+    "jerk_scale": 16.0,
+    "min_duration_s": 0.12,
+    "publish_period_s": 0.04,
+    "lookahead_s": 0.08
+  }
 }
