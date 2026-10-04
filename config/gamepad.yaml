@@ -19,20 +19,21 @@ mapping:
   resume_after_neutral: start
   unassigned_motion: [select, left_stick, right_stick]
 deadzone: 0.15
+drive_expo: 0.5
 drive_profile: normal
 arm_speed: normal
 watchdog_timeout: 0.25
 profiles:
-  precision: {linear: 0.12, angular: 0.25}
-  normal: {linear: 1.20, angular: 2.50}
-  fast: {linear: 1.20, angular: 2.50}
+  precision: {linear: 0.08, angular: 0.17}
+  normal: {linear: 0.80, angular: 1.67}
+  fast: {linear: 0.80, angular: 1.67}
 radio_loss_verified: false
 continuous_motion_enabled: true
 operator_chassis_accepted: true
 operator_acceptance_scope: manual_and_local_autonomy_without_radio_loss_claim
 arm_step_deg: 5
 gripper_step_deg: 5
-notes: Physical Linux event mapping recorded with the operator. Axes are proportional. Hold R1 for direct arm joints while the left stick continues to drive the base. MODE produced no event.
+notes: Physical Linux event mapping recorded with the operator. Chassis axes use a 50 percent cubic expo for a softer center response. Hold R1 for direct arm joints while the left stick continues to drive the base. MODE produced no event.
 
 bounded_arm_steps_verified: true
 bounded_steps_evidence: data/arm-short-step-validation.json

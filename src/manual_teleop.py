@@ -91,10 +91,10 @@ class ManualTeleop:
 
     def _drive_vector(self,v,precision):
         scale=.1 if precision else 1.
-        x=(v.get('forward',0)-v.get('backward',0))*1.20*scale
-        y=(v.get('left',0)-v.get('right',0))*1.08*scale
-        yaw=(v.get('turn_left',0)-v.get('turn_right',0))*2.50*scale
-        norm=math.hypot(x/1.20,y/1.08)
+        x=(v.get('forward',0)-v.get('backward',0))*.80*scale
+        y=(v.get('left',0)-v.get('right',0))*.72*scale
+        yaw=(v.get('turn_left',0)-v.get('turn_right',0))*1.67*scale
+        norm=math.hypot(x/.80,y/.72)
         if norm>1:x/=norm;y/=norm
         return [x,y,yaw]
 

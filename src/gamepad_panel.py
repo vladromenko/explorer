@@ -56,12 +56,17 @@ class GamepadPanel:
         item=self.config['axes'][name];value=self.axes.get(str(item['code']),item['center'])
         return axis_value(value,item,self.config['deadzone'])
 
+    def _drive_axis(self,value):
+        expo=float(self.config.get('drive_expo',.5))
+        return (1-expo)*value+expo*value**3
+
     def _inputs(self):
         b=self.config['buttons'];dpx=float(self.axes.get('16',0));dpy=float(self.axes.get('17',0))
         ly=self._axis('left_y');lx=self._axis('left_x');rx=self._axis('right_x');ry=self._axis('right_y')
         arm=b['r1'] in self.keys
-        return dict(forward=max(0.,ly),backward=max(0.,-ly),left=max(0.,lx),right=max(0.,-lx),
-            turn_left=0. if arm else max(0.,rx),turn_right=0. if arm else max(0.,-rx),
+        drive_y=self._drive_axis(ly);drive_x=self._drive_axis(lx);turn=self._drive_axis(rx)
+        return dict(forward=max(0.,drive_y),backward=max(0.,-drive_y),left=max(0.,drive_x),right=max(0.,-drive_x),
+            turn_left=0. if arm else max(0.,turn),turn_right=0. if arm else max(0.,-turn),
             arm_x_forward=0.,arm_x_back=0.,arm_y_left=0.,arm_y_right=0.,arm_z_up=0.,arm_z_down=0.,
             joint1_increase=max(0.,dpx) if arm else 0.,joint1_decrease=max(0.,-dpx) if arm else 0.,
             joint2_increase=max(0.,-dpy) if arm else 0.,joint2_decrease=max(0.,dpy) if arm else 0.,
