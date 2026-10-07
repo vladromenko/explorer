@@ -34,3 +34,17 @@ class StationaryGyro:
             self.bias+=.002*(gyro[2]-self.bias)
             return 0.,True
         return gyro[2]-self.bias,False
+
+    def controller(self,status,now):
+        """Fresh sole-owner command state supplements the 1 Hz factory zero packet.
+
+        Never keep stationarity alive from an expired snapshot or desired goal.
+        """
+        stamp=status.get("monotonic")
+        velocity=status.get("velocity")
+        if (type(stamp) not in (int,float) or not math.isfinite(stamp) or not 0<=now-stamp<.3 or
+                not isinstance(velocity,list) or len(velocity)!=3 or
+                any(type(v) not in (int,float) or not math.isfinite(v) for v in velocity)):
+            return False
+        self.command(velocity,now)
+        return True

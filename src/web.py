@@ -186,6 +186,8 @@ def base_step_status():return observed_base.status()
 def base_step(c:BaseStep):return map_operation(observed_base.start,c.direction,c.duration,c.observing,c.compact)
 
 def stop_all():
+    room_task=globals().get("navigation_tasks")
+    if room_task and room_task.status()["busy"]:room_task.cancel()
     experiments.cancel()
     supervisor=globals().get('autonomy_supervisor')
     if supervisor:supervisor.cancel(reason='Manual takeover or STOP')
@@ -201,6 +203,8 @@ def stop_all():
     if trajectory:trajectory.stop()
     return emit('stop')
 def manual_takeover():
+    room_task=globals().get("navigation_tasks")
+    if room_task and room_task.status()["busy"]:room_task.cancel()
     experiments.cancel()
     supervisor=globals().get('autonomy_supervisor')
     if supervisor:supervisor.cancel(reason='Manual keyboard/gamepad takeover')
@@ -486,12 +490,15 @@ def learning_implementation():return Response((ROOT/'docs/LEARNING-IMPLEMENTATIO
 @app.get('/mobile')
 def mobile_interface():return HTMLResponse((ROOT/'src/mobile.html').read_text())
 
+@app.get("/room-guide")
+def room_guide():return Response((ROOT/"docs/ROOM-EXPLORATION.ru.md").read_text(),media_type="text/plain; charset=utf-8")
+
 @app.get('/mobile-guide')
 def mobile_guide():return Response((ROOT/'docs/MOBILE-REMOTE.ru.md').read_text(),media_type='text/plain; charset=utf-8')
 
 @app.middleware('http')
 async def auth(request:Request,call_next):
-    if request.url.path not in ('/','/mobile','/mobile-guide','/guide','/training-guide','/learning-implementation','/delivery-guide','/lab.js','/skill-ui.js',"/experiment-ui.js","/mapping-ui.js"):
+    if request.url.path not in ('/','/mobile','/mobile-guide','/guide','/training-guide','/learning-implementation','/delivery-guide','/room-guide','/lab.js','/skill-ui.js',"/experiment-ui.js","/mapping-ui.js"):
         supplied=request.headers.get('authorization','').removeprefix('Bearer ')
         if not secrets.compare_digest(supplied,TOKEN):
             from fastapi.responses import JSONResponse
@@ -1082,6 +1089,95 @@ from delivery_task import DeliveryTask
 from delivery_robot import DeliveryRobot
 from delivery_vision import MeasuredVision
 measured_vision=MeasuredVision(ROOT,node,manual_arm,reference_arm,maps)
+from navigation_footprint import NavigationFootprint
+navigation_footprint=NavigationFootprint(ROOT,node)
+from camera_views import CameraViews
+from navigation_tasks import NavigationTasks
+from navigation_scope import scope_blockers
+camera_views=CameraViews(ROOT,manual_arm,trajectory_execution,reference_arm)
+
+
+def navigation_stop():
+    result=emit("stop",initiator="room_task")
+    deadline=time.monotonic()+3
+    while time.monotonic()<deadline:
+        state=missions.state();velocity=state.get("odom_velocity",[])
+        if (0<=time.time()-state.get("at",0)<.9 and state.get("stop_latched") is True and
+                len(velocity)==3 and all(abs(value)<limit for value,limit in zip(velocity,[.005,.005,.02]))):return result
+        time.sleep(.05)
+    raise ValueError("Шасси не подтвердило остановку")
+
+
+def navigation_prepare(permit):
+    permit()
+    if teaching.active or mobile_demonstrations.status().get("active"):
+        raise ValueError("Завершите запись обучения перед автономной поездкой")
+    if trajectory_execution.status().get("busy") or manual_arm.lock.locked():raise ValueError("Рука ещё движется")
+    state=missions.state()
+    health={name:read_state(name+"-health.json") for name in ("navigation","planning")}
+    reasons=scope_blockers(state.get("commissioning",{}),"mapping",health,time.time())
+    if reasons:raise ValueError("Навигация не готова: "+", ".join(reasons))
+    owner=gamepad_panel.teleop.status().get("owner")
+    if owner:gamepad_panel.teleop.disconnect(owner)
+    gamepad_panel.heartbeat(False)
+    navigation_stop();permit()
+    camera_views.move("forward",permit)
+    navigation_footprint.apply(permit)
+    for operation,extra in (("mode",{"mode":"AUTONOMOUS"}),("clear_stop",{})):
+        permit();request=emit(operation,initiator="room_task",**extra);deadline=time.monotonic()+2
+        acknowledged=False
+        while not acknowledged and time.monotonic()<deadline:
+            permit();state=missions.state()
+            if state.get("last_request",{}).get("id")==request["id"]:
+                if state["last_request"].get("error"):raise ValueError(str(state["last_request"]["error"]))
+                acknowledged=True
+            else:time.sleep(.02)
+        if not acknowledged:raise ValueError("Контроллер не подтвердил режим поездки")
+    missions.require_ready("mapping")
+
+
+def navigation_observe(mid,place,permit):
+    observations=[]
+    for view in ("forward","left","right"):
+        permit();camera=camera_views.move(view,permit)
+        record=missions.surveys.capture(mid,place+"_"+view,maps.pose(),maps.epoch(),camera["settled_at"],permit)
+        record["camera_view"]=camera
+        from lerobot_bridge import write_json
+        write_json(ROOT/"data/surveys"/mid/(record["id"]+".json"),record)
+        observations.append(record)
+    camera_views.move("forward",permit)
+    return observations
+
+
+missions.mapping_polygon=navigation_footprint.profile["polygon"]
+def navigation_camera_guard(state):
+    camera_views.navigation_guard(state)
+    navigation_footprint.guard()
+
+missions.camera_guard=navigation_camera_guard
+missions.observe_views=navigation_observe
+navigation_tasks=NavigationTasks(ROOT,missions,maps,navigation_prepare,navigation_stop,object_finder,camera_views,navigation_footprint.restore)
+
+class NavigationTaskRequest(BaseModel):
+    kind:str
+    observing:bool=False
+    map_name:str|None=None
+    x:float|None=None
+    y:float|None=None
+    yaw:float=0.
+    places:list[str]=Field(default_factory=list,max_length=12)
+    object_query:str|None=None
+    max_goals:int=Field(default=20,ge=1,le=20)
+
+@app.get("/api/navigation/tasks")
+def room_tasks_status():return dict(**navigation_tasks.status(),camera=camera_views.status())
+
+@app.post("/api/navigation/tasks")
+def room_task_start(request:NavigationTaskRequest):return map_operation(navigation_tasks.start,request.model_dump())
+
+@app.post("/api/navigation/tasks/cancel")
+def room_task_cancel():return map_operation(navigation_tasks.cancel)
+
 delivery_robot=DeliveryRobot(ROOT,missions,manual_arm,trajectory_execution,object_finder,measured_vision,reference_arm)
 delivery_task=DeliveryTask(ROOT,delivery_robot,semantic_world)
 missions.compound_guard=delivery_robot.permit
@@ -1379,21 +1475,23 @@ TOOLS=[{'type':'function','function':{'name':name,'description':desc,'parameters
     ('list_places','Read explicitly saved named places and whether they belong to the current map',{'type':'object','properties':{},'additionalProperties':False}),
     ('return_home','Navigate to the saved home place only when explicitly requested. Fails if home is unset, map differs, or navigation is not commissioned.',{'type':'object','properties':{},'additionalProperties':False}),
     ('get_exploration_targets','Inspect reachable frontier candidates without motion',{'type':'object','properties':{},'additionalProperties':False}),
-    ('navigate_to','Navigate to explicit map coordinates only after commissioning, localization, AUTONOMOUS mode selection and release of stop. Never invent coordinates.',{'type':'object','properties':{'x':{'type':'number'},'y':{'type':'number'}},'required':['x','y'],'additionalProperties':False}),
-    ('explore_area','Start bounded frontier exploration only when requested; requires commissioned navigation. No random motion.',{'type':'object','properties':{},'additionalProperties':False}),
+    ('navigate_to','Start a slow room job to explicit current-SLAM coordinates. It prepares the onboard camera and mode; fresh sensors and accepted chassis are mandatory. Never invent coordinates.',{'type':'object','properties':{'x':{'type':'number'},'y':{'type':'number'}},'required':['x','y'],'additionalProperties':False}),
+    ('explore_area','Start a bounded onboard-camera room survey and return to start, only for an explicit request. The room job prepares camera/mode and uses current SLAM, sensors and accepted chassis.',{'type':'object','properties':{},'additionalProperties':False}),
+    ('get_navigation_task','Read the room task outcome and camera state; accepted is never completed.',{'type':'object','properties':{},'additionalProperties':False}),
     ('stop_robot','Latch the deterministic base stop immediately',{'type':'object','properties':{},'additionalProperties':False})]]
 
 def tool(name,args,budget=None):
-    if name=='survey_places' and set(args)=={'places'}:return missions.start_survey(args['places'])
+    if name=="get_navigation_task" and args=={}:return room_tasks_status()
+    if name=="survey_places" and set(args)=={"places"}:return navigation_tasks.start(dict(kind="patrol",places=args["places"],observing=True))
     if name=='get_survey' and args=={}:return missions.surveys.recent()[:5]
     if name=='find_object' and set(args)=={'label'} and isinstance(args['label'],str):
         raise ValueError('Запустите поиск кнопкой камеры: тяжёлая модель не выполняется внутри другого inference')
     if name=='get_object_search' and args=={}:return object_finder.status()
     if name=='list_places' and args=={}:return missions.places()
-    if name=='return_home' and args=={}:return missions.go_place('home')
+    if name=="return_home" and args=={}:return navigation_tasks.start(dict(kind="patrol",places=["home"],observing=True))
     if name=='get_exploration_targets' and args=={}:return missions.frontiers()
-    if name=='explore_area' and args=={}:return missions.start('explore')
-    if name=='navigate_to' and set(args)=={'x','y'}:return missions.start('navigate',args['x'],args['y'])
+    if name=="explore_area" and args=={}:return navigation_tasks.start(dict(kind="survey_room",observing=True,max_goals=5))
+    if name=="navigate_to" and set(args)=={"x","y"}:return navigation_tasks.start(dict(kind="navigate_current",x=args["x"],y=args["y"],yaw=maps.pose()["yaw"],observing=True))
     if name=='get_pose' and args=={}:return maps.pose()
     if name=='preview_path' and set(args)=={'x','y'} and all(isinstance(args[k],(float,int)) and not isinstance(args[k],bool) for k in args):return maps.preview(args['x'],args['y'])
     if name=='save_map' and set(args)=={'name'} and isinstance(args['name'],str):return maps.save(args['name'])

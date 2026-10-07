@@ -20,7 +20,8 @@ HELP='''Explorer: /status — питание, нагрузка, режим и д
 /objects — что видно; /where предмет — последние наблюдения;
 /find sock — поиск на текущем кадре; /places — сохранённые места;
 /go имя — поездка; /survey имя1,имя2 — осмотр маршрута;
-/explore — исследовать доступные границы карты; /mobile — телефонная панель;
+/explore — осмотр с бортовой камерой и возврат; /maproom имя — исследовать и сохранить карту;
+/patrol место1,место2 — маршрут; /task — состояние поездки; /cancel — отменить; /mobile — телефонная панель;
 /lights режим — подсветка: auto, off, headlights, work, search, success, error, gradient;
 /skills — функции и обучение;
 /autonomy — состояние самостоятельных задач; /do предмет -> место — запустить уже разрешённую доставку;
@@ -87,7 +88,11 @@ def command(text):
         return 'autonomy/jobs',dict(goal='Перенести '+object_query+' в '+destination,attempts=1,time_budget_s=900,
             episode_budget_s=900,permissions=['base_motion','arm_motion'],reset_profile=None,
             object_query=object_query,destination_name=destination)
-    if name=='/explore':return 'missions',dict(kind='explore',x=None,y=None,yaw=0.)
+    if name in ("/explore","/lookaround"):return "navigation/tasks",dict(kind="survey_room",observing=True,max_goals=5)
+    if name=="/maproom" and argument:return "navigation/tasks",dict(kind="map_room",map_name=argument,observing=True,max_goals=10)
+    if name=="/patrol" and argument:return "navigation/tasks",dict(kind="patrol",places=[value.strip() for value in argument.split(",")],observing=True)
+    if name=="/task":return "navigation/tasks",None
+    if name=="/cancel":return "navigation/tasks/cancel",{}
     if name=='/camera':return 'camera',None
     if name=='/mobile':return 'mobile',None
     if name=='/control':return 'control_help',None
@@ -259,7 +264,7 @@ class TelegramBridge:
         if me['id']!=self.config.get('bot_id',8850343219):raise ValueError('Unexpected bot ID')
         if self.telegram('getWebhookInfo',{}).get('url'):raise ValueError('Existing webhook; no changes made')
         names={'/status':'Состояние','/camera':'Камера','/control':'Управление','/map':'Карта и лидары','/experiments':'Эксперименты','/memory':'Память',
-               '/skills':'Функции и обучение','/explore':'Исследовать комнату','/mobile':'Телефонная панель',
+               '/skills':'Функции и обучение','/explore':'Осмотреть и вернуться','/maproom':'Построить и сохранить карту','/patrol':'Обойти сохранённые места','/task':'Состояние поездки','/cancel':'Отменить поездку','/mobile':'Телефонная панель',
                '/learn':'Обучение','/autonomy':'Автономные задачи','/lights':'Передняя подсветка','/results':'Результаты','/stop':'Остановить'}
         self.telegram('setMyCommands',{'commands':[{'command':k[1:],'description':v} for k,v in names.items()]})
         labels={v:k for k,v in names.items()}

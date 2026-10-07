@@ -6,6 +6,7 @@ import re
 import threading
 import time
 import uuid
+from stored_records import records
 import numpy as np
 from PIL import Image
 import yaml
@@ -68,7 +69,9 @@ class MapTools:
         return dict(frame='map',points=points,provisional=True,executed=False,pose=self.pose())
 
     def list_maps(self):
-        return [json.loads(p.read_text()) for p in sorted(self.maps.glob('*/metadata.json')) if not p.parent.name.startswith('.')]
+        paths=[p for p in sorted(self.maps.glob("*/metadata.json")) if not p.parent.name.startswith(".")]
+        rows,self.record_errors=records(paths,("name",))
+        return [row for _,row in rows]
 
     def require_stopped(self):
         s=json.loads((ROOT/'data/status.json').read_text())

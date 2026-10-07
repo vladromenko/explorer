@@ -106,6 +106,11 @@ class Perception(Node):
                     temporary=ROOT/'data/frame-raw.tmp'
                     temporary.write_bytes(jpg.tobytes())
                     temporary.replace(ROOT/'data/frame-raw.jpg')
+                    metadata=ROOT/"data/camera-frame.tmp"
+                    metadata.write_text(json.dumps(dict(at=time.time(),image_stamp=stamp(msg),frame=msg.header.frame_id,
+                        width=frame.shape[1],height=frame.shape[0],source="onboard_color_callback",
+                        jpeg="frame-raw.jpg",same_frame_hash_verified=False)))
+                    metadata.replace(ROOT/"data/camera-frame.json")
                     self.preview_at=now
             finally:self.preview_lock.release()
     def depth_cb(self,msg):

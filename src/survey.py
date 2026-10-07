@@ -4,6 +4,7 @@ import time
 import shutil
 from pathlib import Path
 from lerobot_bridge import write_json
+from stored_records import records
 
 
 def summarize(perception,place):
@@ -46,4 +47,5 @@ class SurveyStore:
 
     def recent(self):
         paths=sorted(self.folder.glob('*/*.json'),key=lambda p:p.name,reverse=True)[:30]
-        return [json.loads(p.read_text()) for p in paths]
+        rows,self.record_errors=records(paths,("id","at"))
+        return [row for _,row in rows]

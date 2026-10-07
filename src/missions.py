@@ -5,7 +5,9 @@ import numpy as np
 from std_msgs.msg import String
 from nav2_msgs.action import NavigateToPose
 from rclpy.action import ActionClient
+from navigation_scope import scope_blockers
 from frontiers import candidates
+from navigation_heading import departure_heading
 from map_tools import wait
 from survey import SurveyStore
 ROOT=Path('/home/vlad/Explorer')
@@ -17,13 +19,12 @@ def navigation_attained(pose,x,y,yaw):
     angle=abs(math.atan2(math.sin(pose['yaw']-yaw),math.cos(pose['yaw']-yaw)))
     return math.hypot(pose['x']-x,pose['y']-y)<=.15 and angle<=.15
 
-def readiness(s,now):
+def readiness(s,now,scope="localized",health=None):
     reasons=[]
     if now-s.get('at',0)>.9 or now<s.get('at',0):reasons.append('controller_stale')
     if s.get('stop_latched',True):reasons.append('stop_latched')
     if s.get('mode')!='AUTONOMOUS':reasons.append('autonomous_mode_not_selected')
-    for flag in FLAGS:
-        if not s.get('commissioning',{}).get(flag,False):reasons.append(flag)
+    reasons.extend(scope_blockers(s.get("commissioning",{}),scope,health,now))
     for sensor,ttl in [('imu',.5),('odom',.5),('scan0',.6),('scan1',.6),('battery',3)]:
         age=s.get('sensor_age',{}).get(sensor,math.inf)
         if not isinstance(age,(int,float)) or not math.isfinite(age) or not 0<=age<ttl:reasons.append(sensor+'_stale')
@@ -34,7 +35,7 @@ def readiness(s,now):
 
 class Missions:
     def __init__(self,node,maps):
-        self.surveys=SurveyStore(ROOT);self.speak=None;self.compound_guard=None;self.compound_cancel=None
+        self.surveys=SurveyStore(ROOT);self.speak=None;self.observe_views=None;self.camera_guard=None;self.mapping_polygon=None;self.compound_guard=None;self.compound_cancel=None
         self.node=node;self.maps=maps;self.lock=threading.RLock();self.active=None;self.last=None
         self.client=ActionClient(node,NavigateToPose,'/navigate_to_pose')
         self.pub=node.create_publisher(String,'/explorer/request',10)
@@ -54,9 +55,15 @@ class Missions:
         with self.lock:
             return dict(active={k:v for k,v in self.active.items() if k not in ('handle',)} if self.active else None,
                         last=self.last,blocked_by=readiness(self.state(),time.time()))
-    def require_ready(self):
-        reasons=readiness(self.state(),time.time())
+    def require_ready(self,scope=None):
+        scope=scope or (self.active or {}).get("scope","localized")
+        health={}
+        for component in ("navigation","planning"):
+            try:health[component]=json.loads((ROOT/"data"/(component+"-health.json")).read_text())
+            except (OSError,ValueError):health[component]={}
+        reasons=readiness(self.state(),time.time(),scope,health)
         if reasons:raise ValueError('Navigation unavailable: '+', '.join(reasons))
+        if scope=="mapping" and self.camera_guard:self.camera_guard(self.state())
         self.maps.pose()
         if not self.maps.grid or time.monotonic()-self.maps.grid[1]>15:raise ValueError('Map stale')
 
@@ -105,9 +112,10 @@ class Missions:
     def frontiers(self):
         if not self.maps.grid or time.monotonic()-self.maps.grid[1]>15:raise ValueError('Map stale')
         g=self.maps.grid[0];q=g.info.origin.orientation
-        if abs(q.z)>.001 or abs(q.w-1)>.001:raise ValueError('Rotated map grid unsupported')
+        origin_yaw=math.atan2(2*(q.w*q.z+q.x*q.y),1-2*(q.y*q.y+q.z*q.z))
         p=self.maps.pose();a=np.asarray(g.data).reshape(g.info.height,g.info.width)
-        points=candidates(a,g.info.resolution,[g.info.origin.position.x,g.info.origin.position.y],[p['x'],p['y']])
+        points=candidates(a,g.info.resolution,[g.info.origin.position.x,g.info.origin.position.y],[p['x'],p['y']],origin_yaw=origin_yaw,
+            footprint=self.mapping_polygon if (self.active or {}).get("scope")=="mapping" else None,heading=p["yaw"])
         return dict(candidates=points,known_area_m2=float((a>=0).sum()*g.info.resolution**2),frame='map',provisional=True,executed=False)
 
     def places(self):
@@ -129,15 +137,17 @@ class Missions:
         if not p['compatible_map']:raise ValueError('Place belongs to a different map frame; load and localize on its map first')
         return self.start('navigate',p['x'],p['y'],p['yaw'])
 
-    def start(self,kind,x=None,y=None,yaw=0.):
-        if kind not in ('navigate','explore'):raise ValueError('Unsupported mission')
+    def start(self,kind,x=None,y=None,yaw=0.,scope=None,max_goals=20):
+        if kind not in ("navigate","explore"):raise ValueError("Unsupported mission")
+        scope=scope or ("mapping" if kind=="explore" else "localized")
         if kind=='navigate' and (not all(isinstance(v,(float,int)) and math.isfinite(v) for v in (x,y,yaw)) or max(abs(x),abs(y))>100):raise ValueError('Invalid target')
+        if type(max_goals) is not int or not 1<=max_goals<=20:raise ValueError("Exploration goal budget: 1..20")
         with self.lock:
-            self.require_ready()
+            self.require_ready(scope)
             if self.active:raise ValueError('A mission is already active')
-            mid=uuid.uuid4().hex;self.active=dict(id=mid,kind=kind,map_epoch=self.maps.epoch(),started=time.time(),started_monotonic=time.monotonic(),deadline_monotonic=time.monotonic()+(600 if kind=='explore' else 120),phase='planning')
+            mid=uuid.uuid4().hex;self.active=dict(id=mid,kind=kind,scope=scope,map_epoch=self.maps.epoch(),started=time.time(),started_monotonic=time.monotonic(),deadline_monotonic=time.monotonic()+(600 if kind=='explore' else 120),phase='planning',max_goals=max_goals)
             self.record(self.active,'running',dict(x=x,y=y,yaw=yaw))
-            self.emit('begin_mission',mission=mid)
+            self.emit("begin_mission",mission=mid,kind="mapping" if scope=="mapping" else kind)
         threading.Thread(target=self.worker,args=(mid,kind,x,y,yaw),daemon=True).start()
         return dict(id=mid,accepted=True,completed=False)
 
@@ -205,7 +215,21 @@ class Missions:
             self.finish(mid,'failed',dict(reason=str(exc),observations=observations))
 
     def go(self,mid,x,y,yaw):
-        self.maps.preview(x,y)
+        pose=self.maps.pose()
+        if (self.active or {}).get("scope")=="mapping" and math.hypot(pose["x"]-x,pose["y"]-y)>.15:
+            preview=self.maps.preview(x,y)
+            heading=departure_heading(preview["points"],pose)
+            difference=abs(math.atan2(math.sin(heading-pose["yaw"]),math.cos(heading-pose["yaw"])))
+            if difference>.35:
+                self.go_goal(mid,pose["x"],pose["y"],heading,rotation_only=True)
+        return self.go_goal(mid,x,y,yaw)
+
+    def go_goal(self,mid,x,y,yaw,rotation_only=False):
+        pose=self.maps.pose()
+        if math.hypot(pose["x"]-x,pose["y"]-y)<.03 and abs(math.atan2(math.sin(pose["yaw"]-yaw),math.cos(pose["yaw"]-yaw)))<.05:
+            self.hold_base(mid)
+            return self.maps.pose()
+        if not rotation_only:self.maps.preview(x,y)
         self.require_ready()
         if not self.client.wait_for_server(timeout_sec=2):raise ValueError('Navigator unavailable')
         goal=NavigateToPose.Goal();goal.pose.header.frame_id='map';goal.pose.header.stamp=self.node.get_clock().now().to_msg()
@@ -264,13 +288,32 @@ class Missions:
         try:
             if kind=='navigate':
                 result=self.go(mid,x,y,yaw);self.finish(mid,'succeeded',result);return
-            visited=[]
-            for _ in range(20):
-                self.require_ready()
-                options=[p for p in self.frontiers()['candidates'] if all(math.hypot(p['x']-x0,p['y']-y0)>.35 for x0,y0 in visited)]
+            visited=[];failed=[];observations=[]
+            budget=self.active.get("max_goals",20)
+            for _ in range(budget):
+                self.survey_permit(mid)
+                options=[p for p in self.frontiers()["candidates"] if all(
+                    math.hypot(p["x"]-x0,p["y"]-y0)>.35 for x0,y0 in visited+failed)]
                 if not options:
-                    self.finish(mid,'no_reachable_frontier',{'visited':len(visited),'complete_room_coverage_verified':False});return
-                p=options[0];self.go(mid,p['x'],p['y'],p['yaw']);visited.append((p['x'],p['y']))
-                time.sleep(2.) # let new lidar/image observations enter the persistent world model
-            self.finish(mid,'limit_reached',{'visited':len(visited)})
+                    self.finish(mid,"no_reachable_frontier",dict(visited=len(visited),failed_frontiers=failed,
+                        observations=observations,complete_room_coverage_verified=False));return
+                p=options[0]
+                try:self.go(mid,p["x"],p["y"],p["yaw"])
+                except (ValueError,TimeoutError) as exc:
+                    self.survey_permit(mid)
+                    self.hold_base(mid)
+                    failed.append((p["x"],p["y"]))
+                    with self.lock:self.active.update(phase="retry_other_frontier",last_failure=str(exc))
+                else:
+                    visited.append((p["x"],p["y"]))
+                    if self.observe_views:
+                        records=self.observe_views(mid,"frontier_"+str(len(visited)),lambda:self.survey_permit(mid))
+                        observations.extend(row["id"] for row in records)
+                    else:
+                        row=self.surveys.capture(mid,"frontier_"+str(len(visited)),self.maps.pose(),
+                            self.maps.epoch(),time.time(),lambda:self.survey_permit(mid))
+                        observations.append(row["id"])
+                    with self.lock:self.active.update(visited=len(visited),observations=list(observations))
+            self.finish(mid,"limit_reached",dict(visited=len(visited),failed_frontiers=failed,
+                observations=observations,complete_room_coverage_verified=False))
         except Exception as exc:self.finish(mid,'failed',{'reason':str(exc)})

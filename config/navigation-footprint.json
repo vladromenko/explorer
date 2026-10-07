@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "scope": "stationary_camera_views_and_forward_navigation_only",
+  "polygon": [
+    [
+      -0.18,
+      -0.16
+    ],
+    [
+      0.29,
+      -0.16
+    ],
+    [
+      0.29,
+      0.16
+    ],
+    [
+      -0.18,
+      0.16
+    ]
+  ],
+  "cad_bounds_xy_m": [
+    [
+      -0.15267528593540192,
+      -0.1301233656292503
+    ],
+    [
+      0.252329176731684,
+      0.1302939443800728
+    ]
+  ],
+  "views": [
+    "forward",
+    "left",
+    "right"
+  ],
+  "gripper_linkage_range_rad": [
+    -1.54,
+    0.0
+  ],
+  "geometry_manifest": "config/arm_model.json",
+  "pose_source": "command_estimate",
+  "note": "Collision-mesh projections of the three camera poses, jaw range -1.54..0 rad sampled at 33 positions, >=27 mm bounding-box margin. Existing Nav2 adds 20 mm padding. Read-only reproduction: bin/check-navigation-footprint.py. Restore the conservative full-reach envelope outside room tasks.",
+  "gripper_linkage_samples": 33,
+  "geometry_manifest_sha256": "842dfe7960fd01be18992e62dabe293added502d0df3715a9d31944b60317d4f"
+}

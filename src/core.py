@@ -22,6 +22,8 @@ from battery_gauge import battery_summary
 from power_policy import PowerPolicy
 import secrets
 import hashlib
+from navigation_scope import scope_blockers, bound_mapping_velocity
+from navigation_obstacles import project_scan,swept_obstacle
 from motion_session import MotionSession
 from transition_log import TransitionLog
 from source_freshness import SourceFreshness
@@ -60,6 +62,10 @@ class Core(Node):
         self.create_timer(2.,self.refresh_graduated_capabilities)
         self.events=TransitionLog(ROOT/'data/motion-transitions.jsonl')
         self.session=MotionSession()
+        self.navigation_scope="localized"
+        self.navigation_polygon=json.loads((ROOT/"config/navigation-footprint.json").read_text())["polygon"]
+        self.lidar_geometry=json.loads((ROOT/"config/lidar_geometry.json").read_text())
+        self.scan_points={}
         self.nav_not_before=0.
         self.nav_last_stamp=0.
         self.hold_requested=False
@@ -214,6 +220,8 @@ class Core(Node):
     def scan_cb(self, name, msg):
         if not self.accept_sensor(name,msg,.6):return
         self.scans[name] = summarize_scan(msg)
+        try:self.scan_points[name]=project_scan(msg,self.lidar_geometry["frames"])
+        except (ValueError,KeyError):self.scan_points.pop(name,None)
 
     def arm_cb(self, msg):
         self.touch('arm')
@@ -261,7 +269,10 @@ class Core(Node):
         if stamp<self.nav_not_before or stamp<=self.nav_last_stamp or not -.02<=age<.25:return
         self.nav_last_stamp=stamp
         if self.gate.mode=='AUTONOMOUS' and not self.gate.estop and self.session.permits(now):
-            try:self.gate.submit([msg.twist.linear.x,msg.twist.linear.y,msg.twist.angular.z],'autonomy',now-max(0.,age))
+            try:
+                velocity=[msg.twist.linear.x,msg.twist.linear.y,msg.twist.angular.z]
+                if getattr(self,"navigation_scope","localized")=="mapping":velocity=bound_mapping_velocity(velocity)
+                self.gate.submit(velocity,"autonomy",now-max(0.,age))
             except ValueError:self.emergency('nav2','INVALID_VELOCITY')
 
     def request(self, msg):
@@ -303,10 +314,18 @@ class Core(Node):
                         raise ValueError('No matching probe')
                     self.probe.last_lease=float(req['at'])
                 elif op in ('begin_mission','autonomy_lease','resume_base'):
-                    if self.gate.estop or self.gate.mode!='AUTONOMOUS' or not all(self.config.get(k,False) for k in ('base_commissioned','mcu_watchdog_verified','lidar_tf_validated','localization_verified')):
-                        raise ValueError('Autonomy prerequisites not met')
-                    if op=='begin_mission':
-                        self.session.begin(req['mission'],time.monotonic())
+                    scope=("mapping" if req.get("kind")=="mapping" else "localized") if op=="begin_mission" else self.navigation_scope
+                    health={}
+                    if scope=="mapping":
+                        for component in ("navigation","planning"):
+                            try:health[component]=json.loads((ROOT/"data"/(component+"-health.json")).read_text())
+                            except (OSError,ValueError):health[component]={}
+                    blockers=scope_blockers(self.config,scope,health,time.time())
+                    if self.gate.estop or self.gate.mode!="AUTONOMOUS" or blockers:
+                        raise ValueError("Autonomy prerequisites not met: "+", ".join(blockers))
+                    if op=="begin_mission":
+                        self.session.begin(req["mission"],time.monotonic())
+                        self.navigation_scope=scope
                         self.policy_mission=req['mission'] if req.get('kind')=='mobile_policy' else None
                     elif op=='resume_base':
                         self.session.resume(req['mission'],time.monotonic());self.hold_requested=False
@@ -396,13 +415,13 @@ class Core(Node):
         self.gate.command = [max(-m*scale, min(m*scale, v)) for m,v in zip(self.config['max_velocity'],self.gate.command)]
         healthy = all(now-self.seen.get(k,-1e9) < ttl for k,ttl in [('odom',.5),('imu',.5),('scan0',.6),('scan1',.6),('battery',3.)])
         healthy = healthy and self.power_state['motion_allowed'] and self.battery is not None and self.battery > self.config['battery_stop_voltage']
-        # Conservative all-direction guard until the measured scanner extrinsics are installed.
-        # The fixed lidars have legitimate near-field returns from the robot itself.
-        # Until a direction-aware footprint filter is available, obstacle stops belong
-        # to autonomous navigation.  A present operator keeps the independent STOP,
-        # command-expiry, power and sensor gates, but must be able to manoeuvre away.
-        collision = self.gate.mode == 'AUTONOMOUS' and any(
-            s['nearest'] is None or s['nearest'] < .30 for s in self.scans.values())
+        collision=False
+        if self.gate.mode=="AUTONOMOUS":
+            if getattr(self,"navigation_scope","localized")=="mapping":
+                collision=(len(self.scan_points)!=2 or self.lidar_geometry.get("navigation_validated") is not True or
+                    any(swept_obstacle(points,self.gate.command,self.navigation_polygon) for points in self.scan_points.values()))
+            else:
+                collision=any(s["nearest"] is None or s["nearest"]<.30 for s in self.scans.values())
         if self.session.mission and now-self.session.lease_at>.25:
             before=self.snapshot();self.session.end();self.gate.hold();self.hold_requested=True
             self.event('mission','MISSION_LEASE_EXPIRED',before)

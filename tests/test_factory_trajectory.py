@@ -41,3 +41,15 @@ class FactoryTrajectoryTests(unittest.TestCase):
         self.assertEqual(path['commands'][-1]['pose'][1],96)
         trajectory['velocities'][0][1]=.1
         with self.assertRaises(ValueError):compile_path([90]*6,goal,trajectory,self.model)
+
+    def test_jazzy_first_integration_step_artifact(self):
+        trajectory=dict(names=["arm"+str(i)+"_Joint" for i in range(1,6)],times=[0.,2.],
+            positions=[[0.]*5,[0.,0.,-.1,-.25,0.]],
+            velocities=[[0.,0.,-.000977384381,-.002443460953,0.],[0.]*5],
+            accelerations=[[0.,0.,-.977384381,-2.443460953,0.],[0.]*5])
+        goal=[90,90,90-math.degrees(.1),90-math.degrees(.25),90,90]
+        path=compile_path([90]*6,goal,trajectory,self.model)
+        self.assertEqual(path["commands"][-1]["pose"],np.rint(goal).astype(int).tolist())
+        trajectory["velocities"][0][3]=-.0035
+        with self.assertRaisesRegex(ValueError,"boundary velocity"):
+            compile_path([90]*6,goal,trajectory,self.model)

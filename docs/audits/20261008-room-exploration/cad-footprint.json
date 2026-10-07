@@ -1,0 +1,25 @@
+{
+  "cad_bounds_xy_m": [
+    [
+      -0.15267528593540192,
+      -0.1301233656292503
+    ],
+    [
+      0.252329176731684,
+      0.1302939443800728
+    ]
+  ],
+  "minimum_margin_m": 0.027324714064598077,
+  "jaw_range_rad": [
+    -1.54,
+    0.0
+  ],
+  "jaw_samples": 33,
+  "views": [
+    "forward",
+    "left",
+    "right"
+  ],
+  "no_actuator_io": true,
+  "manifest_sha256": "842dfe7960fd01be18992e62dabe293added502d0df3715a9d31944b60317d4f"
+}

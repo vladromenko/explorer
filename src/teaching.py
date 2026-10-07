@@ -7,6 +7,7 @@ import subprocess
 import threading
 import time
 import uuid
+from stored_records import records
 import cv2
 import numpy as np
 from arm_commissioning import stationary_status,coordinated_status
@@ -18,7 +19,8 @@ class Demonstrations:
         self.root=Path(root);self.root.mkdir(parents=True,exist_ok=True)
 
     def episodes(self):
-        return [json.loads(p.read_text()) for p in sorted(self.root.glob('*/episode.json'))]
+        rows,self.record_errors=records(sorted(self.root.glob("*/episode.json")),("id","name","state","outcome","steps"))
+        return [row for _,row in rows]
 
     def eligible(self):
         return [e for e in self.episodes() if e.get('state')=='complete' and
@@ -33,7 +35,7 @@ class Demonstrations:
                     failed=sum(e.get('outcome')=='failure' for e in episodes),
                     episodes=[dict(id=e['id'],name=e['name'],outcome=e['outcome'],
                                    steps=len(e['steps']),state=e['state']) for e in episodes][-30:],
-                    framework='LeRobot 0.6.1',policy_type='ACT',
+                    record_errors=getattr(self,"record_errors",[]),framework='LeRobot 0.6.1',policy_type='ACT',
                     training_required_successful_demonstrations=1,
                     joint_state_source='per_episode_provenance',automatic_motion_enabled=False)
 

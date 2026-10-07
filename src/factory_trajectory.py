@@ -53,8 +53,15 @@ def compile_path(start,goal,trajectory,model,motion=None):
         # acceleration. Blend the two boundary segments from/to rest. Interior
         # derivatives and every waypoint remain; TimedPath rechecks the new
         # polynomial hull, dynamics and collisions before any publication.
-        if max(float(np.max(np.abs(velocities[i]))) for i in (0,-1))>1e-3:
-            raise ValueError('MoveIt boundary velocity is not a stationary start/finish')
+        # Jazzy TOTG getVelocity(0) reports the end of its first 1 ms
+        # integration step, not velocity at t=0. Accept only that bounded
+        # numerical artifact; a materially moving boundary remains invalid.
+        first=np.asarray(velocities[0]);first_acc=np.asarray(accelerations[0])
+        artifact=(np.max(np.abs(first))<=.005 and
+            np.allclose(first,first_acc*.001,rtol=.05,atol=1e-6))
+        if ((np.max(np.abs(first))>1e-3 and not artifact) or
+                np.max(np.abs(velocities[-1]))>1e-3):
+            raise ValueError("MoveIt boundary velocity is not a stationary start/finish")
         for i in (0,-1):
             velocities[i]=np.zeros(6);accelerations[i]=np.zeros(6)
         if abs(a[5]-b[5])>1e-8:

@@ -8,6 +8,7 @@ import shutil
 import threading
 import time
 import uuid
+from stored_records import records
 from pathlib import Path
 import cv2
 import numpy as np
@@ -102,22 +103,20 @@ class MobileDemonstrations:
         self.root=Path(root);self.folder=self.root/'data/mobile-demonstrations';self.folder.mkdir(exist_ok=True)
         self.lock=threading.RLock();self.active=None;self.last=None;self.lease=0
         self.on_complete=None
-        for path in self.folder.glob('*/episode.json'):
-            record=json.loads(path.read_text())
+        rows,self.record_errors=records(self.folder.glob("*/episode.json"),("id","state","started"))
+        for path,record in rows:
             if record['state']=='recording':
                 record.update(state='interrupted',outcome='unknown');write_json(path,record)
 
     def status(self):
-        episodes=[]
-        for path in self.folder.glob('*/episode.json'):
-            try:episodes.append(json.loads(path.read_text()))
-            except (OSError,ValueError,TypeError):pass
+        rows,self.record_errors=records(self.folder.glob("*/episode.json"),("id","state","started"))
+        episodes=[row for _,row in rows]
         episodes.sort(key=lambda item:item.get('started',0),reverse=True)
         eligible=[e for e in episodes if e.get("state")=="complete" and e.get("outcome")=="success" and
                   e.get("label_source")=="operator" and e.get("quality",{}).get("usable") is True]
         skills={name:sum(e.get('name')==name for e in eligible) for name in {e.get('name') for e in episodes if e.get('name')}}
         with self.lock:return dict(active=self.active,last=self.last or (episodes[0] if episodes else None),
-            recent=episodes[:10],storage_root=str(self.folder),automatic_replay=False,
+            record_errors=self.record_errors,recent=episodes[:10],storage_root=str(self.folder),automatic_replay=False,
             format='explorer_mobile_episode_v2',trainable=True,successful=len(eligible),skills=skills,
             training_required_successful_demonstrations=1,recommended_demonstrations='5–100; больше разнообразия обычно лучше',
             observations=['wrist_rgb','arm_command_estimate','body_velocity_command','odometry','dual_lidar_summary','stage'],

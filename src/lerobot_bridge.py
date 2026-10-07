@@ -7,6 +7,7 @@ import subprocess
 import threading
 import time
 import uuid
+from stored_records import records as stored_records
 
 ROOT=Path('/home/vlad/Explorer')
 
@@ -33,8 +34,8 @@ class LearningJobs:
 
     def status(self):
         records=[]
-        for path in sorted(self.folder.glob('*/job.json')):
-            record=json.loads(path.read_text())
+        rows,errors=stored_records(sorted(self.folder.glob("*/job.json")),("id","at","state"))
+        for path,record in rows:
             if record.get('state') in ('queued','exporting','training','validating') and time.time()-record['at']>15:
                 active=subprocess.run(['systemctl','--user','is-active','explorer-train.service'],capture_output=True,text=True,timeout=2)
                 if active.stdout.strip() not in ('active','activating','deactivating'):
@@ -43,7 +44,7 @@ class LearningJobs:
             records.append(record)
         backend=self.root/'data/learning-backend.json'
         return dict(backend=json.loads(backend.read_text()) if backend.exists() else {'ready':False},
-                    jobs=records[-12:],automatic_execution=False)
+                    record_errors=errors,jobs=records[-12:],automatic_execution=False)
 
     def start(self,steps,task):
         if type(steps) is not int or steps not in (1000,5000,20000):raise ValueError('Неизвестная длительность обучения')
@@ -73,16 +74,16 @@ class LearningJobs:
         if type(steps) is not int or steps not in (1000,5000,20000):raise ValueError('Неизвестная длительность обучения')
         from mobile_demonstrations import episode_quality
         source=self.root/'data/mobile-demonstrations';episodes=[]
-        for path in sorted(source.glob('*/episode.json')):
-            episode=json.loads(path.read_text())
+        rows,_=stored_records(sorted(source.glob("*/episode.json")),("id","state"))
+        for path,episode in rows:
             quality=episode.get("quality") or episode_quality(path.parent)
             same_skill=episode.get("skill_id")==skill_id if skill_id else episode.get("name")==task
             if (same_skill and episode.get("state")=="complete" and episode.get("outcome")=="success" and
                     episode.get("label_source")=="operator" and quality.get("usable") is True):episodes.append(episode)
         if not episodes:raise ValueError('Нужен хотя бы один успешный полный показ для ACT; фиксированного минимума нет')
         fingerprint=hashlib.sha256(json.dumps(sorted(e["id"] for e in episodes)).encode()).hexdigest()
-        for path in self.folder.glob("*/job.json"):
-            existing=json.loads(path.read_text())
+        rows,_=stored_records(self.folder.glob("*/job.json"),("id","state"))
+        for path,existing in rows:
             if (existing.get("dataset_fingerprint")==fingerprint and existing.get("skill_id")==skill_id and
                     existing.get("state") not in ("failed","interrupted","cancelled","rejected")):
                 return existing

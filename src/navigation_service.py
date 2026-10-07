@@ -50,7 +50,8 @@ def run(component, check_only=False, timeout=10.):
             self.buffer = Buffer(cache_time=Duration(seconds=5))
             self.listener = TransformListener(self.buffer, self)
             for name, topic, kind in (('odom','/odom_raw',Odometry),('imu','/imu/data_raw',Imu),
-                                      ('scan0','/scan0',LaserScan),('scan1','/scan1',LaserScan)):
+                                      ('scan0','/scan0',LaserScan),('scan1','/scan1',LaserScan),
+                                      ("scan_merged","/explorer/scan",LaserScan)):
                 self.create_subscription(kind, topic, lambda m, key=name: self.receive(key, m), qos_profile_sensor_data)
             self.create_subscription(OccupancyGrid, '/map', self.receive_map,
                                      QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
@@ -95,7 +96,7 @@ def run(component, check_only=False, timeout=10.):
                         records.append({})
                 self.power_blockers = power_errors(*records, time.time(), self.stop_voltage, self.battery_timeout)
             errors = list(self.power_blockers)
-            for key in ('odom', 'imu', 'scan0', 'scan1'):
+            for key in ("odom", "imu", "scan0", "scan1", "scan_merged"):
                 stamp, received, valid = self.samples.get(key, (0., -1e9, False))
                 if not valid or not fresh(wall-stamp, mono-received):
                     errors.append(key+'_stale')

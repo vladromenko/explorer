@@ -27,6 +27,13 @@ class Adapter(Node):
         self.create_subscription(Imu,'/imu/data_raw',self.imu_cb,qos_profile_sensor_data)
         self.create_subscription(Odometry,'/odom_raw',self.odom_cb,qos_profile_sensor_data)
         self.create_subscription(Twist,'/cmd_vel',lambda m:self.stationary.command([m.linear.x,m.linear.y,m.angular.z],time.monotonic()),1)
+        self.create_timer(.05,self.controller_state)
+
+    def controller_state(self):
+        try:
+            status=json.loads(Path("/home/vlad/Explorer/data/status.json").read_text())
+            self.stationary.controller(status,time.monotonic())
+        except (OSError,ValueError,TypeError):pass
     def imu_cb(self,m):
         g=m.angular_velocity;a=m.linear_acceleration
         wz,still=self.stationary.correct([g.x,g.y,g.z],[a.x,a.y,a.z],time.monotonic())

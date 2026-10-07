@@ -144,3 +144,39 @@ async function loadSavedMap() {
 setInterval(() => refreshMapping(), 1000);
 setInterval(() => refreshLidar(), 250);
 window.addEventListener("resize", () => drawLidar());
+
+async function startRoomTask() {
+    const kind = $("roomTaskKind").value;
+    const spec = {kind, observing: $("roomTaskObserve").checked,
+        max_goals: Number($("roomTaskBudget").value), map_name: $("mapName").value.trim(),
+        x: Number($("roomTargetX").value), y: Number($("roomTargetY").value),
+        yaw: Number($("roomTargetYaw").value) * Math.PI / 180,
+        places: $("roomPlaces").value.split(",").map(item => item.trim()).filter(Boolean),
+        object_query: $("roomObject").value.trim()};
+    try {
+        await api("navigation/tasks", spec);
+        manual = false; heldKeys.clear();
+        mappingMessage("Задание принято. Бортовая камера готовится к обзору, затем начнётся поездка.");
+    } catch (error) { mappingMessage(error.message, true); }
+}
+
+async function cancelRoomTask() {
+    try { await api("navigation/tasks/cancel", {}); mappingMessage("Запрошена остановка задания"); }
+    catch (error) { mappingMessage(error.message, true); }
+}
+
+async function refreshRoomTask() {
+    if (token && document.body.dataset.view === "mapping") {
+        try {
+            const state = await api("navigation/tasks").then(response => response.json());
+            const task = state.active || state.last;
+            $("roomTaskState").textContent = task ? task.state + " · " + task.phase +
+                (task.reason ? " · " + task.reason : "") : "Нет запущенного задания";
+            $("roomCameraState").textContent = "Бортовая камера: " + state.camera.phase +
+                " · " + (state.camera.view || "обзор ещё не подготовлен") +
+                " · во время поездки вперёд, осмотр по сторонам на остановках";
+        } catch (error) { $("roomTaskState").textContent = error.message; }
+    }
+    setTimeout(refreshRoomTask, 1000);
+}
+refreshRoomTask();

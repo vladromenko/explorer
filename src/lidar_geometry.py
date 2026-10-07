@@ -5,6 +5,8 @@ scanner by about 15 cm. Keep raw scans for obstacle clearing in costmaps.
 Navigation extrinsics are accepted only when the configuration contains the
 physical motion evidence.  Precision manipulation remains a separate scope.
 """
+from collections import deque
+from lidar_pairing import pair_indices
 import json
 import math
 from pathlib import Path
@@ -37,23 +39,29 @@ class Geometry(Node):
             t.transform.translation.x,t.transform.translation.y,t.transform.translation.z=xyz
             t.transform.rotation.w=1.;transforms.append(t)
         self.static.sendTransform(transforms)
-        self.latest={};self.used=None
+        self.latest={};self.used=None;self.pending={name:deque(maxlen=32) for name in ("scan0","scan1")}
         self.pub=self.create_publisher(LaserScan,'/explorer/scan',qos_profile_sensor_data)
         for key in ('scan0','scan1'):
             self.create_subscription(LaserScan,'/'+key,lambda m,k=key:self.receive(k,m),qos_profile_sensor_data)
         self.create_timer(.02,self.merge)
 
-    def receive(self,key,m):self.latest[key]=(m,time.monotonic())
+    def receive(self,key,m):
+        self.latest[key]=(m,time.monotonic());self.pending[key].append(m)
 
     def merge(self):
         if len(self.latest)!=2:return
-        scans=[self.latest[k][0] for k in ('scan0','scan1')]
         if any(time.monotonic()-v[1]>.4 for v in self.latest.values()):return
-        stamps=[Time.from_msg(s.header.stamp) for s in scans]
-        key=tuple(t.nanoseconds for t in stamps)
-        if key==self.used or abs(key[0]-key[1])>80_000_000:return
+        try:latest_tf=self.buffer.lookup_transform("odom","base_scan",Time())
+        except TransformException:return
+        groups=[list(self.pending[name]) for name in ("scan0","scan1")]
+        available=[[Time.from_msg(message.header.stamp).nanoseconds for message in group] for group in groups]
+        pair=pair_indices(*available,Time.from_msg(latest_tf.header.stamp).nanoseconds,
+            self.get_clock().now().nanoseconds,self.used)
+        if pair is None:return
+        scans=[groups[0][pair[0]],groups[1][pair[1]]]
+        stamps=[Time.from_msg(scan.header.stamp) for scan in scans]
+        key=tuple(stamp.nanoseconds for stamp in stamps)
         target=stamps[key.index(max(key))]
-        if abs(self.get_clock().now().nanoseconds-target.nanoseconds)>500_000_000:return
         ranges=np.full(720,np.inf)
         try:
             for scan,stamp in zip(scans,stamps):
@@ -69,6 +77,9 @@ class Geometry(Node):
                 np.minimum.at(ranges,bins,radius)
         except TransformException:return
         self.used=key
+        for name,selected in zip(("scan0","scan1"),key):
+            while self.pending[name] and Time.from_msg(self.pending[name][0].header.stamp).nanoseconds<=selected:
+                self.pending[name].popleft()
         out=LaserScan();out.header.stamp=target.to_msg();out.header.frame_id='base_scan'
         out.angle_min=-math.pi;out.angle_increment=2*math.pi/720;out.angle_max=out.angle_min+719*out.angle_increment
         out.scan_time=1/7.;out.time_increment=0.;out.range_min=.05;out.range_max=8.
