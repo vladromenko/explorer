@@ -49,8 +49,11 @@ class SkillLearning:
                 completed REAL NOT NULL);
               CREATE TABLE IF NOT EXISTS training(
                 fingerprint TEXT PRIMARY KEY, skill_id TEXT NOT NULL, job_id TEXT NOT NULL,
-                created REAL NOT NULL);
+                created REAL NOT NULL, episode_count INTEGER NOT NULL DEFAULT 0);
             """)
+            columns={item["name"] for item in db.execute("PRAGMA table_info(training)")}
+            if "episode_count" not in columns:
+                db.execute("ALTER TABLE training ADD COLUMN episode_count INTEGER NOT NULL DEFAULT 0")
 
     def _recover_links(self):
         for path in (self.root/"data/mobile-demonstrations").glob("*/episode.json"):
@@ -154,9 +157,15 @@ class SkillLearning:
                     ids=sorted(item["id"] for item in eligible)
                     fingerprint=hashlib.sha256(json.dumps(ids).encode()).hexdigest()
                     if not any(item["fingerprint"]==fingerprint for item in skill["training_jobs"]):
+                        previous=skill["training_jobs"][0] if skill["training_jobs"] else None
+                        previous_count=previous["episode_count"] if previous else 0
+                        next_count=1 if not previous else 2 if previous_count<2 else previous_count+3
+                        last_finished=max(item["completed"] for item in eligible)
+                        batch_ready=len(eligible)>=next_count or (previous is not None and
+                            len(eligible)>previous_count and time.time()-last_finished>1800)
                         active=any(item.get("state") in ("queued","exporting","training","validating")
                                    for item in self.jobs.status()["jobs"])
-                        if not active:
+                        if batch_ready and not active:
                             try:
                                 job=self.jobs.start_mobile(1000,skill["name"],skill_id=skill["id"])
                             except (OSError,ValueError,KeyError,subprocess.SubprocessError) as exc:
@@ -164,8 +173,9 @@ class SkillLearning:
                                     db.execute("UPDATE skills SET next_note=? WHERE id=?",(str(exc),skill["id"]))
                             else:
                                 with self.db() as db:
-                                    db.execute("INSERT OR IGNORE INTO training VALUES(?,?,?,?)",
-                                               (fingerprint,skill["id"],job["id"],time.time()))
+                                    db.execute("INSERT OR IGNORE INTO training "
+                                               "(fingerprint,skill_id,job_id,created,episode_count) VALUES(?,?,?,?,?)",
+                                               (fingerprint,skill["id"],job["id"],time.time(),len(eligible)))
 
     def _loop(self):
         while not self.closed:

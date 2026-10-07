@@ -2,6 +2,7 @@ import json
 import hashlib
 from pathlib import Path
 import tempfile
+import time
 import unittest
 
 from mobile_demonstrations import episode_quality
@@ -53,7 +54,7 @@ class AutomaticLearningTests(unittest.TestCase):
             skill=manager.create("Собрать носок")
             quality={"usable":True,"samples":24,"observed_fps":3}
             record={"id":"a"*32,"skill_id":skill["id"],"state":"complete",
-                    "outcome":"failure","quality":quality,"ended":100}
+                    "outcome":"failure","quality":quality,"ended":time.time()}
             manager.ingest(record,Path(directory)/"unused",schedule=True)
             self.assertEqual(len(jobs.records),0)
             record={**record,"id":"b"*32,"outcome":"success"}
@@ -70,6 +71,12 @@ class AutomaticLearningTests(unittest.TestCase):
             manager.ingest({**correction,"outcome":"success"},Path(directory)/"unused",schedule=True)
             self.assertEqual(manager.get(skill["id"])["successful_usable"],2)
             self.assertEqual(len(jobs.records),2)
+            jobs.records[1]["state"]="validated_offline"
+            for letter in ("d","e"):
+                manager.ingest({**record,"id":letter*32},Path(directory)/"unused",schedule=True)
+            self.assertEqual(len(jobs.records),2)
+            manager.ingest({**record,"id":"f"*32},Path(directory)/"unused",schedule=True)
+            self.assertEqual(len(jobs.records),3)
 
     def test_policy_command_has_six_joints_and_three_body_speeds(self):
         current=[90,90,90,90,90,90,0,0,0]
