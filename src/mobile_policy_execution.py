@@ -118,6 +118,9 @@ class MobilePolicyExecution:
         self._lease_permit()
         state=json.loads((self.root/"data/status.json").read_text())
         coordinated_policy_status(state,time.time())
+        flags=state.get("commissioning",{})
+        if flags.get("camera_tf_validated") is not True or flags.get("gripper_calibrated") is not True:
+            raise ValueError("Привязка камеры или захвата перестала быть принятой")
         if state.get("mission")!=self.mission:raise ValueError("Владение миссией изменилось")
         if state.get("reason") in ("OBSTACLE","SENSOR OR BATTERY FAULT","STOP LATCHED"):
             raise ValueError("Движение остановлено контролем шасси: "+state["reason"])
