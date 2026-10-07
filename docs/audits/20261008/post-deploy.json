@@ -1,0 +1,39 @@
+{
+  "autonomy": {
+    "HTTP": 200
+  },
+  "experiments": {
+    "HTTP": 200
+  },
+  "lidar": {
+    "HTTP": 200
+  },
+  "mapping/status": {
+    "HTTP": 200,
+    "services_error": null
+  },
+  "teaching": {
+    "HTTP": 200
+  },
+  "learning/workflows": {
+    "HTTP": 200
+  },
+  "diagnostics": {
+    "HTTP": 200,
+    "services_error": null
+  },
+  "mobile/remote-status": {
+    "HTTP": 200
+  },
+  "camera": {
+    "HTTP": 200,
+    "type": "image/jpeg",
+    "bytes": 15981
+  },
+  "mode": "MANUAL",
+  "velocity": [
+    0.0,
+    0.0,
+    0.0
+  ]
+}

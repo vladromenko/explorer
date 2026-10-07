@@ -551,16 +551,15 @@ SERVICE_NAMES={
     "mapview":"explorer-mapview.service","ekf":"explorer-ekf.service",
 }
 
+from service_diagnostics import inspect_services
+
 @app.get('/api/diagnostics')
 def diagnostics():
-    services={}
-    for name,unit in SERVICE_NAMES.items():
-        result=subprocess.run(['systemctl','--user','is-active',unit],capture_output=True,text=True,timeout=2)
-        services[name]=result.stdout.strip() or 'inactive'
+    service_info=inspect_services(SERVICE_NAMES)
     disk=shutil.disk_usage(ROOT)
     return dict(at=time.time(),load_average=list(os.getloadavg()),
         disk_free_gb=round(disk.free/1024**3,1),disk_total_gb=round(disk.total/1024**3,1),
-        uptime_s=float(Path('/proc/uptime').read_text().split()[0]),services=services)
+        uptime_s=float(Path('/proc/uptime').read_text().split()[0]),**service_info)
 
 @app.get('/api/logs')
 def logs(service:str='control',lines:int=80):
@@ -634,6 +633,7 @@ def mapping_status():
             "geometry":read_state("lidar_geometry.json",2),"saved_maps":maps.list_maps(),
             "localization_verified":bool(pose and pose.get("localization_verified")),
             "services":mapping_services.status(),
+            "services_error":mapping_services.probe_error,
             "map_epoch":read_state("map_session.json",1e12).get("id")}
 
 @app.post("/api/mapping/recover")
@@ -1121,7 +1121,7 @@ def autonomy_readiness():
 def autonomy_action(spec,plan,episode_id):
     if spec.get('task_type','delivery')!='delivery':
         return dict(state='unknown',reason='No physical gateway registered for this task type',episode_id=episode_id)
-    started=delivery_task.start();identifier=started['id'];deadline=time.monotonic()+float(spec.get('episode_budget_s',900))
+    started=delivery_task.start(goal=spec);identifier=started['id'];deadline=time.monotonic()+float(spec.get('episode_budget_s',900))
     while time.monotonic()<deadline:
         state=delivery_task.status();active=state.get('active');last=state.get('last') or {}
         if not active:

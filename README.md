@@ -68,6 +68,7 @@ bin/install-all.sh --assets /путь/к/Explorer-assets
 - [Автоматические допуски](docs/AUTONOMY-GRADUATION.ru.md)
 - [Исследовательские идеи: реализовано и не реализовано](docs/research_coverage.md)
 - [Сквозная доставка](docs/DELIVERY-IMPLEMENTATION.ru.md)
+- [Аудит кода и подтверждённые ограничения — 08.10.2026](docs/CODE-AUDIT-20261008.ru.md)
 
 ## Структура
 

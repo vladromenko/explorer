@@ -10,7 +10,7 @@ import sqlite3
 import threading
 import time
 import uuid
-from autonomy_contracts import GoalSpec, HelpRequest, Truth, new_id, record
+from autonomy_contracts import GoalSpec, HelpRequest, PolicyVersion, Truth, new_id, record
 from episode_store import EpisodeStore
 from learning_stack import CandidateScorer, PolicyRegistry, backend_status
 from skill_planner import SkillRegistry, TaskPlanner, recovery_plan
@@ -132,7 +132,8 @@ class AutonomySupervisor:
         for key,value in values.items():fields.append(key+'=?');args.append(json.dumps(value,ensure_ascii=False,allow_nan=False) if key in ('snapshot','plan','result') else value)
         args.append(identifier)
         with self.db() as db:
-            db.execute('UPDATE jobs SET '+','.join(fields)+' WHERE id=?',args);self.event(db,identifier,phase,values)
+            updated=db.execute("UPDATE jobs SET "+",".join(fields)+" WHERE id=? AND cancel_requested=0",args)
+            if updated.rowcount:self.event(db,identifier,phase,values)
 
     def help_request(self, job, question, kind, choices, skill):
         item=HelpRequest(new_id(),job['id'],question,kind,tuple(choices),skill,expires_at=time.time()+86400).validate()
@@ -190,10 +191,15 @@ class AutonomySupervisor:
             if outcome.get('state') not in ('success','failure','unknown','cancelled','infrastructure_error'):
                 outcome={'state':'unknown','reason':'Gateway returned no independently verified outcome','evidence':outcome}
             self.set_phase(job['id'],'verifying',result={'counts':counts,'latest':outcome})
-            self.episodes.finish(episode['id'],outcome['state'],outcome);counts['completed']+=1;counts[outcome['state'] if outcome['state'] in counts else 'unknown']+=1
+            self.episodes.finish(episode['id'],outcome['state'],outcome);counts['completed']+=1
+            count_key="infrastructure_errors" if outcome["state"]=="infrastructure_error" else outcome["state"]
+            counts[count_key if count_key in counts else "unknown"]+=1
             self.record_scorer_sample(episode['id'],outcome)
             with self.db() as db:
                 db.execute('INSERT INTO attempts VALUES(?,?,?,?,?,?,?,?)',(new_id(),job['id'],episode['id'],'complete',outcome['state'],json.dumps(outcome,ensure_ascii=False),episode['started_at'],time.time()))
+            if outcome["state"]=="cancelled":
+                self.cancel(job["id"],reason=outcome.get("reason") or "Executor cancelled")
+            if self.cancelled(job["id"]):return
             if attempt<attempts:
                 self.set_phase(job['id'],'resetting',result={'counts':counts})
                 reset=self.reset_gateway(spec,episode['id']) if self.reset_gateway else {'state':'unknown','reason':'No physical reset gateway'}
@@ -201,7 +207,9 @@ class AutonomySupervisor:
                 else:
                     counts['reset_failures']+=1
                     self.set_phase(job['id'],'blocked',result={'counts':counts,'reason':'Reset did not establish the next observable start state','reset':reset});return
-        self.set_phase(job['id'],'succeeded',result={'counts':counts,'goal_completed':counts['success']==attempts})
+        completed=counts["success"]==attempts
+        self.set_phase(job["id"],"succeeded" if completed else "failed",
+                       result={"counts":counts,"goal_completed":completed})
 
     def record_scorer_sample(self,episode_id,outcome):
         events=outcome.get('events',[]) if isinstance(outcome,dict) else []

@@ -19,6 +19,16 @@ SETUP_ARTIFACTS={'config/delivery.json','config/handeye-accepted.json','config/g
                  'config/explorer.urdf','config/explorer.srdf'}
 
 
+def validate_delivery_goal(goal, settings):
+    """The accepted physical executor currently handles socks at one destination."""
+    query=str(goal.get("object_query", "")).strip().lower()
+    if query not in {"sock", "socks", "носок", "носки"}:
+        raise ValueError("Принятый сценарий доставки поддерживает только носок; запрос не выполнен")
+    destination=(goal.get("destination") or {}).get("name")
+    if not isinstance(destination,str) or destination.strip()!=settings["destination"]:
+        raise ValueError("Место назначения команды не совпадает с принятым сценарием доставки")
+
+
 def load_settings(root, source_sha, calibration_sha, evidence=None):
     root=Path(root)
     if evidence is None:evidence=json.loads((root/'config/delivery-acceptance.json').read_text())
@@ -210,12 +220,13 @@ class DeliveryRobot:
         except (OSError,ValueError,KeyError) as exc:reasons.append(str(exc))
         return list(dict.fromkeys(reasons))
 
-    def begin(self, mid, check):
+    def begin(self, mid, check, goal=None):
         check()
         self.owner_check=check
         reasons=self.blockers()
         if reasons:raise ValueError('; '.join(reasons))
         self.settings=load_settings(self.root,self.arm.profile['firmware_source_sha256'],self.arm.profile['calibration_sha256'])
+        if goal is not None:validate_delivery_goal(goal,self.settings)
         validated_places(self.settings,self.missions.places(),self.missions.maps.epoch())
         self.boot=self.arm.reference()['boot_id']
         self.mid=mid;self.tracking=False;self.drop_zone=None;self.destination_pose=None

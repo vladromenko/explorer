@@ -83,7 +83,8 @@ class LearningJobs:
         fingerprint=hashlib.sha256(json.dumps(sorted(e["id"] for e in episodes)).encode()).hexdigest()
         for path in self.folder.glob("*/job.json"):
             existing=json.loads(path.read_text())
-            if existing.get("dataset_fingerprint")==fingerprint and existing.get("skill_id")==skill_id:
+            if (existing.get("dataset_fingerprint")==fingerprint and existing.get("skill_id")==skill_id and
+                    existing.get("state") not in ("failed","interrupted","cancelled","rejected")):
                 return existing
         if not self.status()['backend'].get('ready'):raise ValueError('Среда LeRobot ещё не прошла проверку')
         training_budget(self.root)

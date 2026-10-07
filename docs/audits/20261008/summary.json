@@ -1,0 +1,267 @@
+{
+  "baseline_commit": "432556290c7e5af285483b7ec1f8c30a51d283ee",
+  "python_tests": {
+    "passed": 472,
+    "skipped": 2,
+    "seconds": 30.95,
+    "skipped_reason": "Node.js unavailable on Jetson; browser checks passed separately on Mac"
+  },
+  "mac_browser_checks": {
+    "passed": 4
+  },
+  "firmware_host_tests": {
+    "passed": 5,
+    "sanitizers": [
+      "ASan",
+      "UBSan"
+    ],
+    "installed_firmware_tested": false
+  },
+  "syntax_checked": {
+    "python_files": 254,
+    "browser_scripts": 6,
+    "shell_scripts": 9
+  },
+  "ruff_selected_checks": [
+    "F821",
+    "F822",
+    "F823",
+    "F811"
+  ],
+  "ruff_findings_after": 0,
+  "bandit": {
+    "high_findings": 0,
+    "medium_warnings": 28,
+    "review": [
+      {
+        "file": "bin/autonomy-command.py",
+        "line": 16,
+        "test_id": "B310"
+      },
+      {
+        "file": "bin/build-arm-model.py",
+        "line": 8,
+        "test_id": "B314"
+      },
+      {
+        "file": "bin/calibrate-arm-repeatability.py",
+        "line": 40,
+        "test_id": "B310"
+      },
+      {
+        "file": "bin/calibrate-handeye-observed.py",
+        "line": 19,
+        "test_id": "B310"
+      },
+      {
+        "file": "bin/check-base-arm-handoff.py",
+        "line": 11,
+        "test_id": "B310"
+      },
+      {
+        "file": "bin/check-chassis.py",
+        "line": 20,
+        "test_id": "B310"
+      },
+      {
+        "file": "bin/check-observed-base-api.py",
+        "line": 18,
+        "test_id": "B310"
+      },
+      {
+        "file": "bin/check-observed-route.py",
+        "line": 17,
+        "test_id": "B310"
+      },
+      {
+        "file": "bin/check-observed-stop.py",
+        "line": 12,
+        "test_id": "B310"
+      },
+      {
+        "file": "bin/check-stationary-link-recovery.py",
+        "line": 37,
+        "test_id": "B310"
+      },
+      {
+        "file": "bin/delivery-command.py",
+        "line": 17,
+        "test_id": "B310"
+      },
+      {
+        "file": "bin/experiment.py",
+        "line": 24,
+        "test_id": "B310"
+      },
+      {
+        "file": "bin/ground-object.py",
+        "line": 23,
+        "test_id": "B615"
+      },
+      {
+        "file": "bin/ground-object.py",
+        "line": 24,
+        "test_id": "B615"
+      },
+      {
+        "file": "bin/lab-check.py",
+        "line": 22,
+        "test_id": "B310"
+      },
+      {
+        "file": "bin/plan-arm-goal.py",
+        "line": 14,
+        "test_id": "B310"
+      },
+      {
+        "file": "bin/readiness.py",
+        "line": 8,
+        "test_id": "B310"
+      },
+      {
+        "file": "bin/run-supervised-trajectory.py",
+        "line": 17,
+        "test_id": "B310"
+      },
+      {
+        "file": "bin/validate-handeye-factory.py",
+        "line": 22,
+        "test_id": "B310"
+      },
+      {
+        "file": "src/autonomy_runtime.py",
+        "line": 135,
+        "test_id": "B608"
+      },
+      {
+        "file": "src/learning_workflows.py",
+        "line": 211,
+        "test_id": "B608"
+      },
+      {
+        "file": "src/semantic_world.py",
+        "line": 227,
+        "test_id": "B608"
+      },
+      {
+        "file": "src/voice.py",
+        "line": 73,
+        "test_id": "B310"
+      },
+      {
+        "file": "src/voice.py",
+        "line": 88,
+        "test_id": "B310"
+      },
+      {
+        "file": "src/web.py",
+        "line": 1434,
+        "test_id": "B310"
+      },
+      {
+        "file": "src/web.py",
+        "line": 1466,
+        "test_id": "B310"
+      },
+      {
+        "file": "src/web.py",
+        "line": 1475,
+        "test_id": "B310"
+      },
+      {
+        "file": "src/web.py",
+        "line": 1527,
+        "test_id": "B104"
+      }
+    ]
+  },
+  "dependency_audit": {
+    "dependencies": [
+      {
+        "name": "fastapi",
+        "version": "0.141.1",
+        "vulns": []
+      },
+      {
+        "name": "pydantic",
+        "version": "2.13.5",
+        "vulns": []
+      },
+      {
+        "name": "uvicorn",
+        "version": "0.54.0",
+        "vulns": []
+      },
+      {
+        "name": "trimesh",
+        "version": "5.1.0",
+        "vulns": []
+      },
+      {
+        "name": "smbus2",
+        "version": "0.6.1",
+        "vulns": []
+      }
+    ],
+    "fixes": []
+  },
+  "limits": [
+    "Physical motion and grasp not tested",
+    "No STM32 write",
+    "No full transitive, OS or CUDA vulnerability scan",
+    "No formal verification"
+  ],
+  "runtime_fixes": [
+    "src/autonomy_runtime.py",
+    "src/delivery_robot.py",
+    "src/delivery_task.py",
+    "src/index.html",
+    "src/lerobot_bridge.py",
+    "src/web.py",
+    "src/service_diagnostics.py",
+    "src/mapping_services.py"
+  ],
+  "firmware_changes": false,
+  "deployment_backup_sha256": "c5f2ec44a31a90c79d6c95fe4be1606c370653363f5727863382e801ffb534e1",
+  "runtime_pin_versions_match_live": true,
+  "deployment_supplemental_backup_sha256": "59e1c3e1924d5cb5d7189f5a9aa25f349f04bcfedc905b57afe031260e0e01f6",
+  "post_deploy": {
+    "autonomy": {
+      "HTTP": 200
+    },
+    "experiments": {
+      "HTTP": 200
+    },
+    "lidar": {
+      "HTTP": 200
+    },
+    "mapping/status": {
+      "HTTP": 200,
+      "services_error": null
+    },
+    "teaching": {
+      "HTTP": 200
+    },
+    "learning/workflows": {
+      "HTTP": 200
+    },
+    "diagnostics": {
+      "HTTP": 200,
+      "services_error": null
+    },
+    "mobile/remote-status": {
+      "HTTP": 200
+    },
+    "camera": {
+      "HTTP": 200,
+      "type": "image/jpeg",
+      "bytes": 15981
+    },
+    "mode": "MANUAL",
+    "velocity": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  }
+}

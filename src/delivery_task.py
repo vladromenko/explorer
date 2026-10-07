@@ -55,7 +55,7 @@ class DeliveryTask:
         value['blocked_by']=self.robot.blockers()+recovery_errors
         return value
 
-    def start(self):
+    def start(self, goal=None):
         with self.lock:
             if self.active or self.worker_id is not None or self.stopping:
                 raise ValueError('Доставка уже выполняется')
@@ -71,6 +71,7 @@ class DeliveryTask:
             self.active = dict(id=uuid.uuid4().hex, generation=generation, state='running',
                                phase='preparing', started=time.time(), started_monotonic=time.monotonic(),
                                events=[], delivered=False)
+            if goal is not None:self.active["goal"]=copy.deepcopy(goal)
             try:self._save(self.active)
             except (OSError,ValueError):
                 self.active=None
@@ -144,7 +145,9 @@ class DeliveryTask:
         result, reason = 'failed', None
         try:
             self.check_current(mid,generation)
-            self.robot.begin(mid,check=lambda:self.check_current(mid,generation))
+            with self.lock:goal=copy.deepcopy(self.active.get("goal")) if self.active else None
+            options={} if goal is None else {"goal":goal}
+            self.robot.begin(mid,check=lambda:self.check_current(mid,generation),**options)
             stage = lambda name, fn:self.stage(mid,generation,name,fn)
             target = stage('find', self.robot.find)
             approach=stage('approach', lambda:self.robot.approach(target))

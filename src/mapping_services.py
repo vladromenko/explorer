@@ -2,6 +2,7 @@
 import subprocess
 import math
 import time
+from service_diagnostics import inspect_services
 
 
 UNITS = {"geometry": "explorer-geometry.service", "ekf": "explorer-ekf.service",
@@ -13,14 +14,13 @@ class MappingServices:
         self.runner = runner
         self.cached = None
         self.checked = 0
+        self.probe_error = None
 
     def status(self, force=False):
         if self.cached is None or force or time.monotonic() - self.checked > 10:
-            result = self.runner(["systemctl", "--user", "is-active", *UNITS.values()],
-                                 capture_output=True, text=True, timeout=3)
-            values = result.stdout.splitlines()
-            self.cached = {name: values[index] if index < len(values) else "unknown"
-                           for index, name in enumerate(UNITS)}
+            result = inspect_services(UNITS, self.runner)
+            self.cached = result["services"]
+            self.probe_error = result["services_error"]
             self.checked = time.monotonic()
         return dict(self.cached)
 
@@ -33,6 +33,8 @@ class MappingServices:
                 any(type(value) not in (int,float) or not math.isfinite(value) or abs(value) > .001 for value in velocity)):
             raise ValueError("Шасси должно стоять")
         services = self.status(force=True)
+        if self.probe_error:
+            raise ValueError("Состояние служб недоступно; перезапуск карты не выполнялся: " + self.probe_error)
         started = []
         for name, unit in UNITS.items():
             if services[name] not in ("active", "activating"):

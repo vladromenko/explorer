@@ -27,15 +27,24 @@ class MobileTests(unittest.TestCase):
     def test_restart_cannot_resume_demo_and_partial_task_not_success(self):
         with tempfile.TemporaryDirectory() as path,patch('mobile_demonstrations.threading.Thread'):
             root=Path(path);self.setup_files(root);m=MobileDemonstrations(root);m.start('deliver',True)
-            with self.assertRaises(ValueError):m.finish('success')
+            result=m.finish("success")
+            self.assertFalse(result["last"]["quality"]["usable"])
+            self.assertEqual(result["successful"],0)
+            m.start("deliver",True)
             r=MobileDemonstrations(root);self.assertIsNone(r.active)
-            saved=json.loads(next(r.folder.glob('*/episode.json')).read_text());self.assertEqual(saved['state'],'interrupted')
+            saved=[json.loads(file.read_text()) for file in r.folder.glob("*/episode.json")]
+            interrupted=[row for row in saved if row["state"]=="interrupted"]
+            self.assertEqual(len(interrupted),1)
+            self.assertEqual(interrupted[0]["outcome"],"unknown")
 
-    def test_local_grasp_demo_needs_only_grasp_stage(self):
+    def test_local_grasp_demo_uses_real_samples_without_stage_buttons(self):
         with tempfile.TemporaryDirectory() as path,patch('mobile_demonstrations.threading.Thread'):
             root=Path(path);self.setup_files(root);m=MobileDemonstrations(root);m.start('grasp sock',True)
-            m.stage('grasp');m.active['samples']=20
-            result=m.finish('success')
+            folder=m.folder/m.active["id"]
+            rows=[dict(image_stamp=float(index)/2,command=[90+index,90,90,90,90,30+index,0,0,0]) for index in range(20)]
+            (folder/"samples.jsonl").write_text("\n".join(json.dumps(row) for row in rows))
+            m.active["samples"]=len(rows)
+            result=m.finish("success")
             self.assertEqual(result['last']['outcome'],'success')
             self.assertEqual(result['successful'],1)
 
