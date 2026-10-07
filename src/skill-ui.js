@@ -108,6 +108,11 @@ async function skillStartTrial() {
         return $("skillTrialState").textContent = "Для физической попытки подтвердите наблюдение.";
     }
     try {
+        const check = await (await api("skills/" + selectedSkillId + "/trial")).json();
+        if (!check.ready) {
+            $("skillTrialState").textContent = "Проверка пока недоступна: " + check.blocked_by.join("; ");
+            return;
+        }
         const state = await (await api("skills/" + selectedSkillId + "/trial", {observing: true})).json();
         skillTrialSession = state.session;
         $("skillTrialState").textContent = "Наблюдаемая попытка начата. STOP или ручной ввод отменяют её.";
