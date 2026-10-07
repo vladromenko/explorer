@@ -12,6 +12,7 @@ import numpy as np
 from arm_commissioning import coordinated_policy_status
 from lerobot_bridge import write_json
 from mobile_policy_contract import bound_action,read_bundle
+from mobile_demonstrations import episode_quality,sample
 
 
 class MobilePolicyExecution:
@@ -29,6 +30,8 @@ class MobilePolicyExecution:
         self.target=[0.0,0.0,0.0]
         self.target_at=0.0
         self.latest_proposal=None
+        self.intervention_id=None
+        self.skills=None
         self.state={"phase":"idle","physical_success_verified":False}
 
     def _candidate(self,skill_id):
@@ -64,8 +67,15 @@ class MobilePolicyExecution:
                 "observed_trial_required":True}
 
     def status(self):
+        intervention_state=None
+        if self.intervention_id:
+            try:
+                record=json.loads((self.root/"data/mobile-demonstrations"/self.intervention_id/"episode.json").read_text())
+                intervention_state={key:record.get(key) for key in ("id","state","outcome","samples","quality")}
+            except (OSError,ValueError):pass
         return dict(self.state,busy=self.lock.locked(),session=self.session,
                     observed_lease_s=max(0.0,self.lease-time.monotonic()),
+                    intervention_id=self.intervention_id,intervention=intervention_state,
                     physical_success_verified=False)
 
     def start(self,skill_id,observing):
@@ -81,6 +91,7 @@ class MobilePolicyExecution:
             self.lease=time.monotonic()+1.0
             self.target=[0.0,0.0,0.0]
             self.target_at=0.0
+            self.intervention_id=None
             folder=self.root/"data/mobile-policy-runs"/self.session
             folder.mkdir(parents=True)
             write_json(folder/"config.json",{"job_folder":str(self.root/"data/learning-jobs"/job["id"]),
@@ -123,12 +134,92 @@ class MobilePolicyExecution:
 
     def takeover(self,manual_action=None):
         if not self.lock.locked():return None
+        session=self.session
+        skill_id=self.state.get("skill_id")
+        job_id=self.state.get("model_job")
         event={"at":time.time(),"kind":"human_takeover","proposed_action":self.latest_proposal,
                "first_manual_action":manual_action,"old_policy_sequence_invalidated":True}
-        folder=self.root/"data/mobile-policy-runs"/self.session
+        folder=self.root/"data/mobile-policy-runs"/session
         with (folder/"events.jsonl").open("a") as stream:stream.write(json.dumps(event,ensure_ascii=False)+"\n")
         self.stop()
+        identifier=uuid.uuid4().hex
+        self.intervention_id=identifier
+        threading.Thread(target=self._capture_intervention,args=(identifier,session,skill_id,job_id),
+                         daemon=True,name="explorer-human-correction").start()
         return event
+
+    def _capture_intervention(self,identifier,session,skill_id,job_id):
+        ready=False
+        deadline=time.monotonic()+10
+        while time.monotonic()<deadline:
+            try:control=json.loads((self.root/"data/manual-teleop.json").read_text())
+            except (OSError,ValueError):control={}
+            actions=control.get("normalized_actions") or {}
+            if time.time()-control.get("at",0)<.8 and any(abs(float(value))>.08 for value in actions.values()):
+                ready=True;break
+            time.sleep(.1)
+        if not ready:
+            if self.intervention_id==identifier:self.intervention_id=None
+            return
+        folder=self.root/"data/mobile-demonstrations"/identifier
+        folder.mkdir(parents=True,exist_ok=True)
+        record={"id":identifier,"name":"Исправление навыка","skill_id":skill_id,
+                "source":"operator_mobile_demonstration","kind":"human_intervention",
+                "intervention_of":session,"model_job":job_id,"state":"recording",
+                "outcome":"unknown","started":time.time(),"samples":0,
+                "joint_state_source":"commanded_not_measured","dataset_kind":"mobile_manipulation_9dof",
+                "label_source":"operator","stage":"human_correction"}
+        write_json(folder/"episode.json",record)
+        begun=time.monotonic();last_motion=begun;last_frame=-1.0
+        try:
+            while time.monotonic()-begun<60:
+                now=time.time()
+                try:
+                    control=json.loads((self.root/"data/manual-teleop.json").read_text())
+                except (OSError,ValueError):control={}
+                actions=control.get("normalized_actions") or {}
+                moving=now-control.get("at",0)<.8 and any(abs(float(value))>.08 for value in actions.values())
+                if moving:last_motion=time.monotonic()
+                if time.monotonic()-last_motion>10:break
+                try:item,image=sample(self.root,now)
+                except (OSError,ValueError,KeyError):item=image=None
+                if item and item["image_stamp"]>last_frame:
+                    index=record["samples"]
+                    filename=f"{index:06d}.jpg"
+                    if not cv2.imwrite(str(folder/filename),image):raise ValueError("Кадр исправления не сохранён")
+                    item.update(image=filename,stage="human_correction",intervention_of=session,
+                                proposed_policy_action=self.latest_proposal,
+                                executed_action_source="operator_manual_control")
+                    with (folder/"samples.jsonl").open("a") as stream:
+                        stream.write(json.dumps(item,ensure_ascii=False)+"\n")
+                    record["samples"]+=1;last_frame=item["image_stamp"]
+                    write_json(folder/"episode.json",record)
+                time.sleep(.2)
+        except (OSError,ValueError) as exc:record["capture_error"]=str(exc)
+        record["ended"]=time.time()
+        record["quality"]=episode_quality(folder)
+        record["state"]="complete" if record["samples"] and not record.get("capture_error") else "interrupted"
+        try:record["outcome"]=json.loads((folder/"episode.json").read_text()).get("outcome","unknown")
+        except (OSError,ValueError):pass
+        write_json(folder/"episode.json",record)
+        if self.skills:
+            try:self.skills.ingest(record,folder/"episode.json")
+            except (OSError,ValueError,KeyError):pass
+
+    def label_intervention(self,identifier,outcome):
+        if outcome not in ("success","failure","unknown"):raise ValueError("Неизвестный результат исправления")
+        if not isinstance(identifier,str) or len(identifier)!=32 or any(ch not in "0123456789abcdef" for ch in identifier):
+            raise ValueError("Некорректный идентификатор исправления")
+        path=self.root/"data/mobile-demonstrations"/identifier/"episode.json"
+        record=json.loads(path.read_text())
+        if record.get("kind")!="human_intervention":raise ValueError("Это не исправление оператора")
+        if record.get("state")=="recording":raise ValueError("Сначала закончите исправляющее движение")
+        if record.get("outcome") not in ("unknown",outcome):raise ValueError("Результат уже оценён иначе")
+        record["outcome"]=outcome
+        write_json(path,record)
+        if record.get("state")=="complete" and self.skills:self.skills.ingest(record,path)
+        return {"id":identifier,"outcome":outcome,"state":record.get("state"),
+                "quality":record.get("quality"),"physical_success_verified":False}
 
     def _fresh_observation(self):
         self._permit()

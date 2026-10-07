@@ -8,6 +8,7 @@ from mobile_demonstrations import episode_quality
 from mobile_policy_contract import bound_action,read_bundle,ACTION_ORDER,UNITS
 from arm_commissioning import coordinated_policy_status
 from skill_learning import SkillLearning
+from mobile_policy_execution import MobilePolicyExecution
 
 
 class FakeJobs:
@@ -62,6 +63,13 @@ class AutomaticLearningTests(unittest.TestCase):
             updated=manager.rename(skill["id"],"Носок в корзину")
             self.assertEqual(updated["successful_usable"],1)
             self.assertEqual(updated["name"],"Носок в корзину")
+            correction={**record,"id":"c"*32,"outcome":"unknown","kind":"human_intervention"}
+            manager.ingest(correction,Path(directory)/"unused",schedule=True)
+            self.assertEqual(manager.get(skill["id"])["successful_usable"],1)
+            jobs.records[0]["state"]="validated_offline"
+            manager.ingest({**correction,"outcome":"success"},Path(directory)/"unused",schedule=True)
+            self.assertEqual(manager.get(skill["id"])["successful_usable"],2)
+            self.assertEqual(len(jobs.records),2)
 
     def test_policy_command_has_six_joints_and_three_body_speeds(self):
         current=[90,90,90,90,90,90,0,0,0]
@@ -106,6 +114,24 @@ class AutomaticLearningTests(unittest.TestCase):
         state["commissioning"]["localization_verified"]=False
         with self.assertRaisesRegex(ValueError,"Калибровка"):
             coordinated_policy_status(state,10.1)
+
+    def test_correction_requires_completion_and_honest_operator_label(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder=Path(directory)/"data/mobile-demonstrations"/("d"*32)
+            folder.mkdir(parents=True)
+            path=folder/"episode.json"
+            path.write_text(json.dumps({"id":"d"*32,"kind":"human_intervention",
+                                        "state":"recording","outcome":"unknown"}))
+            executor=MobilePolicyExecution.__new__(MobilePolicyExecution)
+            executor.root=Path(directory)
+            executor.skills=None
+            with self.assertRaisesRegex(ValueError,"Сначала закончите"):
+                executor.label_intervention("d"*32,"success")
+            path.write_text(json.dumps({"id":"d"*32,"kind":"human_intervention",
+                                        "state":"complete","outcome":"unknown"}))
+            self.assertEqual(executor.label_intervention("d"*32,"failure")["outcome"],"failure")
+            with self.assertRaisesRegex(ValueError,"уже оценён"):
+                executor.label_intervention("d"*32,"success")
 
 
 if __name__=="__main__":unittest.main()

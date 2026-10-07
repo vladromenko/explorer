@@ -324,6 +324,10 @@ class SkillTrialHeartbeat(BaseModel):
     session:str
     observing:bool=False
 
+class SkillInterventionOutcome(BaseModel):
+    episode_id:str=Field(min_length=32,max_length=32)
+    outcome:str
+
 @app.get("/api/skills/{identifier}/trial")
 def skill_trial_preflight(identifier:str):
     map_operation(skill_learning.get,identifier)
@@ -345,6 +349,12 @@ def skill_trial_stop():return mobile_policy_execution.stop()
 
 @app.get("/api/skills/trial/status")
 def skill_trial_status():return mobile_policy_execution.status()
+
+@app.post("/api/skills/trial/intervention/outcome")
+def skill_intervention_outcome(c:SkillInterventionOutcome):
+    result=map_operation(mobile_policy_execution.label_intervention,c.episode_id,c.outcome)
+    if result["state"]=="complete":stop_all()
+    return result
 
 @app.post('/api/teaching/start')
 def start_teaching(c:TeachingStart):return map_operation(teaching.start,c.name,c.observing)
@@ -839,6 +849,7 @@ from policy_execution import PolicyExecution
 policy_execution=PolicyExecution(ROOT,learning_jobs,teaching,manual_arm,policy_preview)
 from mobile_policy_execution import MobilePolicyExecution
 mobile_policy_execution=MobilePolicyExecution(ROOT,learning_jobs,missions,manual_arm,emit)
+mobile_policy_execution.skills=skill_learning
 
 class PolicyExecutionRequest(BaseModel):
     task:str=Field(min_length=3,max_length=80)

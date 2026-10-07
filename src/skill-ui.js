@@ -4,6 +4,7 @@ let selectedSkillId = null;
 let activeSkillEpisode = null;
 let skillCatalogBusy = false;
 let skillTrialSession = null;
+let skillInterventionId = null;
 
 function skillSyncObserve() {
     const observing = $("skillObserve").checked;
@@ -132,11 +133,29 @@ async function skillStopTrial() {
     skillTrialSession = null;
 }
 
+async function skillLabelIntervention(outcome) {
+    if (!skillInterventionId) return;
+    try {
+        const result = await (await api("skills/trial/intervention/outcome", {
+            episode_id: skillInterventionId, outcome
+        })).json();
+        $("skillInterventionState").textContent = "Исправление сохранено: " + result.outcome +
+            (result.quality?.usable ? ". При успешной оценке оно войдёт в набор." :
+                ". Для обучения нужна более полная запись.");
+        await skillRefresh();
+    } catch (error) {
+        $("skillInterventionState").textContent = error.message;
+    }
+}
+
 async function skillRefresh() {
     if (skillCatalogBusy) return;
     skillCatalogBusy = true;
     try {
-        const data = await (await api("skills")).json();
+        const [data, trial] = await Promise.all([
+            api("skills").then(response => response.json()),
+            api("skills/trial/status").then(response => response.json())
+        ]);
         const select = $("skillSelect");
         const previous = selectedSkillId || select.value;
         select.innerHTML = "<option value=\"\">Новый навык</option>";
@@ -160,6 +179,14 @@ async function skillRefresh() {
             $("skillPreparation").textContent = skillPreparation(skill.name);
             $("skillNextAction").textContent = "Следующий шаг: " + skill.next_action;
             $("skillTrialPanel").hidden = skill.latest_job?.state !== "validated_offline";
+            const intervention = trial.skill_id === selectedSkillId ? trial.intervention : null;
+            skillInterventionId = intervention?.id || null;
+            $("skillInterventionPanel").hidden = !intervention || intervention.state === "recording" || intervention.outcome !== "unknown";
+            if (intervention?.state === "recording") {
+                $("skillTrialState").textContent = "Записываются ваши исправляющие действия: " + intervention.samples + " кадров.";
+            } else if (intervention && intervention.outcome === "unknown") {
+                $("skillInterventionState").textContent = "Оцените результат исправления после остановки движения.";
+            }
             $("skillDiagnostics").textContent = JSON.stringify({
                 skill_id: skill.id,
                 successful_usable: skill.successful_usable,

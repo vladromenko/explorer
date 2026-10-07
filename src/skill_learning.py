@@ -131,8 +131,10 @@ class SkillLearning:
         with self.lock,self.db() as db:
             if not db.execute("SELECT 1 FROM skills WHERE id=?",(identifier,)).fetchone():
                 raise ValueError("Запись ссылается на неизвестный навык")
-            inserted=db.execute("INSERT OR IGNORE INTO episodes(id,skill_id,outcome,state,usable,quality,completed) "
-                       "VALUES(?,?,?,?,?,?,?)",
+            inserted=db.execute("INSERT INTO episodes(id,skill_id,outcome,state,usable,quality,completed) "
+                       "VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
+                       "outcome=excluded.outcome,state=excluded.state,usable=excluded.usable,"
+                       "quality=excluded.quality,completed=excluded.completed",
                        (record["id"],identifier,record.get("outcome","unknown"),record.get("state","interrupted"),
                         int(quality.get("usable") is True),json.dumps(quality,ensure_ascii=False),
                         float(record.get("ended") or time.time())))
