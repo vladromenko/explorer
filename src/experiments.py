@@ -36,6 +36,28 @@ DEFINITIONS = [
  ('E18','Выбрать, чему учить дальше','Arcadia / EPM-DDAFT','Очередь показов по неудачам и вмешательствам'),
 ]
 
+# Operator inputs are separate from research names and never contain invented evidence.
+OPERATOR_FORMS = {
+    "E01": ("Робот", "none", "Показать углы и источник", "Проверит последние команды руки и наличие измеренной обратной связи."),
+    "E02": ("Камера", "query", "Проверить видимые предметы", "Покажет свежие совпадения детектора. Для другой модели доступен отдельный поиск по названию."),
+    "E03": ("Память", "query", "Сохранить текущий ракурс", "Сохранит свежие видимые объекты в памяти; повтор одного кадра не создаёт дубликат."),
+    "E04": ("Память", "query", "Найти в памяти", "Сравнит подходящие прошлые наблюдения с последними ракурсами."),
+    "E05": ("Карта", "none", "Показать направления исследования", "Рассчитает доступные границы карты и ранжирует направления без движения базы."),
+    "E06": ("Задачи", "task", "Разобрать команду", "Составит порядок навыков и покажет, какие условия ещё нужны для исполнения."),
+    "E07": ("Записанные данные", "events", "Проверить историю", "Оценит прогресс по подтверждённым событиям из вашей записи."),
+    "E08": ("Записанные данные", "motion", "Посчитать ошибку движения", "Сравнит прогноз по скорости с двумя записанными позами. Новых команд шасси не отправляет."),
+    "E09": ("Камера", "roi", "Проверить положение цели", "По выделенной области RGB-D вычислит центр и ошибку наведения."),
+    "E10": ("Камера", "roi", "Рассчитать варианты захвата", "По выделенной области оценит глубину, размеры и две ориентации. Результат остаётся геометрической гипотезой."),
+    "E11": ("Камера", "query", "Проверить условия закрытия", "Покажет цель, свежесть зрения и недостающие условия контроля контакта."),
+    "E12": ("Записанные данные", "contact", "Проверить данные контакта", "Проверит поля и происхождение контактных меток перед обучением."),
+    "E13": ("Записанные данные", "hold", "Проверить удержание", "Проверит последовательности RGB-D до и после подъёма; недостаточные доказательства дают неизвестный результат."),
+    "E14": ("Задачи", "task", "Проверить план взять и положить", "Проверит порядок подхода, захвата, проверки удержания, перевозки и размещения."),
+    "E15": ("Карта", "none", "Проверить готовность перевозки", "Покажет свежесть лидаров и допуски навигации с рукой и грузом."),
+    "E16": ("Обучение", "none", "Проверить сохранённые показы", "Прочитает полные мобильные показы и исправления: результат, число кадров и пригодность."),
+    "E17": ("Обучение", "none", "Показать модели и обучение", "Покажет настоящие задания ACT, backend и результаты проверки кандидатов."),
+    "E18": ("Обучение", "none", "Подсказать следующий показ", "Построит рекомендации по сохранённым ошибкам и вмешательствам."),
+}
+
 
 def read_json(path, default=None):
     try:
@@ -87,23 +109,35 @@ class Experiments:
         return dict(at=time.time(), state=read_json(self.root/'data/status.json'),
             perception=read_json(self.root/'data/perception.json'), search=live.get('search', {}),
             policy_preview=live.get('policy_preview', {}),
-            map=read_json(self.root/'data/map.json'), learning=read_json(self.root/'data/learning-status.json'),
+            map=read_json(self.root/'data/map.json'), learning=live.get("learning",read_json(self.root/'data/learning-status.json')),
+            mobile_policy=live.get("mobile_policy",{}),
             graph=self.graph(), joint_state=read_json(self.root/'data/arm-state.json'),
             map_session=read_json(self.root/'data/map_session.json'),
             memory_objects=self.memory.objects(),curriculum=self.memory.curriculum(),
-            episodes=[read_json(p) for p in (self.root/'data/demonstrations').glob('*/episode.json')])
+            episodes=[read_json(p) for folder in ("demonstrations","mobile-demonstrations")
+                      for p in (self.root/"data"/folder).glob("*/episode.json")])
 
     def capture(self):
         import numpy as np
         folder=self.root/'data/experiment-captures';folder.mkdir(exist_ok=True)
         if len(list(folder.glob('*.npz')))>=64:
             raise ValueError('Лимит 64 снимков для ручного выбора области; сохраните нужные записи')
-        with np.load(self.root/'data/rgbd-snapshot.npz',allow_pickle=False) as frame:
-            if not fresh(float(frame['stamp']),time.time(),1.5):raise ValueError('Нет свежего RGB-D')
-            ident=uuid.uuid4().hex
-            np.savez_compressed(folder/(ident+'.npz'),**{k:frame[k] for k in frame.files})
-            h,w=frame['rgb'].shape[:2]
-            return dict(id=ident,stamp=float(frame['stamp']),width=w,height=h)
+        # Idle perception intentionally runs at 0.5 Hz. Wait for its next genuine
+        # synchronized frame rather than widening freshness or waking all models.
+        deadline=time.monotonic()+3
+        sample=None
+        while sample is None and time.monotonic()<deadline:
+            try:
+                with np.load(self.root/"data/rgbd-snapshot.npz",allow_pickle=False) as frame:
+                    if fresh(float(frame["stamp"]),time.time(),1.5):
+                        sample={key:frame[key].copy() for key in frame.files}
+            except FileNotFoundError:pass
+            if sample is None:time.sleep(.05)
+        if sample is None:raise ValueError("Нет свежего совмещённого RGB-D за 3 секунды")
+        ident=uuid.uuid4().hex
+        np.savez_compressed(folder/(ident+".npz"),**sample)
+        h,w=sample["rgb"].shape[:2]
+        return dict(id=ident,stamp=float(sample["stamp"]),width=w,height=h)
 
     def capture_path(self, ident):
         if not isinstance(ident,str) or len(ident)!=32 or any(c not in '0123456789abcdef' for c in ident):
@@ -132,6 +166,9 @@ class Experiments:
                 physically_verified=False, admitted_modes=['observe','replay','shadow'],
                 physical_admitted=False, physical_blocked_by=missing,
                 prepare='Робот неподвижен. Для сравнения выберите прежний запуск.',
+                group=OPERATOR_FORMS[i][0],input_kind=OPERATOR_FORMS[i][1],
+                action_label=OPERATOR_FORMS[i][2],purpose=OPERATOR_FORMS[i][3],
+                requires_input=OPERATOR_FORMS[i][1] in ("events","motion","contact","hold","roi"),
                 measures=details, next_step='Откройте результат: там указаны условия конкретного действия')
                 for i,n,source,details in DEFINITIONS])
 
@@ -148,7 +185,33 @@ class Experiments:
             state=read_json(self.root/'data/status.json')
             if not fresh(state.get('at'),time.time(),2):
                 raise ValueError('Нет свежего состояния робота')
-        return dict(ready=True, motor_access=False, mode=mode, experiment=experiment)
+        blocked=[]
+        if mode!="replay":
+            if experiment=="E07" and not isinstance(params.get("events"),list):
+                blocked.append("Вставьте список events из записанной истории")
+            elif experiment=="E07" and (len(params["events"])>100 or any(not isinstance(row,dict) for row in params["events"])):
+                blocked.append("events должен содержать до 100 объектов событий")
+            if experiment=="E08":
+                for name in ("before","after"):
+                    pose=params.get(name)
+                    if not isinstance(pose,dict) or not all(finite(pose.get(key)) for key in ("x","y","yaw")):
+                        blocked.append("Нужна записанная поза "+name+": x, y, yaw")
+                if not finite(params.get("duration_s")) or not 0<params["duration_s"]<=10:
+                    blocked.append("Укажите длительность в секундах от 0 до 10")
+                velocity=params.get("velocity")
+                if not isinstance(velocity,list) or len(velocity)!=3 or not all(finite(value) for value in velocity):
+                    blocked.append("Нужна записанная команда velocity: vx, vy, wz")
+            if experiment=="E12" and (not isinstance(params.get("samples"),list) or not params["samples"]):
+                blocked.append("Вставьте реальные samples с контактными метками")
+            elif experiment=="E12" and (len(params["samples"])>100 or any(not isinstance(row,dict) for row in params["samples"])):
+                blocked.append("samples должен содержать от 1 до 100 объектов записей")
+            if experiment=="E13" and any(not isinstance(params.get(name),list) or len(params[name])<3 for name in ("before","after")):
+                blocked.append("Нужны минимум три наблюдения before и after")
+            if experiment in ("E09","E10") and params.get("capture_id"):
+                bbox=params.get("bbox")
+                if not isinstance(bbox,list) or len(bbox)!=4 or not all(finite(value) for value in bbox):
+                    blocked.append("Выделите предмет прямоугольником на сохранённом кадре")
+        return dict(ready=not blocked,blocked_by=blocked,motor_access=False,mode=mode,experiment=experiment)
 
     def cancel(self):
         with self.lock:
@@ -172,7 +235,8 @@ class Experiments:
                 for r in (read_json(p) for p in paths)]
 
     def start(self, experiment, mode, params, request_id):
-        self.preflight(experiment,mode,params)
+        check=self.preflight(experiment,mode,params)
+        if not check["ready"]:raise ValueError("; ".join(check["blocked_by"]))
         if not isinstance(request_id,str) or not 16<=len(request_id)<=80:
             raise ValueError('Нужен уникальный идентификатор запроса')
         digest=hashlib.sha256(json.dumps([experiment,mode,params],sort_keys=True,allow_nan=False).encode()).hexdigest()
@@ -195,6 +259,9 @@ class Experiments:
         begin=time.monotonic()
         try:
             previous=self.get(params['run_id']) if params.get('run_id') else None
+            if previous and previous["experiment"]!=experiment:
+                raise ValueError("Выберите прошлый запуск этого же эксперимента")
+            effective_params=previous.get("effective_params",previous["params"]) if previous and mode=="replay" else params
             snapshot=previous['inputs'] if previous else self.snapshot()
             if not previous and experiment=='E05':snapshot['frontiers']=self.frontiers()
             if not previous and experiment=='E04':snapshot['retrieval']=self.memory.retrieve(str(params.get('query','')))
@@ -203,13 +270,14 @@ class Experiments:
             run['inputs']=snapshot
             run['input_sha256']=hashlib.sha256(json.dumps(snapshot,sort_keys=True).encode()).hexdigest()
             run['calibration']=snapshot['state'].get('commissioning',{})
-            run['result']=self.evaluate(experiment,snapshot,params,mode)
+            run["effective_params"]=effective_params
+            run['result']=self.evaluate(experiment,snapshot,effective_params,mode)
             with self.lock:
                 run['state']='cancelled' if generation!=self.generation else 'completed'
                 if run['state']=='cancelled':
                     run['result']['summary']='Отменено; результата нельзя использовать для действия'
             run['elapsed_ms']=round((time.monotonic()-begin)*1000,2)
-        except (ValueError,OSError,KeyError,TypeError) as exc:
+        except (ValueError,OSError,KeyError,TypeError,AttributeError) as exc:
             run.update(state='failed',result=dict(summary=str(exc)),elapsed_ms=round((time.monotonic()-begin)*1000,2))
         finally:
             with self.lock:
@@ -227,13 +295,15 @@ class Experiments:
         evidence=dict(frame_stamp=p.get('image_stamp'),sensor_age=s.get('sensor_age'),
                       measured_arm_angles=False,physical_success_verified=False)
         if ident=='E01':
-            return dict(summary='Командные значения отделены от измерений. Реальный ответ сервоприводов пока не получен.',
-                        arm=describe(s,snap['graph'],now),evidence=evidence)
+            arm=describe(s,snap['graph'],now)
+            return dict(summary="Источник углов: измерения приводов." if arm["measured"].get("available") is True else
+                        "Показаны расчётные команды руки. Измеренные углы robotio не предоставляет.",
+                        arm=arm,evidence=evidence)
         if ident=='E02':
             matches=[o for o in visible if not query or query.casefold() in str(o.get('label','')).casefold()]
             return dict(summary=f'Свежих совпадений детектора: {len(matches)}. Метка остаётся гипотезой.',
                 objects=matches,alternative=snap.get('search'),coordinates='camera',mask_available=False,
-                same_frame_comparison=False,next_step='Для открытого словаря используйте «Найти предмет» во вкладке камеры',evidence=evidence)
+                same_frame_comparison=False,next_step="Для другого словаря нажмите «Поиск по названию» в этой карточке",evidence=evidence)
         if ident=='E03':
             changed=None
             if mode=='observe' and fresh(p.get('image_stamp',p.get('at')),now,2):
@@ -326,15 +396,23 @@ class Experiments:
                 next_step='Подтвердить остановку контроллера и габарит транспортной позы',executed=False)
         if ident=='E16':
             episodes=snap.get('episodes',[])
-            rows=[dict(id=e.get('id'),task=e.get('name'),steps=len(e.get('steps',[])),outcome=e.get('outcome'),
+            rows=[dict(id=e.get('id'),task=e.get('name'),steps=e.get("samples",len(e.get('steps',[]))),outcome=e.get('outcome'),
+                       quality=e.get("quality"),state=e.get("state"),skill_id=e.get("skill_id"),kind=e.get("kind"),
                        measured=e.get('joint_positions_measured',False),source=e.get('source')) for e in episodes]
             return dict(summary=f'Найдено {len(rows)} показов. Оцените ошибки и вмешательства для очереди обучения.',
-                episodes=rows,recording_interface='Рука и обучение → Начать показ',memory_curriculum=snap.get('curriculum',{}))
+                episodes=rows,recording_interface="Обучение → Обучаться → Записать показ",memory_curriculum=snap.get('curriculum',{}))
         if ident=='E17':
             return dict(summary='Фактическое состояние ACT. SmolVLA и RTC не заявлены как установленные политики.',
-                learning=snap['learning'],policy_preview=snap.get('policy_preview',{}),
+                learning=snap['learning'],policy_preview=snap.get('policy_preview',{}),mobile_policy=snap.get("mobile_policy",{}),
                 alternatives=[dict(name='SmolVLA',available=False,next_step='Адаптация к этому телу, данные и измерение RAM'),
                               dict(name='RTC',available=False,next_step='Совместимая flow-политика с префиксом исполняемого блока')],
-                execute_interface='Рука и обучение → просмотр решения / наблюдаемый тест ACT')
-        return dict(summary='Очередь исправлений построена по реальным оценкам; веса автоматически не менялись.',
-                    **snap.get('curriculum',{}))
+                execute_interface="Обучение → Проверить навык")
+        suggestions=[]
+        for episode in snap.get("episodes",[]):
+            quality=episode.get("quality") or {}
+            if episode.get("outcome") in ("failure","unknown") or quality.get("usable") is False:
+                suggestions.append(dict(episode=episode.get("id"),task=episode.get("name"),
+                    outcome=episode.get("outcome"),reason=quality.get("reason") or episode.get("reason"),
+                    next_step="Запишите исправленный полный показ и оцените результат на вкладке «Обучение»"))
+        return dict(summary="Рекомендации построены по сохранённым оценкам и качеству показов.",
+                    mobile_demonstration_suggestions=suggestions,**snap.get('curriculum',{}))

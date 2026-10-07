@@ -60,6 +60,7 @@ bin/install-all.sh --assets /путь/к/Explorer-assets
 
 - [Учебник: архитектура, концепции, технологии и карта кода](docs/ROBOT-TEXTBOOK.ru.md)
 - [Понятное управление](docs/operator-guide.ru.md)
+- [Эксперименты, живые лидары и сохранение карты](docs/lab-quickstart.ru.md)
 - [Полная раскладка клавиатуры и джойстика](docs/MANUAL-CONTROLS.ru.md)
 - [Обучение захвату и перевозке](docs/TRAINING-GUIDE.ru.md)
 - [Технический свод реализации обучения](docs/LEARNING-IMPLEMENTATION.ru.md)

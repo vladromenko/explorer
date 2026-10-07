@@ -1,5 +1,6 @@
 """Persist map previews for the local UI. No actuator interface."""
 import json
+import math
 from pathlib import Path
 import time
 import numpy as np
@@ -24,8 +25,11 @@ class MapView(Node):
         pixels[grid==0]=[233,241,230];pixels[grid>50]=[18,32,33]
         pixels[(grid>0)&(grid<=50)]=[149,174,164]
         image=Image.fromarray(np.flipud(pixels));tmp=ROOT/'data/map.tmp.png';image.save(tmp);tmp.replace(ROOT/'data/map.png')
-        p=m.info.origin.position
-        status=dict(at=time.time(),frame=m.header.frame_id,resolution=m.info.resolution,width=w,height=h,origin=[p.x,p.y],provisional=True,known_cells=int((grid>=0).sum()))
+        p=m.info.origin.position;q=m.info.origin.orientation
+        yaw=math.atan2(2*(q.w*q.z+q.x*q.y),1-2*(q.y*q.y+q.z*q.z))
+        status=dict(at=time.time(),frame=m.header.frame_id,resolution=m.info.resolution,width=w,height=h,
+                    origin=[p.x,p.y],origin_yaw=yaw,map_stamp=m.header.stamp.sec+m.header.stamp.nanosec/1e9,
+                    provisional=True,known_cells=int((grid>=0).sum()))
         tmp=ROOT/'data/map.tmp.json';tmp.write_text(json.dumps(status));tmp.replace(ROOT/'data/map.json')
 
 rclpy.init();node=MapView()

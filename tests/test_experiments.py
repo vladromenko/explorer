@@ -61,10 +61,38 @@ class ExperimentTests(unittest.TestCase):
 
     def test_all_analysis_handlers_produce_persisted_result(self):
         for i in range(1,19):
-            r=self.run_one(f'E{i:02}',key=f'run-all-{i:02}-123456789')
+            params={7:{"events":[]},8:{"before":{"x":0,"y":0,"yaw":0},"after":{"x":0,"y":0,"yaw":0},"duration_s":1,"velocity":[0,0,0]},12:{"samples":[{}]},13:{"before":[{}]*3,"after":[{}]*3}}.get(i,{})
+            r=self.run_one(f'E{i:02}',params=params,key=f'run-all-{i:02}-123456789')
             self.assertEqual(r['state'],'completed',(i,r))
             self.assertIn('summary',r['result'])
             self.assertTrue((self.lab.folder/(r['id']+'.json')).exists())
+
+    def test_required_inputs_do_not_create_empty_successful_runs(self):
+        for ident in ("E07","E08","E12","E13"):
+            self.assertFalse(self.lab.preflight(ident,"observe",{})["ready"])
+            with self.assertRaises(ValueError):self.run_one(ident)
+        self.assertEqual(self.lab.recent(),[])
+
+    def test_replay_preserves_query_even_when_replayed_twice(self):
+        original=self.run_one("E02",params={"query":"not-in-frame"})
+        first=self.run_one("E02","replay",{"run_id":original["id"]},"replay-first-123456789")
+        second=self.run_one("E02","replay",{"run_id":first["id"]},"replay-second-123456789")
+        self.assertEqual(original["result"],first["result"])
+        self.assertEqual(original["result"],second["result"])
+
+    def test_mobile_demonstrations_and_live_training_are_visible(self):
+        folder=self.root/"data/mobile-demonstrations/example";folder.mkdir(parents=True)
+        record={"id":"example","name":"sock task","state":"complete","outcome":"failure","samples":42,
+                "quality":{"usable":False,"reason":"frame gaps"}}
+        (folder/"episode.json").write_text(json.dumps(record))
+        self.lab.live_status=lambda:{"learning":{"jobs":[{"id":"actual-training"}]}}
+        episode=self.run_one("E16")["result"]["episodes"][0]
+        self.assertEqual(episode["steps"],42)
+        self.assertFalse(episode["quality"]["usable"])
+        job=self.run_one("E17",key="training-visible-123456")["result"]["learning"]["jobs"][0]
+        self.assertEqual(job["id"],"actual-training")
+        suggestions=self.run_one("E18",key="suggestions-visible-123456")["result"]["mobile_demonstration_suggestions"]
+        self.assertEqual(suggestions[0]["reason"],"frame gaps")
 
     def test_path_traversal_rejected(self):
         with self.assertRaises(ValueError):self.lab.get('../../config/access_token')
@@ -132,3 +160,16 @@ class ExperimentTests(unittest.TestCase):
         self.assertIsNone(r['candidates'][0]['feasible'])
         with self.assertRaises(ValueError):candidates(depth*0,k,[40,30,60,70],10,10,10)
         with self.assertRaises(ValueError):candidates(depth,k,[40,30,60,70],12,10,10)
+
+    def test_capture_waits_for_next_real_frame_without_accepting_stale_depth(self):
+        import numpy as np
+        path=self.root/"data/rgbd-snapshot.npz"
+        def write(stamp):
+            np.savez(path,rgb=np.zeros((10,10,3),dtype=np.uint8),depth=np.ones((10,10)),k=np.eye(3),stamp=stamp)
+        write(0)
+        with patch("experiments.time.sleep",side_effect=lambda seconds:write(time.time())) as sleep:
+            result=self.lab.capture()
+        sleep.assert_called_once()
+        with np.load(self.lab.capture_path(result["id"]),allow_pickle=False) as frame:
+            self.assertGreater(float(frame["stamp"]),self.now)
+        self.assertEqual((result["width"],result["height"]),(10,10))

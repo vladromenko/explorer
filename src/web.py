@@ -19,6 +19,9 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 from sensor_msgs.msg import LaserScan
+from rclpy.qos import qos_profile_sensor_data
+from rclpy.time import Time
+from tf2_ros import TransformException
 from map_tools import MapTools
 from missions import Missions
 from fastapi import FastAPI, Request, HTTPException
@@ -34,10 +37,22 @@ rclpy.init()
 node=Node('explorer_web')
 pub=node.create_publisher(String,'/explorer/request',1)
 maps=MapTools(node)
+from mapping_services import MappingServices
+mapping_services=MappingServices()
 from localization_exercise import LocalizationExercise
 localization_exercise=LocalizationExercise(ROOT,maps.pose)
-node.create_subscription(LaserScan,'/scan0',lambda message:localization_exercise.scan('scan0',message),1)
-node.create_subscription(LaserScan,'/scan1',lambda message:localization_exercise.scan('scan1',message),1)
+from lidar_view import LidarView
+def lidar_transform(frame):
+    try:transform=maps.tf.lookup_transform("base_footprint",frame,Time()).transform
+    except TransformException as exc:raise ValueError("Нет TF для "+frame) from exc
+    p=transform.translation;q=transform.rotation
+    return [p.x,p.y,p.z],[q.x,q.y,q.z,q.w]
+lidar_view=LidarView(lidar_transform,lambda:node.get_clock().now().nanoseconds/1e9)
+def receive_lidar(name,message):
+    localization_exercise.scan(name,message)
+    lidar_view.receive(name,message)
+node.create_subscription(LaserScan,"/scan0",lambda message:receive_lidar("scan0",message),qos_profile_sensor_data)
+node.create_subscription(LaserScan,"/scan1",lambda message:receive_lidar("scan1",message),qos_profile_sensor_data)
 missions=Missions(node,maps)
 from semantic_world import SemanticWorld,active_view,guarded_closure
 from research_audit import audit as research_audit
@@ -91,7 +106,9 @@ from telegram_pairing import Pairing
 experiments=Experiments(ROOT,feedback_graph=lambda:dict(
     feedback_publishers=node.count_publishers('/arm6_feedback'),
     controller='/robotio',transport_owner='explorer-mcu.service'),frontiers=missions.frontiers,
-    live_status=lambda:dict(search=object_finder.status(),policy_preview=policy_preview.status()))
+    live_status=lambda:dict(search=object_finder.status(),policy_preview=policy_preview.status(),
+                           learning=learning_jobs.status(),mobile_demonstrations=mobile_demonstrations.status(),
+                           mobile_policy=globals()["mobile_policy_execution"].status() if "mobile_policy_execution" in globals() else {}))
 telegram_pairing=Pairing(ROOT)
 from resource_profiles import ResourceProfiles
 def heavy_jobs():
@@ -474,7 +491,7 @@ def mobile_guide():return Response((ROOT/'docs/MOBILE-REMOTE.ru.md').read_text()
 
 @app.middleware('http')
 async def auth(request:Request,call_next):
-    if request.url.path not in ('/','/mobile','/mobile-guide','/guide','/training-guide','/learning-implementation','/delivery-guide','/lab.js','/skill-ui.js'):
+    if request.url.path not in ('/','/mobile','/mobile-guide','/guide','/training-guide','/learning-implementation','/delivery-guide','/lab.js','/skill-ui.js',"/experiment-ui.js","/mapping-ui.js"):
         supplied=request.headers.get('authorization','').removeprefix('Bearer ')
         if not secrets.compare_digest(supplied,TOKEN):
             from fastapi.responses import JSONResponse
@@ -490,6 +507,12 @@ def index():return HTMLResponse((ROOT/'src/index.html').read_text(),headers={'Ca
 
 @app.get("/skill-ui.js")
 def skill_ui():return Response((ROOT/"src/skill-ui.js").read_text(),media_type="text/javascript; charset=utf-8",headers={"Cache-Control":"no-store"})
+
+@app.get("/experiment-ui.js")
+def experiment_ui():return Response((ROOT/"src/experiment-ui.js").read_text(),media_type="text/javascript; charset=utf-8",headers={"Cache-Control":"no-store"})
+
+@app.get("/mapping-ui.js")
+def mapping_ui():return Response((ROOT/"src/mapping-ui.js").read_text(),media_type="text/javascript; charset=utf-8",headers={"Cache-Control":"no-store"})
 
 @app.get('/api/mobile/goals')
 def mobile_goals():return json.loads((ROOT/'config/mobile-training-goals.json').read_text())
@@ -524,6 +547,8 @@ SERVICE_NAMES={
     'mcu':'explorer-mcu.service','camera':'explorer-camera.service',
     'navigation':'explorer-navigation.service','planning':'explorer-planning.service',
     'oled':'explorer-oled.service','telegram':'explorer-telegram.service',
+    "slam":"explorer-slam.service","geometry":"explorer-geometry.service",
+    "mapview":"explorer-mapview.service","ekf":"explorer-ekf.service",
 }
 
 @app.get('/api/diagnostics')
@@ -583,18 +608,36 @@ def map_image():
     scale=max(4,min(12,720//max(1,image.width)))
     image=image.resize((image.width*scale,image.height*scale),Image.Resampling.NEAREST)
     try:
-        pose=maps.pose();resolution=float(metadata['resolution']);origin=metadata['origin']
-        px=(pose['x']-origin[0])/resolution*scale
-        py=(float(metadata['height'])-1-(pose['y']-origin[1])/resolution)*scale
+        pose=maps.pose()
+        from map_coordinates import pose_pixel
+        marker=pose_pixel(pose,metadata,scale)
+        px,py=marker["x"],marker["y"]
         if 0<=px<image.width and 0<=py<image.height:
             draw=ImageDraw.Draw(image);radius=max(7,scale)
             draw.ellipse((px-radius,py-radius,px+radius,py+radius),fill='#8296ff',outline='white',width=max(2,scale//3))
-            length=radius*2.4;tip=(px+math.cos(pose['yaw'])*length,py-math.sin(pose['yaw'])*length)
+            length=radius*2.4;tip=(px+math.cos(marker["yaw"])*length,py-math.sin(marker["yaw"])*length)
             draw.line((px,py,*tip),fill='#ffcf66',width=max(3,scale//2))
             draw.ellipse((tip[0]-2,tip[1]-2,tip[0]+2,tip[1]+2),fill='#ffcf66')
     except (OSError,ValueError,KeyError,TypeError):pass
     output=io.BytesIO();image.save(output,format='PNG')
     return Response(output.getvalue(),media_type='image/png',headers={'Cache-Control':'no-store'})
+
+@app.get("/api/lidar")
+def live_lidar():return lidar_view.status()
+
+@app.get("/api/mapping/status")
+def mapping_status():
+    metadata=read_state("map.json",15)
+    try:pose=maps.pose();reason=None
+    except (OSError,ValueError):pose=None;reason="Нет свежего преобразования map → base_footprint"
+    return {"at":time.time(),"map":metadata,"pose":pose,"pose_error":reason,
+            "geometry":read_state("lidar_geometry.json",2),"saved_maps":maps.list_maps(),
+            "localization_verified":bool(pose and pose.get("localization_verified")),
+            "services":mapping_services.status(),
+            "map_epoch":read_state("map_session.json",1e12).get("id")}
+
+@app.post("/api/mapping/recover")
+def mapping_recover():return map_operation(mapping_services.recover,read_state("status.json",2))
 
 class MapPoint(BaseModel):
     x:float
