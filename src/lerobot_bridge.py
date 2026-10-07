@@ -1,5 +1,6 @@
 """Local LeRobot jobs. This module has no robot publishers or motor interfaces."""
 import json
+import hashlib
 import os
 from pathlib import Path
 import subprocess
@@ -68,16 +69,22 @@ class LearningJobs:
             return record
         finally:self.lock.release()
 
-    def start_mobile(self,steps,task):
+    def start_mobile(self,steps,task,skill_id=None):
         if type(steps) is not int or steps not in (1000,5000,20000):raise ValueError('Неизвестная длительность обучения')
-        from mobile_demonstrations import STAGES
+        from mobile_demonstrations import episode_quality
         source=self.root/'data/mobile-demonstrations';episodes=[]
         for path in sorted(source.glob('*/episode.json')):
             episode=json.loads(path.read_text())
-            stage_ready=(set(episode.get('stages',[]))==set(STAGES) or task.startswith('grasp ') and 'grasp' in episode.get('stages',[]))
-            if (episode.get('name')==task and episode.get('state')=='complete' and episode.get('outcome')=='success' and
-                    episode.get('label_source')=='operator' and stage_ready and episode.get('samples',0)>=20):episodes.append(episode)
+            quality=episode.get("quality") or episode_quality(path.parent)
+            same_skill=episode.get("skill_id")==skill_id if skill_id else episode.get("name")==task
+            if (same_skill and episode.get("state")=="complete" and episode.get("outcome")=="success" and
+                    episode.get("label_source")=="operator" and quality.get("usable") is True):episodes.append(episode)
         if not episodes:raise ValueError('Нужен хотя бы один успешный полный показ для ACT; фиксированного минимума нет')
+        fingerprint=hashlib.sha256(json.dumps(sorted(e["id"] for e in episodes)).encode()).hexdigest()
+        for path in self.folder.glob("*/job.json"):
+            existing=json.loads(path.read_text())
+            if existing.get("dataset_fingerprint")==fingerprint and existing.get("skill_id")==skill_id:
+                return existing
         if not self.status()['backend'].get('ready'):raise ValueError('Среда LeRobot ещё не прошла проверку')
         training_budget(self.root)
         if not self.lock.acquire(blocking=False):raise ValueError('Обучение уже выполняется')
@@ -87,9 +94,13 @@ class LearningJobs:
             ident=time.strftime('%Y%m%d-%H%M%S')+'-'+uuid.uuid4().hex[:8];folder=self.folder/ident;folder.mkdir()
             record=dict(id=ident,at=time.time(),state='queued',steps=steps,episodes=[e['id'] for e in episodes],
                 task=task,framework='lerobot',policy='act',dataset_kind='mobile_manipulation_9dof',executed=False,
-                automatic_execution=False)
+                automatic_execution=False,skill_id=skill_id,episode_count=len(episodes),
+                dataset_fingerprint=fingerprint)
             write_json(folder/'job.json',record);write_json(self.root/'data/learning-request.json',dict(job=ident))
-            subprocess.run(['systemctl','--user','start','explorer-train.service'],check=True,timeout=8)
+            try:subprocess.run(['systemctl','--user','start','explorer-train.service'],check=True,timeout=8)
+            except (OSError,subprocess.SubprocessError) as exc:
+                record.update(state="failed",error="Служба обучения не запустилась: "+str(exc))
+                write_json(folder/"job.json",record)
             return record
         finally:self.lock.release()
 

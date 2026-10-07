@@ -1,9 +1,10 @@
-"""Record a whole operator-driven journey, with explicit task-stage labels.
+"""Record a whole operator-driven journey without interrupting teleoperation.
 
 State/action provenance stays commanded-only. This recorder cannot drive a robot
 and its episodes are not silently mixed into the six-joint ACT training set.
 """
 import json
+import shutil
 import threading
 import time
 import uuid
@@ -12,10 +13,38 @@ import cv2
 import numpy as np
 from lerobot_bridge import write_json
 
-STAGES=('travel_to_object','grasp','carry','place')
+STAGES=("travel_to_object", "grasp", "carry", "place")
 
 def required_stages(name):
-    return {'grasp'} if str(name).startswith('grasp ') else set(STAGES)
+    return set()
+
+
+def episode_quality(folder):
+    """Evaluate recorded evidence, never infer an operator outcome from it."""
+    path=Path(folder)/"samples.jsonl"
+    if not path.exists():
+        return {"usable":False,"reason":"Нет синхронизированных кадров и команд","samples":0}
+    rows=[json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    if len(rows)<2:
+        return {"usable":False,"reason":"Слишком короткая запись","samples":len(rows)}
+    stamps=[float(row["image_stamp"]) for row in rows]
+    gaps=[b-a for a,b in zip(stamps,stamps[1:])]
+    commands=[tuple(float(value) for value in row["command"]) for row in rows]
+    duration=stamps[-1]-stamps[0]
+    rate=(len(rows)-1)/duration if duration>0 else 0.0
+    base_changes=sum(any(abs(value)>0.025 for value in command[6:]) for command in commands)
+    arm_changes=len({command[:6] for command in commands})
+    reasons=[]
+    if len(rows)<12 or duration<5:reasons.append("Нужен более длинный показ")
+    if len(set(commands))<5:reasons.append("В записи почти нет разных команд")
+    if max(gaps)>1.5:reasons.append("Есть длинный пропуск кадров")
+    if rate<1.5:reasons.append("Камера слишком медленная для этого показа")
+    if any(len(command)!=9 for command in commands):reasons.append("Неполные команды шасси или руки")
+    return {"usable":not reasons,"reason":"; ".join(reasons),"samples":len(rows),
+            "duration_s":round(duration,3),"observed_fps":round(rate,3),
+            "largest_frame_gap_s":round(max(gaps),3),"distinct_commands":len(set(commands)),
+            "base_motion_samples":base_changes,"distinct_arm_targets":arm_changes,
+            "arm_state_source":"command_estimate"}
 
 
 def sample(root,now):
@@ -52,6 +81,9 @@ def sample(root,now):
     except (OSError,ValueError,TypeError):manual={}
     if now-manual.get('at',0)>1:manual={}
     return dict(at=now,image_stamp=stamp,state_stamp=state['at'],command=action.tolist(),
+                image_stamp_source="onboard_camera_acquisition_estimate",command_stamp=arm.get("at"),
+                proposed_manual_action=manual.get("normalized_actions"),
+                issued_body_velocity=state.get("velocity"),observed_body_velocity=state.get("odom_velocity"),
                 camera_state_offset_s=camera_state_offset,
                 arm_in_progress=arm['phase'] in ('command_in_progress','EXECUTING'),raw_odometry_pose=state.get('raw_pose'),
                 q_estimated=arm.get('q_estimated'),state_source=arm.get('state_source','command_estimate'),
@@ -76,9 +108,8 @@ class MobileDemonstrations:
             try:episodes.append(json.loads(path.read_text()))
             except (OSError,ValueError,TypeError):pass
         episodes.sort(key=lambda item:item.get('started',0),reverse=True)
-        eligible=[e for e in episodes if e.get('state')=='complete' and e.get('outcome')=='success' and
-                  e.get('label_source')=='operator' and required_stages(e.get('name')).issubset(set(e.get('stages',[]))) and
-                  e.get('samples',0)>=20]
+        eligible=[e for e in episodes if e.get("state")=="complete" and e.get("outcome")=="success" and
+                  e.get("label_source")=="operator" and e.get("quality",{}).get("usable") is True]
         skills={name:sum(e.get('name')==name for e in eligible) for name in {e.get('name') for e in episodes if e.get('name')}}
         with self.lock:return dict(active=self.active,last=self.last or (episodes[0] if episodes else None),
             recent=episodes[:10],storage_root=str(self.folder),automatic_replay=False,
@@ -89,13 +120,14 @@ class MobileDemonstrations:
 
     def save(self):write_json(self.folder/self.active['id']/'episode.json',self.active)
 
-    def start(self,name,observing,object_label='',object_class='unknown',size_class='medium',destination='',workflow_id=''):
+    def start(self,name,observing,object_label='',object_class='unknown',size_class='medium',destination='',workflow_id='',skill_id=''):
         if observing is not True:raise ValueError('Показ требует наблюдателя')
         if object_class not in ('soft_cloth','rigid','fragile','slippery','deformable','unknown'):
             raise ValueError('Неизвестный физический класс предмета')
         if size_class not in ('small','medium','large'):raise ValueError('Неизвестный размер предмета')
         with self.lock:
             if self.active:raise ValueError('Показ поездки уже записывается')
+            if shutil.disk_usage(self.root).free<2*1024**3:raise ValueError("На диске осталось меньше 2 ГБ")
             sample(self.root,time.time())
             ident=uuid.uuid4().hex;(self.folder/ident).mkdir()
             self.active=dict(id=ident,name=name,state='recording',started=time.time(),outcome='unknown',
@@ -104,7 +136,7 @@ class MobileDemonstrations:
                 physical_sample_rate_hz=2,automatic_replay_allowed=False,dataset_kind='mobile_manipulation_9dof',
                 control_metadata_schema='explorer-manual-v2',legacy_action_vector_unchanged=True,
                 object_label=object_label[:80],object_class=object_class,size_class=size_class,destination=destination[:80],
-                workflow_id=workflow_id,
+                workflow_id=workflow_id,skill_id=skill_id,
                 transfer_context=dict(grasp_family='learned_from_operator',contact_feedback='visual_only'))
             self.lease=time.monotonic()+2;self.save()
             threading.Thread(target=self.run,args=(ident,),daemon=True).start()
@@ -124,17 +156,23 @@ class MobileDemonstrations:
             if value not in self.active['stages']:self.active['stages'].append(value)
             self.save();return self.status()
 
-    def finish(self,outcome,reason=None):
+    def finish(self,outcome,reason=None,expected_id=None):
         if outcome not in ('success','failure','unknown'):raise ValueError('Неизвестный результат')
         with self.lock:
-            if not self.active:return self.status()
-            stages=required_stages(self.active['name'])
-            if outcome=='success' and (self.active['samples']<20 or not stages.issubset(set(self.active['stages']))):
-                raise ValueError('Для успешного показа запишите не менее 20 синхронных кадров и все этапы выбранного навыка')
+            if not self.active:
+                if expected_id and self.last and self.last["id"]!=expected_id:raise ValueError("Другой эпизод уже завершён")
+                return self.status()
+            if expected_id and self.active["id"]!=expected_id:raise ValueError("Завершается другой эпизод")
+            quality=episode_quality(self.folder/self.active["id"])
             self.active.update(state='complete' if reason is None else 'interrupted',outcome=outcome,
-                               label_source='operator' if reason is None else 'recorder',ended=time.time(),reason=reason)
+                               label_source='operator' if reason is None else 'recorder',ended=time.time(),reason=reason,
+                               quality=quality,physical_sample_rate_hz=quality.get("observed_fps"))
             self.save();self.last=self.active;completed=self.active;self.active=None
-            if self.on_complete is not None:self.on_complete(completed,self.folder/completed['id']/'episode.json')
+            if self.on_complete is not None:
+                try:self.on_complete(completed,self.folder/completed['id']/'episode.json')
+                except (OSError,ValueError,KeyError) as exc:
+                    completed["postprocess_error"]=str(exc)
+                    write_json(self.folder/completed["id"]/"episode.json",completed)
             return self.status()
 
     def run(self,ident):

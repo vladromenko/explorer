@@ -167,7 +167,7 @@ class Missions:
             self.active=dict(id=mid,kind=kind,map_epoch=self.maps.epoch(),started=time.time(),
                 started_monotonic=time.monotonic(),deadline_monotonic=time.monotonic()+timeout,phase='preparing')
             self.record(self.active,'running',dict(local_execution=True))
-            self.emit('begin_mission',mission=mid)
+            self.emit('begin_mission',mission=mid,kind=kind)
         deadline=time.monotonic()+1
         while time.monotonic()<deadline:
             permit()

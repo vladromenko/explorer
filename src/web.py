@@ -77,6 +77,8 @@ teaching=TeachingController(ROOT)
 from mobile_demonstrations import MobileDemonstrations
 mobile_demonstrations=MobileDemonstrations(ROOT)
 learning_jobs=LearningJobs(ROOT)
+from skill_learning import SkillLearning
+skill_learning=SkillLearning(ROOT,mobile_demonstrations,learning_jobs)
 from policy_preview import PolicyPreview
 policy_preview=PolicyPreview(ROOT,learning_jobs,teaching)
 from object_finder import ObjectFinder
@@ -100,6 +102,8 @@ def heavy_jobs():
     if voice.lock.locked():jobs.append('voice')
     execution=globals().get('policy_execution')
     if execution and execution.lock.locked():jobs.append('policy')
+    mobile_execution=globals().get("mobile_policy_execution")
+    if mobile_execution and mobile_execution.lock.locked():jobs.append("mobile_policy")
     if any(j.get('state') in ('queued','exporting','training','validating') for j in learning_jobs.status()['jobs']):jobs.append('train')
     return jobs
 profiles=ResourceProfiles(ROOT,heavy_jobs)
@@ -174,6 +178,8 @@ def stop_all():
     if controller:controller.stop()
     player=globals().get('policy_execution')
     if player and player.lock.locked():player.stop()
+    mobile_player=globals().get("mobile_policy_execution")
+    if mobile_player and mobile_player.lock.locked():mobile_player.stop()
     trajectory=globals().get('trajectory_execution')
     if trajectory:trajectory.stop()
     return emit('stop')
@@ -183,6 +189,10 @@ def manual_takeover():
     if supervisor:supervisor.cancel(reason='Manual keyboard/gamepad takeover')
     delivery=globals().get('delivery_task')
     if delivery:delivery.cancel()
+    mobile_player=globals().get("mobile_policy_execution")
+    if mobile_player and mobile_player.lock.locked():
+        manual=gamepad_panel.teleop.status() if globals().get("gamepad_panel") else {}
+        mobile_player.takeover(manual.get("inputs"))
 
 def resume_manual():
     manual_takeover();emit('clear_stop');emit('mode',mode='MANUAL')
@@ -263,6 +273,78 @@ def mobile_lease(c:MobileLease):return map_operation(mobile_demonstrations.heart
 
 @app.post('/api/teaching/mobile/finish')
 def mobile_finish(c:TeachingFinish):return map_operation(mobile_demonstrations.finish,c.outcome)
+
+class SkillName(BaseModel):
+    name:str=Field(min_length=3,max_length=80)
+
+class SkillRecord(BaseModel):
+    observing:bool=False
+    object_label:str=Field(default="",max_length=80)
+    destination:str=Field(default="",max_length=80)
+
+class SkillFinish(BaseModel):
+    episode_id:str=Field(min_length=32,max_length=32)
+    outcome:str
+
+@app.get("/api/skills")
+def skill_catalog():
+    mobile=mobile_demonstrations.status()
+    return {"skills":skill_learning.list(),"active_recording":mobile["active"],
+            "earlier_recordings":mobile["recent"]}
+
+@app.post("/api/skills")
+def skill_create(c:SkillName):return map_operation(skill_learning.create,c.name)
+
+@app.post("/api/skills/{identifier}/rename")
+def skill_rename(identifier:str,c:SkillName):return map_operation(skill_learning.rename,identifier,c.name)
+
+@app.post("/api/skills/{identifier}/record")
+def skill_record(identifier:str,c:SkillRecord):
+    skill=map_operation(skill_learning.get,identifier)
+    return map_operation(mobile_demonstrations.start,skill["name"],c.observing,c.object_label,
+                         "unknown","medium",c.destination,"",identifier)
+
+@app.post("/api/skills/{identifier}/finish")
+def skill_finish(identifier:str,c:SkillFinish):
+    map_operation(skill_learning.get,identifier)
+    active=mobile_demonstrations.status()["active"]
+    if active and active.get("skill_id")!=identifier:raise HTTPException(409,"Записывается другой навык")
+    result=map_operation(mobile_demonstrations.finish,c.outcome,None,c.episode_id)
+    if active:
+        owner=gamepad_panel.teleop.status().get("owner")
+        gamepad_panel.teleop.stop()
+        if owner:gamepad_panel.teleop.disconnect(owner)
+        stop_all()
+    return {"recording":result,"skill":skill_learning.get(identifier)}
+
+class SkillTrial(BaseModel):
+    observing:bool=False
+
+class SkillTrialHeartbeat(BaseModel):
+    session:str
+    observing:bool=False
+
+@app.get("/api/skills/{identifier}/trial")
+def skill_trial_preflight(identifier:str):
+    map_operation(skill_learning.get,identifier)
+    return mobile_policy_execution.preflight(identifier)
+
+@app.post("/api/skills/{identifier}/trial")
+def skill_trial_start(identifier:str,c:SkillTrial):
+    map_operation(skill_learning.get,identifier)
+    if gamepad_panel.teleop.status().get("owner"):
+        raise HTTPException(409,"Завершите ручное управление перед проверкой навыка")
+    return map_operation(mobile_policy_execution.start,identifier,c.observing)
+
+@app.post("/api/skills/trial/heartbeat")
+def skill_trial_heartbeat(c:SkillTrialHeartbeat):
+    return map_operation(mobile_policy_execution.heartbeat,c.session,c.observing)
+
+@app.post("/api/skills/trial/stop")
+def skill_trial_stop():return mobile_policy_execution.stop()
+
+@app.get("/api/skills/trial/status")
+def skill_trial_status():return mobile_policy_execution.status()
 
 @app.post('/api/teaching/start')
 def start_teaching(c:TeachingStart):return map_operation(teaching.start,c.name,c.observing)
@@ -382,7 +464,7 @@ def mobile_guide():return Response((ROOT/'docs/MOBILE-REMOTE.ru.md').read_text()
 
 @app.middleware('http')
 async def auth(request:Request,call_next):
-    if request.url.path not in ('/','/mobile','/mobile-guide','/guide','/training-guide','/learning-implementation','/delivery-guide','/lab.js'):
+    if request.url.path not in ('/','/mobile','/mobile-guide','/guide','/training-guide','/learning-implementation','/delivery-guide','/lab.js','/skill-ui.js'):
         supplied=request.headers.get('authorization','').removeprefix('Bearer ')
         if not secrets.compare_digest(supplied,TOKEN):
             from fastapi.responses import JSONResponse
@@ -395,6 +477,9 @@ async def auth(request:Request,call_next):
 
 @app.get('/')
 def index():return HTMLResponse((ROOT/'src/index.html').read_text(),headers={'Cache-Control':'no-store'})
+
+@app.get("/skill-ui.js")
+def skill_ui():return Response((ROOT/"src/skill-ui.js").read_text(),media_type="text/javascript; charset=utf-8",headers={"Cache-Control":"no-store"})
 
 @app.get('/api/mobile/goals')
 def mobile_goals():return json.loads((ROOT/'config/mobile-training-goals.json').read_text())
@@ -752,6 +837,8 @@ if getattr(manual_arm,'native',False) is True:
     else:teaching.measured_reference=manual_arm.reference
 from policy_execution import PolicyExecution
 policy_execution=PolicyExecution(ROOT,learning_jobs,teaching,manual_arm,policy_preview)
+from mobile_policy_execution import MobilePolicyExecution
+mobile_policy_execution=MobilePolicyExecution(ROOT,learning_jobs,missions,manual_arm,emit)
 
 class PolicyExecutionRequest(BaseModel):
     task:str=Field(min_length=3,max_length=80)
@@ -1020,8 +1107,9 @@ def workflow_train_status(identifier):
     return next((item for item in learning_jobs.status()['jobs'] if item['id']==identifier),{})
 learning_workflows=LearningWorkflows(ROOT,train_submit=workflow_train,train_status=workflow_train_status)
 def completed_demonstration(record,path):
-    identifier=record.get('workflow_id')
+    identifier=record.get("workflow_id")
     if identifier:learning_workflows.attach_demonstration(identifier,path)
+    skill_learning.ingest(record,path)
 teaching.on_complete=completed_demonstration
 mobile_demonstrations.on_complete=completed_demonstration
 
@@ -1099,7 +1187,7 @@ def learning_workflow_start(c:LearningWorkflowStart):
 
 @app.post('/api/learning/workflows/{identifier}/demonstration')
 def learning_workflow_demonstration(identifier:str,c:LearningDemoStart):
-    workflow=map_operation(learning_workflows.get,identifier);task=workflow['skill']+' '+workflow['target']
+    workflow=map_operation(learning_workflows.get,identifier);task=c.name.strip() or workflow['skill']+' '+workflow['target']
     if c.mobile:
         result=map_operation(mobile_demonstrations.start,task,c.observing,c.object_label or workflow['target'],
             c.object_class,c.size_class,c.destination,identifier)

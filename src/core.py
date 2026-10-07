@@ -255,6 +255,7 @@ class Core(Node):
 
     def nav_cb(self,msg):
         now=time.monotonic()
+        if getattr(self,"policy_mission",None)==self.session.mission and self.session.mission is not None:return
         stamp=msg.header.stamp.sec+msg.header.stamp.nanosec/1e9
         age=self.get_clock().now().nanoseconds/1e9-stamp
         if stamp<self.nav_not_before or stamp<=self.nav_last_stamp or not -.02<=age<.25:return
@@ -304,7 +305,9 @@ class Core(Node):
                 elif op in ('begin_mission','autonomy_lease','resume_base'):
                     if self.gate.estop or self.gate.mode!='AUTONOMOUS' or not all(self.config.get(k,False) for k in ('base_commissioned','mcu_watchdog_verified','lidar_tf_validated','localization_verified')):
                         raise ValueError('Autonomy prerequisites not met')
-                    if op=='begin_mission':self.session.begin(req['mission'],time.monotonic())
+                    if op=='begin_mission':
+                        self.session.begin(req['mission'],time.monotonic())
+                        self.policy_mission=req['mission'] if req.get('kind')=='mobile_policy' else None
                     elif op=='resume_base':
                         self.session.resume(req['mission'],time.monotonic());self.hold_requested=False
                         self.nav_not_before=self.get_clock().now().nanoseconds/1e9
@@ -344,6 +347,21 @@ class Core(Node):
                     if self.probe:self.probe.cancel('MANUAL_TAKEOVER')
                     if not self.gate.submit(req['velocity'], req.get('source','manual'), float(req['at'])):
                         raise ValueError('Autonomy not selected')
+                elif op == 'policy_drive':
+                    now=time.monotonic()
+                    if self.gate.mode!="AUTONOMOUS" or self.gate.estop or not self.config.get("localization_verified"):
+                        raise ValueError("Автономная локализация не принята")
+                    if req.get("mission")!=getattr(self,"policy_mission",None) or not self.session.permits(now):
+                        raise ValueError("Нет действующей миссии обученной политики")
+                    values=req.get("velocity")
+                    if not isinstance(values,list) or len(values)!=3 or any(
+                            not isinstance(value,(float,int)) or not math.isfinite(value) or abs(value)>limit
+                            for value,limit in zip(values,(.12,.12,.35))):
+                        raise ValueError("Скорость политики вне проверяемого диапазона")
+                    self.session.renew(req["mission"],now)
+                    if not self.gate.submit(values,"autonomy",float(req["at"])):
+                        raise ValueError("Миссия не допущена")
+                    self.autonomy_lease=now
                 elif op == 'arm':
                     raise ValueError('General arm execution is not commissioned. Supervised near-home probes use bin/commission-arm.py; servo feedback is unavailable.')
                 else:
