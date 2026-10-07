@@ -38,6 +38,12 @@ class AutomaticLearningTests(unittest.TestCase):
                 row["command"][0]=90+index%5
             (folder/"samples.jsonl").write_text("\n".join(json.dumps(row) for row in rows))
             self.assertTrue(episode_quality(folder)["usable"])
+            self.assertFalse(episode_quality(folder,full_task=True)["usable"])
+            for index,row in enumerate(rows):
+                row["command"][5]=90+index%3
+                row["command"][6]=.1 if index%3 else 0
+            (folder/"samples.jsonl").write_text("\n".join(json.dumps(row) for row in rows))
+            self.assertTrue(episode_quality(folder,full_task=True)["usable"])
 
     def test_outcome_is_idempotent_and_rename_keeps_episode_links(self):
         with tempfile.TemporaryDirectory() as directory:

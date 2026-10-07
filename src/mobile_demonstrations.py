@@ -19,7 +19,7 @@ def required_stages(name):
     return set()
 
 
-def episode_quality(folder):
+def episode_quality(folder,full_task=False):
     """Evaluate recorded evidence, never infer an operator outcome from it."""
     path=Path(folder)/"samples.jsonl"
     if not path.exists():
@@ -40,10 +40,15 @@ def episode_quality(folder):
     if max(gaps)>1.5:reasons.append("Есть длинный пропуск кадров")
     if rate<1.5:reasons.append("Камера слишком медленная для этого показа")
     if any(len(command)!=9 for command in commands):reasons.append("Неполные команды шасси или руки")
+    gripper_targets=len({command[5] for command in commands if len(command)>5})
+    if full_task and base_changes<2:reasons.append("Не записана поездка шасси")
+    if full_task and arm_changes<3:reasons.append("Не записано движение руки")
+    if full_task and gripper_targets<2:reasons.append("Не записано управление захватом")
     return {"usable":not reasons,"reason":"; ".join(reasons),"samples":len(rows),
             "duration_s":round(duration,3),"observed_fps":round(rate,3),
             "largest_frame_gap_s":round(max(gaps),3),"distinct_commands":len(set(commands)),
             "base_motion_samples":base_changes,"distinct_arm_targets":arm_changes,
+            "distinct_gripper_targets":gripper_targets,
             "arm_state_source":"command_estimate"}
 
 
@@ -163,7 +168,8 @@ class MobileDemonstrations:
                 if expected_id and self.last and self.last["id"]!=expected_id:raise ValueError("Другой эпизод уже завершён")
                 return self.status()
             if expected_id and self.active["id"]!=expected_id:raise ValueError("Завершается другой эпизод")
-            quality=episode_quality(self.folder/self.active["id"])
+            full_task=bool(self.active.get("object_label") and self.active.get("destination"))
+            quality=episode_quality(self.folder/self.active["id"],full_task=full_task)
             self.active.update(state='complete' if reason is None else 'interrupted',outcome=outcome,
                                label_source='operator' if reason is None else 'recorder',ended=time.time(),reason=reason,
                                quality=quality,physical_sample_rate_hz=quality.get("observed_fps"))
