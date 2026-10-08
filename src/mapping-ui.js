@@ -151,6 +151,8 @@ async function startRoomTask() {
         max_goals: Number($("roomTaskBudget").value), map_name: $("mapName").value.trim(),
         x: Number($("roomTargetX").value), y: Number($("roomTargetY").value),
         yaw: Number($("roomTargetYaw").value) * Math.PI / 180,
+        holonomic: kind === "navigate_current" && $("roomHolonomic").checked,
+        position_only: kind === "navigate_current" && $("roomHolonomic").checked,
         places: $("roomPlaces").value.split(",").map(item => item.trim()).filter(Boolean),
         object_query: $("roomObject").value.trim()};
     try {
@@ -170,8 +172,22 @@ async function refreshRoomTask() {
         try {
             const state = await api("navigation/tasks").then(response => response.json());
             const task = state.active || state.last;
-            $("roomTaskState").textContent = task ? task.state + " · " + task.phase +
+            let summary = task ? task.state + " · " + task.phase +
                 (task.reason ? " · " + task.reason : "") : "Нет запущенного задания";
+            if (task && task.state === "succeeded" && ["map_room", "survey_room"].includes(task.spec?.kind)) {
+                const result = task.result || {};
+                const coverage = result.coverage || {};
+                const count = Number(coverage.visited || 0);
+                summary = "Задание завершено · подтверждено границ: " + count +
+                    " · " + (result.navigation_executed ? "шасси двигалось" : "поездки не было") +
+                    " · полное исследование комнаты не подтверждено" +
+                    (result.return_orientation_verified === false ? " · курс после возврата не подтверждён" : "") +
+                    (result.saved_map ? " · карта: " + result.saved_map.name : "");
+            }
+            if (task?.state === "failed" && task.result?.saved_partial_map) {
+                summary += " · промежуточная карта сохранена: " + task.result.saved_partial_map.name;
+            }
+            $("roomTaskState").textContent = summary;
             $("roomCameraState").textContent = "Бортовая камера: " + state.camera.phase +
                 " · " + (state.camera.view || "обзор ещё не подготовлен") +
                 " · во время поездки вперёд, осмотр по сторонам на остановках";

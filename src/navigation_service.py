@@ -50,6 +50,7 @@ def run(component, check_only=False, timeout=10.):
             self.buffer = Buffer(cache_time=Duration(seconds=5))
             self.listener = TransformListener(self.buffer, self)
             for name, topic, kind in (('odom','/odom_raw',Odometry),('imu','/imu/data_raw',Imu),
+                                      ('imu_planar','/explorer/imu_planar',Imu),
                                       ('scan0','/scan0',LaserScan),('scan1','/scan1',LaserScan),
                                       ("scan_merged","/explorer/scan",LaserScan)):
                 self.create_subscription(kind, topic, lambda m, key=name: self.receive(key, m), qos_profile_sensor_data)
@@ -73,6 +74,8 @@ def run(component, check_only=False, timeout=10.):
             elif key == 'imu':
                 linear, angular = message.linear_acceleration, message.angular_velocity
                 valid = all(math.isfinite(v) for v in (linear.x,linear.y,linear.z,angular.x,angular.y,angular.z))
+            elif key == 'imu_planar':
+                valid = math.isfinite(message.angular_velocity.z) and abs(message.angular_velocity.z)<=5.
             elif key.startswith('scan'):
                 valid = (len(message.ranges) > 10 and sum(math.isfinite(v) and
                          message.range_min < v < message.range_max for v in message.ranges) >= 10)
@@ -96,7 +99,7 @@ def run(component, check_only=False, timeout=10.):
                         records.append({})
                 self.power_blockers = power_errors(*records, time.time(), self.stop_voltage, self.battery_timeout)
             errors = list(self.power_blockers)
-            for key in ("odom", "imu", "scan0", "scan1", "scan_merged"):
+            for key in ("odom", "imu", "imu_planar", "scan0", "scan1", "scan_merged"):
                 stamp, received, valid = self.samples.get(key, (0., -1e9, False))
                 if not valid or not fresh(wall-stamp, mono-received):
                     errors.append(key+'_stale')

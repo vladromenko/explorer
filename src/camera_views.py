@@ -9,7 +9,7 @@ import time
 import numpy as np
 from lerobot_bridge import write_json
 
-VIEWS={"forward":[90,90,60,15,90],"left":[120,90,60,15,90],"right":[60,90,60,15,90]}
+VIEWS={"forward":[90,90,60,15,90],"left":[60,90,60,15,90],"right":[120,90,60,15,90]}
 
 
 class CameraViews:
@@ -56,6 +56,9 @@ class CameraViews:
             raise ValueError("Invalid camera arm command estimate")
         goal=list(VIEWS[view])+[start[5]]
         geometry=self.geometry(goal)
+        axis=geometry.get("optical_axis_base_estimate")
+        if view!="forward" and (axis is None or (axis[1] if view=="left" else -axis[1])<.2):
+            raise ValueError("Camera view disagrees with base-frame left/right")
         self.state=dict(phase="positioning",view=view,measured_joints=False)
         try:
             if max(abs(a-b) for a,b in zip(start,goal))>.5:

@@ -25,6 +25,13 @@ class StationaryUpdates(unittest.TestCase):
     def test_invalid_imu_not_published(self):
         f=self.ready();self.assertEqual(f.correct([0.,0.,float('nan')],[0.,0.,9.81],2.12),(None,False))
 
+    def test_impossible_gyro_impulse_is_dropped_before_heading_filter(self):
+        f=self.ready()
+        before=f.bias
+        self.assertEqual(f.correct([0.,0.,14.998615],[0.,0.,9.81],2.12),(None,False))
+        self.assertEqual(f.bias,before)
+        self.assertEqual(f.correct([0.,0.,.004],[0.,0.,9.81],2.17)[0],.004-before)
+
     def test_factory_sparse_zero_packets_use_only_fresh_controller_evidence(self):
         from stationary_gyro import StationaryGyro
         gyro=StationaryGyro(0.)
@@ -36,3 +43,13 @@ class StationaryUpdates(unittest.TestCase):
         self.assertFalse(gyro.controller({"monotonic":1.,"velocity":[0.,0.,0.]},3.))
         gyro.wheel([0.,0.,0.],3.)
         self.assertFalse(gyro.correct([0.,0.,.005],[0.,0.,9.81],3.)[1])
+
+    def test_status_cadence_jitter_does_not_reset_one_second_rest_window(self):
+        f=StationaryGyro(0.)
+        result=None
+        for index in range(30):
+            at=1.+index*.05;f.wheel([0.,0.,0.],at)
+            if index%5==0:f.controller({"monotonic":at,"velocity":[0.,0.,0.]},at)
+            result=f.correct([0.,0.,.005],[0.,0.,9.81],at)
+        self.assertEqual(result,(0.,True))
+        self.assertFalse(f.correct([0.,0.,.005],[0.,0.,9.81],3.)[1])

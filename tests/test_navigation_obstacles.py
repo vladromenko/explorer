@@ -15,3 +15,9 @@ class SweptObstacleTests(unittest.TestCase):
     def test_rigid_self_returns_and_missing_evidence(self):
         self.assertFalse(swept_obstacle(self.points([.1,.1]),[.1,0.,0.],POLYGON))
         self.assertTrue(swept_obstacle([], [.1,0.,0.],POLYGON))
+    def test_margin_allows_escape_but_never_approach_or_hard_collision(self):
+        side=self.points([0.,-.18])
+        self.assertFalse(swept_obstacle(side,[.1,0.,0.],POLYGON))
+        self.assertTrue(swept_obstacle(side,[0.,-.1,0.],POLYGON))
+        self.assertFalse(swept_obstacle(self.points([-.195,-.172]),[.1,0.,0.],POLYGON))
+        self.assertTrue(swept_obstacle(self.points([0.,-.15]),[.1,0.,0.],POLYGON))

@@ -23,8 +23,13 @@ class StationaryGyro:
     def correct(self,gyro,acceleration,now):
         if not all(math.isfinite(v) for v in (*gyro,*acceleration)):
             self.started=None;return None,False
+        # The mobile base cannot turn at 5 rad/s under its accepted speed
+        # limits. Reject corrupt IMU frames rather than feeding an impossible
+        # angular impulse into the heading filter. Raw IMU stays untouched.
+        if max(abs(v) for v in gyro)>5. or math.sqrt(sum(v*v for v in acceleration))>40.:
+            self.started=None;return None,False
         still=(self.wheel_zero and self.command_zero and now-self.wheel_at<.25 and
-               now-self.command_at<.15 and now-self.last_motion>1. and
+               now-self.command_at<.35 and now-self.last_motion>1. and
                max(abs(gyro[0]),abs(gyro[1]),abs(gyro[2]-self.bias))<.025 and
                9.2<math.sqrt(sum(v*v for v in acceleration))<10.4)
         if not still:self.started=None

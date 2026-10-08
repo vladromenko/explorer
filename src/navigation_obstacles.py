@@ -20,12 +20,19 @@ def swept_obstacle(points,velocity,polygon,horizon=.8,margin=.04):
     # Only the rigid chassis volume is self-filtered, not the arm reach envelope.
     outside=(np.abs(a[:,0])>.153)|(np.abs(a[:,1])>.111)
     a=a[outside]
-    lower=np.min(polygon,axis=0)-margin;upper=np.max(polygon,axis=0)+margin
+    lower=np.min(polygon,axis=0);upper=np.max(polygon,axis=0)
+    def distance(local):return np.linalg.norm(np.maximum(np.maximum(lower-local,local-upper),0.),axis=1)
+    initial=distance(a)
+    if np.any(initial<1e-6):return True
     vx,vy,wz=velocity
     for t in np.linspace(0,horizon,9):
         angle=wz*t;c=math.cos(angle);s=math.sin(angle)
         if abs(wz)<1e-6:dx,dy=vx*t,vy*t
         else:dx=(vx*s-vy*(1-c))/wz;dy=(vx*(1-c)+vy*s)/wz
         delta=a-[dx,dy];local=delta@np.array([[c,-s],[s,c]])
-        if np.any(np.all((local>=lower)&(local<=upper),axis=1)):return True
+        gap=distance(local)
+        # A return already in the extra margin may be passed or moved away
+        # from, never approached. The hard accepted footprint remains blocked.
+        collision=(gap<1e-6)|((initial>margin)&(gap<=margin))|((initial<=margin)&(gap<initial-1e-6))
+        if np.any(collision):return True
     return False

@@ -1,6 +1,6 @@
 import unittest,copy,threading,math
 from types import SimpleNamespace
-from missions import Missions,readiness,navigation_attained,FLAGS
+from missions import Missions,readiness,navigation_attained,navigation_position_attained,FLAGS
 class MissionReadinessTest(unittest.TestCase):
     def ready(self):return dict(at=100,stop_latched=False,mode='AUTONOMOUS',commissioning=dict.fromkeys(FLAGS,True),sensor_age=dict.fromkeys(['imu','odom','scan0','scan1','battery'],0),battery=12,reason='COMMAND EXPIRED')
     def test_each_missing_prerequisite_blocks(self):
@@ -33,3 +33,9 @@ class MissionReadinessTest(unittest.TestCase):
         self.assertFalse(navigation_attained(dict(x=0,y=0,yaw=.16),0,0,0))
         self.assertFalse(navigation_attained(dict(x=.16,y=0,yaw=0),0,0,0))
         self.assertFalse(navigation_attained(dict(x=math.nan,y=0,yaw=0),0,0,0))
+
+    def test_explicit_holonomic_waypoint_checks_position_without_claiming_yaw(self):
+        pose=dict(x=.95,y=.47,yaw=.70)
+        self.assertTrue(navigation_position_attained(pose,.95,.39))
+        self.assertFalse(navigation_attained(pose,.95,.39,.49))
+        self.assertFalse(navigation_position_attained(pose,1.2,.39))

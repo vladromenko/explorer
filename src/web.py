@@ -1073,8 +1073,8 @@ def reference_planner():
     global arm_planner
     with arm_planner_lock:
         if arm_planner is None:
-            from arm_planner import ArmPlanner
-            arm_planner=ArmPlanner()
+            from arm_planner_client import ArmPlannerClient
+            arm_planner=ArmPlannerClient(ROOT)
     return arm_planner
 
 @app.post('/api/arm/plan')
@@ -1133,6 +1133,17 @@ def navigation_prepare(permit):
                 acknowledged=True
             else:time.sleep(.02)
         if not acknowledged:raise ValueError("Контроллер не подтвердил режим поездки")
+    # Selecting AUTO resets the preceding STOP/hold state. Establish a real
+    # measured hold before the initial side views; no mission exists yet.
+    permit();emit("hold_base",initiator="room_task")
+    deadline=time.monotonic()+3
+    while time.monotonic()<deadline:
+        permit();state=missions.state()
+        velocity=state.get("odom_velocity",[])
+        if (0<=time.time()-state.get("at",0)<.9 and state.get("base_hold_confirmed") is True and
+                len(velocity)==3 and all(abs(value)<limit for value,limit in zip(velocity,[.005,.005,.02]))):break
+        time.sleep(.05)
+    else:raise ValueError("Шасси не подтвердило удержание перед обзором камеры")
     missions.require_ready("mapping")
 
 
@@ -1168,6 +1179,8 @@ class NavigationTaskRequest(BaseModel):
     places:list[str]=Field(default_factory=list,max_length=12)
     object_query:str|None=None
     max_goals:int=Field(default=20,ge=1,le=20)
+    holonomic:bool=False
+    position_only:bool=False
 
 @app.get("/api/navigation/tasks")
 def room_tasks_status():return dict(**navigation_tasks.status(),camera=camera_views.status())

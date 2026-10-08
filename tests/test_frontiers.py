@@ -1,6 +1,6 @@
 import unittest
 import numpy as np
-from frontiers import candidates
+from frontiers import candidates, departure_candidate
 
 class FrontiersTest(unittest.TestCase):
     def test_unknown_not_traversed(self):
@@ -39,3 +39,20 @@ class FrontiersTest(unittest.TestCase):
         points=candidates(g,.05,[0,0],pose,footprint=[[-.18,-.16],[.29,-.16],[.29,.16],[-.18,.16]])
         self.assertTrue(points)
         self.assertTrue(all(g[int(p["y"]/.05),int(p["x"]/.05)]==0 for p in points))
+
+    def test_near_obstacle_start_only_proposes_known_free_forward_departure(self):
+        g=np.full((60,100),-1);g[10:50,10:90]=0;g[30,12]=100
+        footprint=[[-.18,-.16],[.29,-.16],[.29,.16],[-.18,.16]]
+        proposal=departure_candidate(g,.05,[0,0],[.775,1.525],footprint,0.)
+        self.assertIsNotNone(proposal)
+        self.assertGreaterEqual(proposal["distance_m"],.25)
+        self.assertEqual(proposal["policy"],"known_free_forward_staging")
+        g[30,15]=100
+        self.assertIsNone(departure_candidate(g,.05,[0,0],[.775,1.525],footprint,0.))
+
+    def test_mapping_goal_uses_current_heading_and_arm_pan_for_view(self):
+        g=np.full((60,90),-1);g[5:55,5:75]=0
+        footprint=[[-.18,-.16],[.29,-.16],[.29,.16],[-.18,.16]]
+        goals=candidates(g,.05,[0,0],[1.,1.],footprint=footprint,heading=.27)
+        self.assertTrue(goals)
+        self.assertTrue(all(abs(goal["yaw"]-.27)<1e-9 for goal in goals))

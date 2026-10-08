@@ -16,6 +16,35 @@ def footprint_kernel(polygon,resolution,yaw,padding=.02):
     return touched.reshape(xs.shape)
 
 
+def departure_candidate(grid,resolution,origin,pose,footprint,heading,origin_yaw=0.):
+    """Find a short known-free forward staging point when the start touches a mapped obstacle.
+
+    This proposes a target only. Nav2's live local collision check and the
+    independent controller lidar guard still decide whether movement occurs.
+    """
+    a=np.asarray(grid,dtype=np.int16)
+    if a.ndim!=2 or not a.size or not math.isfinite(resolution) or resolution<=0:return None
+    if not all(math.isfinite(v) for v in (*origin,*pose,heading,origin_yaw)):return None
+    c,s=math.cos(origin_yaw),math.sin(origin_yaw)
+    def cell(x,y):
+        dx=x-origin[0];dy=y-origin[1]
+        return int(math.floor((c*dx+s*dy)/resolution)),int(math.floor((-s*dx+c*dy)/resolution))
+    sx,sy=cell(*pose)
+    h,w=a.shape
+    if not (0<=sx<w and 0<=sy<h) or a[sy,sx]!=0:return None
+    allowed=binary_erosion(a==0,footprint_kernel(footprint,resolution,heading-origin_yaw),border_value=0)
+    if allowed[sy,sx]:return None
+    forward=(math.cos(heading),math.sin(heading))
+    for distance in (.25,.30,.35,.40):
+        x=pose[0]+distance*forward[0];y=pose[1]+distance*forward[1]
+        tx,ty=cell(x,y)
+        if 0<=tx<w and 0<=ty<h and allowed[ty,tx]:
+            samples=[cell(pose[0]+q*forward[0],pose[1]+q*forward[1]) for q in np.linspace(0,distance,max(2,int(math.ceil(distance/resolution))*2))]
+            if all(0<=ix<w and 0<=iy<h and a[iy,ix]==0 for ix,iy in samples):
+                return dict(x=x,y=y,yaw=heading,distance_m=distance,policy="known_free_forward_staging")
+    return None
+
+
 def candidates(grid,resolution,origin,pose,radius=.38,origin_yaw=0.,footprint=None,heading=0.):
     a=np.asarray(grid,dtype=np.int16)
     if a.ndim!=2 or not a.size or a.size>4_000_000 or not math.isfinite(resolution) or resolution<=0:raise ValueError('Invalid occupancy grid')
@@ -40,7 +69,11 @@ def candidates(grid,resolution,origin,pose,radius=.38,origin_yaw=0.,footprint=No
                 distances[ny,nx]=d+resolution;heapq.heappush(queue,(d+resolution,ny,nx))
     frontier=free&binary_dilation(unknown)
     groups,count=label(frontier,np.ones((3,3),dtype=int));out=[]
-    reachable=np.isfinite(distances)&(distances>.25)
+    ys_all,xs_all=np.indices(a.shape)
+    # A winding free-cell route must not turn a nearly coincident point into
+    # an in-place rotation goal beside an obstacle.
+    radial=np.hypot((xs_all+.5)*resolution-local_pose[0],(ys_all+.5)*resolution-local_pose[1])
+    reachable=np.isfinite(distances)&(distances>.25)&(radial>=.30)
     for i in range(1,count+1):
         region=groups==i;n=int(region.sum())
         if n*resolution<.3:continue
@@ -54,8 +87,12 @@ def candidates(grid,resolution,origin,pose,radius=.38,origin_yaw=0.,footprint=No
         risk=1/(.05+max(0.,margin))
         utility=float(n*resolution/(1+score[y,x]+.08*risk))
         lx=(x+.5)*resolution;ly=(y+.5)*resolution
+        # Mapping keeps the camera facing along the accepted chassis heading;
+        # the stopped arm pans toward frontier sides after arrival. A forced
+        # turn at a close frontier can sweep the arm into adjacent furniture.
+        target_yaw=heading if footprint is not None else math.atan2(cy-y,cx-x)+origin_yaw
         out.append(dict(x=origin[0]+cosine*lx-sine*ly,y=origin[1]+sine*lx+cosine*ly,
-                        yaw=math.atan2(cy-y,cx-x)+origin_yaw,path_distance_m=float(distances[y,x]),
+                        yaw=target_yaw,path_distance_m=float(distances[y,x]),
                         frontier_cells=n,information_gain_cells=n,clearance_m=float(clearance[y,x]),
                         risk_cost=float(risk),score=utility,
                         policy='risk_adjusted_information_gain'))

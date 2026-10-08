@@ -11,3 +11,8 @@ def departure_heading(points,pose):
     target=next((point for point in points if math.hypot(point[0]-x,point[1]-y)>=.15),points[-1])
     if math.hypot(target[0]-x,target[1]-y)<.01:return pose["yaw"]
     return math.atan2(target[1]-y,target[0]-x)
+
+
+def reverse_without_turn(distance,angular_difference):
+    """Permit a short holonomic reverse path instead of an obstructed U-turn."""
+    return .15<distance<=1.5 and angular_difference>=2.35

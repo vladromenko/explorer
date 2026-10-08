@@ -141,8 +141,12 @@ class TrajectoryExecution:
 
     def stop(self):
         with self.state_lock:
+            planning=self.state.get("phase")=="planning"
             self.cancelled.set();self.lease=0
             self.state.update(phase='stopping' if self.lock.locked() else 'stopped',reached=False,reason='Движение отменено')
+        if planning:
+            planner=self.planner()
+            if hasattr(planner,"cancel"):planner.cancel()
         self.manual.stop()
         return dict(stopping=True,cancel_requested=True,physical_stop_confirmed=False)
 

@@ -3,7 +3,7 @@ import tempfile
 import time
 from types import SimpleNamespace
 import unittest
-from navigation_tasks import NavigationTasks
+from navigation_tasks import NavigationTasks, return_waypoints
 
 class RoomTasksTests(unittest.TestCase):
     def setUp(self):
@@ -27,6 +27,8 @@ class RoomTasksTests(unittest.TestCase):
         for spec in ({"kind":"map_room","map_name":None,"observing":True},
                      {"kind":"map_room","map_name":"test"}):
             with self.assertRaises(ValueError):self.tasks.start(spec)
+        with self.assertRaises(ValueError):
+            self.tasks.start(dict(kind="navigate_current",x=1.,y=2.,yaw=0.,position_only=True,observing=True))
     def test_cancel_does_not_cancel_some_other_navigation_owner(self):
         self.missions.status=lambda:{"active":{"id":"someone_else"}}
         self.tasks.owned_mission="own";self.tasks.cancel()
@@ -59,6 +61,72 @@ class RoomTasksTests(unittest.TestCase):
         self.tasks.start(dict(kind="survey_room",observing=True));self.wait()
         self.assertEqual(self.tasks.status()["last"]["state"],"failed")
         self.assertIn("camera movement failed",self.tasks.status()["last"]["reason"])
+
+    def test_near_obstacle_departure_returns_to_clear_staging_pose(self):
+        calls=[];latest={}
+        original={"x":0.,"y":0.,"yaw":0.}
+        clear={"x":.3,"y":0.,"yaw":0.}
+        self.maps.pose=lambda:original
+        self.maps.epoch=lambda:"epoch"
+        self.maps.save=lambda name:{"name":name}
+        self.missions.state=lambda:{"stop_latched":True}
+        self.missions.observe_views=None
+        def mission(kind,*args,**kwargs):
+            identifier=str(len(calls));calls.append((kind,args))
+            details={"visited":0,"staging":{"pose":clear,"moved_m":.3}} if kind=="explore" else clear
+            latest.update(id=identifier,state="no_reachable_frontier" if kind=="explore" else "succeeded",details=details)
+            return {"id":identifier}
+        self.missions.start=mission
+        self.missions.status=lambda:{"active":None,"last":latest}
+        self.tasks.start(dict(kind="map_room",map_name="staged",observing=True,max_goals=1));self.wait()
+        result=self.tasks.status()["last"]
+        self.assertEqual(calls[1][1],(.3,0.,0.))
+        self.assertTrue(result["result"]["navigation_executed"])
+        self.assertTrue(result["result"]["return_target_was_safe_departure"])
+
+    def test_failed_frontier_with_real_motion_is_reported_as_executed(self):
+        state={"last":None}
+        self.maps.pose=lambda:{"x":1.,"y":2.,"yaw":0.}
+        self.maps.epoch=lambda:"epoch"
+        self.maps.save=lambda name:{"name":name}
+        self.missions.state=lambda:{"stop_latched":True}
+        self.missions.observe_views=None
+        def mission(kind,*args,**kwargs):
+            identifier="explore" if kind=="explore" else "return"
+            details={"visited":0,"physical_motion_m":.32,"failed_frontiers":[[1.3,2.]]} if kind=="explore" else self.maps.pose()
+            state["last"]=dict(id=identifier,state="limit_reached" if kind=="explore" else "succeeded",details=details)
+            return {"id":identifier}
+        self.missions.start=mission
+        self.missions.status=lambda:{"active":None,"last":state["last"]}
+        self.tasks.start(dict(kind="map_room",map_name="motion",observing=True,max_goals=1));self.wait()
+        result=self.tasks.status()["last"]["result"]
+        self.assertTrue(result["navigation_executed"])
+        self.assertEqual(result["coverage"]["visited"],0)
+
+    def test_return_recovery_reverses_measured_corridor(self):
+        trace=[{"x":x,"y":0.,"yaw":0.} for x in (0.,.2,.4,.6,.8,1.)]
+        waypoints=return_waypoints(trace,{"x":.83,"y":0.,"yaw":.1},{"x":0.,"y":0.,"yaw":0.})
+        self.assertEqual([(row["x"],row["yaw"]) for row in waypoints],[(.6,.1)])
+
+    def test_failed_return_stops_and_saves_map_as_partial(self):
+        state={"last":None}
+        self.maps.pose=lambda:{"x":0.,"y":0.,"yaw":0.}
+        self.maps.epoch=lambda:"epoch"
+        self.maps.save=lambda name:{"name":name}
+        self.missions.state=lambda:{"stop_latched":True}
+        self.missions.observe_views=None
+        def mission(kind,*args,**kwargs):
+            identifier="explore" if kind=="explore" else "return"
+            details={"visited":0,"travel_trace":[]} if kind=="explore" else {"reason":"obstacle"}
+            state["last"]=dict(id=identifier,state="no_reachable_frontier" if kind=="explore" else "failed",details=details)
+            return {"id":identifier}
+        self.missions.start=mission
+        self.missions.status=lambda:{"active":None,"last":state["last"]}
+        self.tasks.start(dict(kind="map_room",map_name="partial",observing=True,max_goals=1));self.wait()
+        final=self.tasks.status()["last"]
+        self.assertEqual(final["state"],"failed")
+        self.assertFalse(final["completed"])
+        self.assertEqual(final["result"]["saved_partial_map"],{"name":"partial"})
     def test_corrupt_record_does_not_break_restart_and_motion_never_resumes(self):
         folder=self.root/"data/navigation-tasks"
         (folder/"bad.json").write_text("{")

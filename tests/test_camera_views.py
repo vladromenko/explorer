@@ -7,8 +7,12 @@ from types import SimpleNamespace
 import unittest
 import numpy as np
 from camera_views import CameraViews,VIEWS
+from servo_coordinates import to_radians
 
 class CameraViewTests(unittest.TestCase):
+    def test_left_right_follow_factory_base_joint_sign(self):
+        self.assertGreater(to_radians(VIEWS["left"])[0],0.)
+        self.assertLess(to_radians(VIEWS["right"])[0],0.)
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
         self.root=Path(self.temp.name);(self.root/"data").mkdir();(self.root/"config").mkdir()

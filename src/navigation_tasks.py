@@ -1,6 +1,7 @@
 """Persistent, deterministic room jobs over the existing Nav2 mission owner."""
 import copy
 import json
+import math
 from pathlib import Path
 import re
 import threading
@@ -15,6 +16,22 @@ CATALOG=[
  {"id":"navigate_current","name":"Поехать к точке текущей карты","description":"Медленно проехать по безопасному пути к указанным x/y. Использует непрерывный SLAM.","parameters":["x","y","yaw"]},
  {"id":"patrol","name":"Обойти сохранённые места","description":"Поехать по выбранным местам этой карты, остановиться и сохранить наблюдение в каждом.","parameters":["places"]},
  {"id":"find_object","name":"Найти предмет без захвата","description":"Проверить камеру здесь и в выбранных сохранённых местах. Остановиться при обнаружении; захват не запускается.","parameters":["object_query","places"]}]
+
+
+def return_waypoints(trace,current,start,limit=4):
+    """Reverse a measured outbound corridor after a direct return was blocked."""
+    valid=[point for point in trace if isinstance(point,dict) and all(
+        type(point.get(key)) in (int,float) and math.isfinite(point[key]) for key in ("x","y","yaw"))]
+    if not valid:return []
+    nearest=min(range(len(valid)),key=lambda i:math.hypot(valid[i]["x"]-current["x"],valid[i]["y"]-current["y"]))
+    selected=[];anchor=current
+    for point in reversed(valid[:nearest+1]):
+        separation=math.hypot(point["x"]-anchor["x"],point["y"]-anchor["y"])
+        remaining=math.hypot(point["x"]-start["x"],point["y"]-start["y"])
+        if separation>=.22 and remaining>=.25 and len(selected)<limit:
+            selected.append(dict(x=point["x"],y=point["y"],yaw=current["yaw"]))
+            anchor=point
+    return selected
 
 
 class NavigationTasks:
@@ -45,6 +62,10 @@ class NavigationTasks:
             import math
             if any(type(spec.get(key)) not in (int,float) or not math.isfinite(spec[key]) for key in ("x","y","yaw")):
                 raise ValueError("Нужны конечные координаты x, y, yaw")
+            if type(spec.get("holonomic",False)) is not bool or type(spec.get("position_only",False)) is not bool:
+                raise ValueError("Неверный режим движения к точке")
+            if spec.get("position_only",False) and not spec.get("holonomic",False):
+                raise ValueError("Проверка только x/y требует движения без разворота")
         if kind in ("patrol","find_object"):
             places=spec.get("places",[])
             if not isinstance(places,list) or len(places)>12 or any(not isinstance(name,str) for name in places):raise ValueError("Выберите до 12 мест")
@@ -117,11 +138,33 @@ class NavigationTasks:
                     self.event(identifier,"initial_observations",initial)
                 navigation=self.await_mission(identifier,self.missions.start("explore",scope="mapping",max_goals=spec.get("max_goals",20)))
                 self.event(identifier,"exploration",navigation)
-                self.await_mission(identifier,self.missions.start("navigate",start["x"],start["y"],start["yaw"],scope="mapping"))
-                self.event(identifier,"returned_to_start",self.maps.pose())
+                staging=(navigation.get("details") or {}).get("staging")
+                return_pose=staging["pose"] if staging else start
+                if staging:self.event(identifier,"safe_departure_start",staging)
+                try:
+                    self.await_mission(identifier,self.missions.start("navigate",return_pose["x"],return_pose["y"],return_pose["yaw"],scope="mapping"))
+                except ValueError as direct_error:
+                    current=self.maps.pose()
+                    waypoints=return_waypoints((navigation.get("details") or {}).get("travel_trace",[]),current,return_pose)
+                    self.event(identifier,"return_recovery",dict(reason=str(direct_error),waypoints=waypoints))
+                    if not waypoints:raise
+                    for waypoint in waypoints:
+                        self.permit(identifier)
+                        self.await_mission(identifier,self.missions.start("navigate",waypoint["x"],waypoint["y"],waypoint["yaw"],scope="mapping",position_only=True,holonomic=True))
+                        self.event(identifier,"return_waypoint",self.maps.pose())
+                    self.await_mission(identifier,self.missions.start("navigate",return_pose["x"],return_pose["y"],return_pose["yaw"],scope="mapping",position_only=True,holonomic=True))
+                returned=self.maps.pose()
+                heading_error=abs(math.atan2(math.sin(returned["yaw"]-return_pose["yaw"]),math.cos(returned["yaw"]-return_pose["yaw"])))
+                self.event(identifier,"returned_to_start",dict(pose=returned,return_target=return_pose,
+                    return_orientation_verified=heading_error<=.15))
                 result["coverage"]=navigation["details"];result["entire_apartment_verified"]=False
+                result["return_orientation_verified"]=heading_error<=.15
+                result["navigation_executed"]=bool((navigation.get("details") or {}).get("visited",0) or staging or
+                    (navigation.get("details") or {}).get("physical_motion_m",0)>.05)
+                result["return_target_was_safe_departure"]=bool(staging)
             elif kind=="navigate_current":
-                result=self.await_mission(identifier,self.missions.start("navigate",spec["x"],spec["y"],spec["yaw"],scope="mapping"))
+                result=self.await_mission(identifier,self.missions.start("navigate",spec["x"],spec["y"],spec["yaw"],scope="mapping",
+                    position_only=spec.get("position_only",False),holonomic=spec.get("holonomic",False)))
             else:
                 found=self.search(identifier,spec["object_query"]) if kind=="find_object" else False
                 for name in spec.get("places",[]):
@@ -152,6 +195,11 @@ class NavigationTasks:
             except Exception as exc:reason=(reason or "")+"; stop error: "+str(exc);outcome="failed"
             try:self.release()
             except Exception as exc:reason=(reason or "")+"; footprint restore: "+str(exc);outcome="failed"
+            if outcome=="failed" and not self.cancelled.is_set() and self.active and self.active["id"]==identifier:
+                spec=self.active["spec"]
+                if spec["kind"]=="map_room" and any(row["phase"]=="exploration" for row in self.active["events"]):
+                    try:result["saved_partial_map"]=self.maps.save(spec["map_name"])
+                    except Exception as exc:reason=(reason or "")+"; partial map save: "+str(exc)
             with self.lock:
                 if self.active and self.active["id"]==identifier:
                     self.active.update(state="cancelled" if self.cancelled.is_set() else outcome,

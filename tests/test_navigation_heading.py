@@ -1,6 +1,6 @@
 import math
 import unittest
-from navigation_heading import departure_heading
+from navigation_heading import departure_heading, reverse_without_turn
 
 
 class HeadingTests(unittest.TestCase):
@@ -14,3 +14,8 @@ class HeadingTests(unittest.TestCase):
         self.assertEqual(departure_heading([[1.,2.]],pose),.8)
         for points in ([],[[float("nan"),0.]],[[1.]]):
             with self.assertRaises(ValueError):departure_heading(points,pose)
+
+    def test_short_reverse_does_not_require_turning_near_furniture(self):
+        self.assertTrue(reverse_without_turn(.8,math.pi))
+        self.assertFalse(reverse_without_turn(2.,math.pi))
+        self.assertFalse(reverse_without_turn(.8,math.pi/2))
