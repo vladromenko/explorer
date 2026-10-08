@@ -21,6 +21,7 @@ class GamepadPanel:
         self.lock = threading.RLock()
         self.connected = False
         self.keys = set()
+        self.pending_arm_taps = set()
         self.axes = {}
         self.mode = 'DISARMED'
         self.arm_mode = 'cartesian'
@@ -30,6 +31,7 @@ class GamepadPanel:
         self.error = None
         self.sequence = 0
         self.precision = False
+        self.arm_speed = 'normal'
         self.proposal = None
         self.drive_active = False
         self.drive_vector = [0.0, 0.0, 0.0]
@@ -54,7 +56,7 @@ class GamepadPanel:
                 sequence=self.sequence, error=self.error, proposal=self.proposal, drive_blocked_by=self.drive_readiness(),
                 drive_velocity=self.teleop._drive_vector(self._inputs(), self.precision), precision=self.precision,
                 drive_profile='precision' if self.precision else 'normal',
-                arm_speed='precision' if self.precision else 'normal', control_scheme='explorer-manual-v2',
+                arm_speed='precision' if self.precision else self.arm_speed, control_scheme='explorer-manual-v2',
                 shared_backend=self.teleop.status())
 
     def heartbeat(self, enabled):
@@ -62,6 +64,7 @@ class GamepadPanel:
             self.lease = time.monotonic()+1.0 if enabled is True else 0.0
             if not enabled:
                 self.mode = 'DISARMED'
+                self.pending_arm_taps.clear()
                 self.teleop.disconnect('gamepad')
         return self.status()
 
@@ -75,16 +78,22 @@ class GamepadPanel:
                 raise ValueError('Сначала включите панель джойстика')
             if mode == 'DISARMED':
                 self.mode = mode
+                self.pending_arm_taps.clear()
                 self.teleop.disconnect('gamepad')
                 return self.status()
             if self._moving():
                 raise ValueError('Отпустите стики и кнопки движения, затем повторите')
             self.mode = 'TELEOP'
+            if arm_speed not in (None,'normal','fast','precision'):
+                raise ValueError('Неизвестная скорость руки')
             self.precision = drive_profile == 'precision' or arm_speed == 'precision'
+            self.arm_speed = 'fast' if arm_speed == 'fast' else 'normal'
             self.arm_mode = 'cartesian'
             self.arm_neutral_required = False
+            self.pending_arm_taps.clear()
             self.teleop.select_source('gamepad', True, True)
             self.teleop.set_arm_mode('gamepad', self.arm_mode)
+            self.teleop.set_arm_speed('gamepad', self.arm_speed)
             self.teleop.update('gamepad', {}, True, self.precision)
         return self.status()
 
@@ -92,6 +101,16 @@ class GamepadPanel:
         item = self.config['axes'][name]
         value = self.axes.get(str(item['code']), item['center'])
         return axis_value(value, item, self.config['deadzone'])
+
+    def set_arm_speed(self, speed):
+        if speed not in ('normal','fast'):
+            raise ValueError('Неизвестная скорость руки')
+        with self.lock:
+            if self.teleop.owner != 'gamepad':
+                raise ValueError('Сначала выберите джойстик')
+            self.arm_speed = speed
+            self.teleop.set_arm_speed('gamepad', speed)
+        return self.status()
 
     def _drive_axis(self, value):
         expo = float(self.config.get('drive_expo', 0.5))
@@ -135,10 +154,16 @@ class GamepadPanel:
         if kind == 1:
             if value == 1:
                 self.keys.add(code)
+                if code in (b['y'], b['a']):
+                    self.pending_arm_taps.add(code)
             elif value == 0:
                 self.keys.discard(code)
             if value == 1 and code == b['x']:
                 self.precision = not self.precision
+            if value == 1 and code == b['right_stick']:
+                self.arm_speed = 'normal' if self.arm_speed == 'fast' else 'fast'
+                if self.teleop.owner == 'gamepad':
+                    self.teleop.set_arm_speed('gamepad', self.arm_speed)
             if value == 1 and code == b['select']:
                 self.arm_mode = 'joint' if self.arm_mode == 'cartesian' else 'cartesian'
                 self.arm_neutral_required = not self._arm_controls_neutral()
@@ -146,6 +171,7 @@ class GamepadPanel:
                     self.teleop.set_arm_mode('gamepad', self.arm_mode)
             if value == 1 and code == b['b']:
                 self.mode = 'DISARMED'
+                self.pending_arm_taps.clear()
                 self.teleop.stop()
             if value == 1 and code == b['start'] and b['b'] not in self.keys:
                 if self.teleop.owner != 'gamepad':
@@ -153,6 +179,7 @@ class GamepadPanel:
                         raise ValueError('Сначала отпустите все органы движения')
                     self.teleop.select_source('gamepad', True, True)
                     self.teleop.set_arm_mode('gamepad', self.arm_mode)
+                    self.teleop.set_arm_speed('gamepad', self.arm_speed)
                 self.teleop.update('gamepad', self._inputs(), True, self.precision)
                 self.teleop.resume('gamepad', True)
                 self.mode = 'TELEOP'
@@ -166,9 +193,16 @@ class GamepadPanel:
             if self.arm_neutral_required and self._arm_controls_neutral():
                 self.arm_neutral_required = False
             if self.mode == 'TELEOP' and now < self.lease and self.teleop.owner == 'gamepad':
-                self.teleop.update('gamepad', self._inputs() if fresh else {}, True, self.precision)
+                values = self._inputs() if fresh else {}
+                if fresh and not self.arm_neutral_required:
+                    for code in self.pending_arm_taps - self.keys:
+                        action = ('arm_z_up' if code == self.config['buttons']['y'] else 'arm_z_down') if self.arm_mode == 'cartesian' else ('joint3_increase' if code == self.config['buttons']['y'] else 'joint3_decrease')
+                        values[action] = 1.0
+                self.pending_arm_taps.clear()
+                self.teleop.update('gamepad', values, True, self.precision)
             elif self.mode != 'DISARMED':
                 self.mode = 'DISARMED'
+                self.pending_arm_taps.clear()
                 self.teleop.disconnect('gamepad')
 
     def drive_tick(self, now):
@@ -198,6 +232,7 @@ class GamepadPanel:
                         self.connected = True
                         self.mode = 'DISARMED'
                         self.keys.clear()
+                        self.pending_arm_taps.clear()
                         self.error = None
                         self.axes = {str(axis['code']): device.absinfo(axis['code']).value for axis in self.config['axes'].values()}
                     while True:
@@ -217,5 +252,6 @@ class GamepadPanel:
                     self.connected = False
                     self.mode = 'DISARMED'
                     self.keys.clear()
+                    self.pending_arm_taps.clear()
                     self.error = str(exc)
                 time.sleep(2)

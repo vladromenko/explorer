@@ -160,7 +160,7 @@ class TelegramBridge:
 
     def reply(self,chat,text,markup=None):
         keyboard=markup or {'keyboard':[[{'text':x} for x in row] for row in
-            [('Состояние','Камера'),('Управление','Обучение'),('Карта','Эксперименты'),('Помощь','Остановить')]],
+            [('Состояние','Камера'),('Управление','Обучение'),('Карта','Телефон'),('Помощь','Остановить')]],
             'resize_keyboard':True}
         self.telegram('sendMessage',dict(chat_id=chat,text=text[:3900],reply_markup=keyboard,
             link_preview_options={'is_disabled':True}),timeout=8)
@@ -212,7 +212,7 @@ class TelegramBridge:
             result=self.api(path,payload)
             self.reply(item['chat_id'],'Передняя подсветка: '+result['rgb_mode']+'\nКоманда: /lights auto|off|headlights|work|search|success|error|gradient');return
         if path=='skills':
-            self.reply(item['chat_id'],'Функции: карта и frontier exploration; поездки к сохранённым местам; поиск предметов GroundingDINO/YOLO; память «где видел»; ручное управление шасси и 6 суставами; запись полного показа подъехать→взять→перевезти→положить; офлайн LeRobot ACT после 10+ успешных показов; эксперименты /experiments. Автономный навык включается только после проверки модели.')
+            self.reply(item['chat_id'],'Функции: карта и ограниченное исследование; поездки к сохранённым местам; поиск предметов GroundingDINO/YOLO; память «где видел»; ручное управление шасси и 6 суставами; запись полного показа подъехать→взять→перевезти→положить; офлайн LeRobot ACT после успешных показов. Автономный навык включается только после проверки модели.')
             return
         if path=='autonomy/jobs':
             payload['request_id']='tg-'+str(item['chat_id'])+'-'+str(int(item['at']))
@@ -263,9 +263,9 @@ class TelegramBridge:
         me=self.telegram('getMe',{})
         if me['id']!=self.config.get('bot_id',8850343219):raise ValueError('Unexpected bot ID')
         if self.telegram('getWebhookInfo',{}).get('url'):raise ValueError('Existing webhook; no changes made')
-        names={'/status':'Состояние','/camera':'Камера','/control':'Управление','/map':'Карта и лидары','/experiments':'Эксперименты','/memory':'Память',
+        names={'/status':'Состояние','/camera':'Камера','/control':'Управление','/map':'Карта и лидары','/memory':'Память',
                '/skills':'Функции и обучение','/explore':'Осмотреть и вернуться','/maproom':'Построить и сохранить карту','/patrol':'Обойти сохранённые места','/task':'Состояние поездки','/cancel':'Отменить поездку','/mobile':'Телефонная панель',
-               '/learn':'Обучение','/autonomy':'Автономные задачи','/lights':'Передняя подсветка','/results':'Результаты','/stop':'Остановить'}
+               '/learn':'Обучение','/autonomy':'Автономные задачи','/lights':'Передняя подсветка','/stop':'Остановить'}
         self.telegram('setMyCommands',{'commands':[{'command':k[1:],'description':v} for k,v in names.items()]})
         labels={v:k for k,v in names.items()}
         labels['Телефон']='/mobile'

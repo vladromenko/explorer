@@ -70,5 +70,21 @@ class ManualTeleopTests(unittest.TestCase):
         panel._prepare_arm_segment_locked({},10.2,False)
         self.assertEqual(panel.joint_residual,[0.0]*6)
 
+    def test_fast_arm_speed_is_independent_of_base_and_short_y_a_is_not_lost(self):
+        panel=self.panel();self.select(panel);panel.set_arm_mode('keyboard','joint')
+        normal_base=panel._drive_vector({'forward':1.},False)
+        panel.set_arm_speed('keyboard','fast')
+        self.assertEqual(panel.status()['arm_speed'],'fast')
+        self.assertEqual(panel._drive_vector({'forward':1.},False),normal_base)
+        panel.last_integrator=10.;panel.arm_busy=True
+        panel.update('keyboard',{'joint3_increase':1.},True)
+        self.assertIsNone(panel._prepare_arm_segment_locked({'joint3_increase':1.},10.05,False))
+        panel.update('keyboard',{},True)
+        panel.arm_busy=False
+        segment=panel._prepare_arm_segment_locked({},10.10,False)
+        self.assertIsNotNone(segment)
+        self.assertGreaterEqual(segment[1][2],1)
+        self.assertLessEqual(segment[1][2],6)
+
 
 if __name__=='__main__':unittest.main()

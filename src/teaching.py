@@ -130,10 +130,10 @@ class TeachingController:
             return dict(proposal,executed=True,command=result,attainment_verified=result.get('attained') is True)
         finally:self.lock.release()
 
-    def teleop(self,model,xyz_delta,joint_delta,observing,deadline=None,precision=False,arm_mode='cartesian'):
+    def teleop(self,model,xyz_delta,joint_delta,observing,deadline=None,precision=False,arm_mode='cartesian',arm_speed='normal'):
         """Execute one bounded segment already integrated from proportional input."""
         if observing is not True:raise ValueError('Подтвердите присутствие рядом с роботом')
-        if arm_mode not in ('cartesian','joint') or len(xyz_delta)!=3 or len(joint_delta)!=6:
+        if arm_mode not in ('cartesian','joint') or arm_speed not in ('normal','fast') or len(xyz_delta)!=3 or len(joint_delta)!=6:
             raise ValueError('Неверный вектор teleop')
         if not all(math.isfinite(float(v)) for v in xyz_delta) or any(type(v) is not int for v in joint_delta):
             raise ValueError('Неверный шаг teleop')
@@ -153,7 +153,7 @@ class TeachingController:
             if goal==pose:raise ValueError('Нет исполнимого движения руки')
             revision=self.stop_revision()
             result=self.move(pose,goal,deadline=deadline,expected_stop_revision=revision,
-                             source='coordinated_operator',speed='precision' if precision else 'teleop')
+                             source='coordinated_operator',speed='precision' if precision else 'teleop_fast' if arm_speed=='fast' else 'teleop')
             if xyz_error:result['cartesian_rejected']=xyz_error
             return result
         finally:self.lock.release()

@@ -47,6 +47,7 @@ def scheme():
             "common": dict(BASE_KEYS), "cartesian": dict(CARTESIAN_KEYS), "joint": dict(JOINT_KEYS),
             "precision": ["ShiftLeft", "ShiftRight"], "stop": ["Space", "Escape"],
             "resume": "Enter", "mode": dict(MODE_KEYS),
+            "arm_speed": {"slower": "Minus", "faster": "Equal"},
         },
         "gamepad": {
             "common": {
@@ -54,15 +55,16 @@ def scheme():
                 "r1": "поворот шасси вправо", "l2": "открывать захват",
                 "r2": "закрывать захват", "x": "точный режим", "b": "STOP",
                 "start": "возобновить", "select": "сменить режим руки",
+                "right_stick_click": "переключить скорость руки обычная/быстрая",
             },
             "cartesian": {"right_stick_y": "X", "right_stick_x": "Y", "y_a": "Z"},
             "joint": {"right_stick_x": "J1", "right_stick_y": "J2", "y_a": "J3", "dpad_y": "J4", "dpad_x": "J5"},
         },
         "help": {
-            "keyboard_common": "W/S — вперёд/назад; A/D — mecanum влево/вправо; Q/E — поворот; N/M — открыть/закрыть захват.",
+            "keyboard_common": "W/S — вперёд/назад; A/D — mecanum влево/вправо; Q/E — поворот; N/M — открыть/закрыть захват; −/+ — обычная/быстрая скорость руки.",
             "keyboard_cartesian": "I/K — X вперёд/назад; J/L — Y влево/вправо; U/O — Z вверх/вниз.",
             "keyboard_joint": "J/L — J1−/+; I/K — J2+/−; U/O — J3+/−; Y/H — J4+/−; ,/. — J5−/+.",
-            "gamepad_common": "Левый стик — ход и mecanum; L1/R1 — поворот; L2/R2 — открыть/закрыть захват.",
+            "gamepad_common": "Левый стик — ход и mecanum; L1/R1 — поворот; L2/R2 — открыть/закрыть захват; нажатие правого стика — скорость руки.",
             "gamepad_cartesian": "Правый стик — X/Y; Y/A — Z вверх/вниз; крестовина не двигает руку.",
             "gamepad_joint": "Правый стик — J1/J2; Y/A — J3+/−; крестовина ↑/↓ — J4+/−, ←/→ — J5−/+.",
         },

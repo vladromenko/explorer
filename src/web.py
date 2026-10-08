@@ -266,6 +266,10 @@ class TeleopMode(BaseModel):
     source:str
     mode:str
 
+class TeleopSpeed(BaseModel):
+    source:str
+    speed:str
+
 class MobileStage(BaseModel):
     stage:str
 
@@ -431,6 +435,11 @@ def panel_lease(c:PanelLease):return gamepad_panel.heartbeat(c.enabled and c.obs
 @app.post('/api/gamepad/mode')
 def gamepad_mode(c:GamepadMode):return map_operation(gamepad_panel.select,c.mode,c.drive_profile,c.arm_speed)
 
+@app.post('/api/gamepad/arm-speed')
+def gamepad_arm_speed(c:TeleopSpeed):
+    if c.source!='gamepad':raise HTTPException(400,'Нужен выбранный джойстик')
+    return map_operation(gamepad_panel.set_arm_speed,c.speed)
+
 @app.get('/api/teleop')
 def teleop_status():return gamepad_panel.teleop.status()
 
@@ -444,6 +453,9 @@ def teleop_select(c:TeleopSelect):return map_operation(gamepad_panel.teleop.sele
 
 @app.post('/api/teleop/mode')
 def teleop_mode(c:TeleopMode):return map_operation(gamepad_panel.teleop.set_arm_mode,c.source,c.mode)
+
+@app.post('/api/teleop/speed')
+def teleop_speed(c:TeleopSpeed):return map_operation(gamepad_panel.teleop.set_arm_speed,c.source,c.speed)
 
 @app.post('/api/teleop/input')
 def teleop_input(c:TeleopInput):
@@ -1168,6 +1180,28 @@ def navigation_camera_guard(state):
 missions.camera_guard=navigation_camera_guard
 missions.observe_views=navigation_observe
 navigation_tasks=NavigationTasks(ROOT,missions,maps,navigation_prepare,navigation_stop,object_finder,camera_views,navigation_footprint.restore)
+from click_navigation import TargetFrames,safe_approach_step
+target_frames=TargetFrames(ROOT,maps.pose,maps.epoch)
+
+class CameraClick(BaseModel):
+    frame_id:str=Field(min_length=32,max_length=32)
+    u:float
+    v:float
+    observing:bool=False
+
+@app.get("/api/navigation/target-frame")
+def target_frame():
+    identifier,jpeg=map_operation(target_frames.capture)
+    return Response(jpeg,media_type="image/jpeg",headers={"Cache-Control":"no-store","X-Target-Frame-ID":identifier})
+
+@app.post("/api/navigation/click-target")
+def click_target(request:CameraClick):
+    if request.observing is not True:raise HTTPException(409,"Подтвердите наблюдение за роботом")
+    goal=map_operation(target_frames.goal,request.frame_id,request.u,request.v)
+    goal=map_operation(safe_approach_step,goal,maps.preview)
+    task=map_operation(navigation_tasks.start,dict(kind="navigate_current",x=goal["x"],y=goal["y"],
+        yaw=goal["yaw"],holonomic=True,position_only=True,observing=True,max_goals=1))
+    return dict(task=task,target=goal,claim="Короткий подход к выбранной глубине; класс предмета и захват не подтверждены")
 
 class NavigationTaskRequest(BaseModel):
     kind:str

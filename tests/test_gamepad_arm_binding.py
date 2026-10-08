@@ -59,6 +59,25 @@ class GamepadBindingTests(unittest.TestCase):
         self.panel.axes['1']=128;self.panel.keys.clear();self.panel.teleop.update('gamepad',{},True)
         self.press('start');self.assertFalse(self.panel.teleop.stop_latched)
 
+    def test_right_stick_click_changes_only_arm_speed_and_y_a_buttons_remain_live(self):
+        self.panel.select('TELEOP');base=self.panel.teleop._drive_vector({'forward':1.},False)
+        self.press('right_stick')
+        self.assertEqual(self.panel.status()['arm_speed'],'fast')
+        self.assertEqual(self.panel.teleop._drive_vector({'forward':1.},False),base)
+        self.press('y');self.assertEqual(self.panel._inputs()['arm_z_up'],1.)
+        self.press('y',0);self.press('a');self.assertEqual(self.panel._inputs()['arm_z_down'],1.)
+        self.press('right_stick',0);self.press('right_stick')
+        self.assertEqual(self.panel.status()['arm_speed'],'normal')
+
+    def test_y_tap_between_two_device_polls_reaches_arm(self):
+        self.panel.select('TELEOP')
+        self.panel.last_event=self.now
+        self.press('y');self.press('y',0)
+        self.assertNotIn(self.buttons['y'],self.panel.keys)
+        self.panel.feed(self.now)
+        self.assertEqual(self.panel.teleop.inputs.get('arm_z_up'),1.)
+        self.assertGreaterEqual(self.panel.teleop.xyz_residual[2],.003)
+
     def test_disconnect_releases_only_selected_source(self):
         self.panel.select('TELEOP');self.panel.teleop.drive_active=True;self.panel.heartbeat(False)
         self.assertEqual(self.panel.mode,'DISARMED');self.panel.teleop.stop_all.assert_not_called()

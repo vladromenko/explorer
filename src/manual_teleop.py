@@ -18,6 +18,7 @@ class ManualTeleop:
         self.lease = 0.0
         self.inputs = {}
         self.precision = False
+        self.arm_speed = "normal"
         self.arm_mode = "cartesian"
         self.generation = 0
         self.stop_latched = True
@@ -81,6 +82,7 @@ class ManualTeleop:
             self.owner = source
             self.inputs = {}
             self.precision = False
+            self.arm_speed = "normal"
             self.lease = time.monotonic() + 0.45
             if self.stop_latched:
                 self.neutral_seen = True
@@ -106,6 +108,16 @@ class ManualTeleop:
                 self._record_locked("arm_mode_changed")
         return self.status()
 
+    def set_arm_speed(self, source, speed):
+        if speed not in ("normal", "fast"):
+            raise ValueError("Неизвестная скорость руки")
+        with self.lock:
+            if self.owner != source:
+                raise ValueError("Сначала явно выберите источник управления")
+            self.arm_speed = speed
+            self._record_locked("arm_speed_changed")
+        return self.status()
+
     def update(self, source, inputs, observing=True, precision=False):
         if observing is not True:
             raise ValueError("Подтвердите наблюдение за роботом")
@@ -119,6 +131,13 @@ class ManualTeleop:
         with self.lock:
             if self.owner != source:
                 raise ValueError("Источник управления не выбран")
+            for positive, negative, residual, index, pulse in (
+                ("arm_z_up", "arm_z_down", self.xyz_residual, 2, 0.003),
+                ("joint3_increase", "joint3_decrease", self.joint_residual, 2, 1.0)):
+                if clean.get(positive, 0.0) > 0.5 and self.inputs.get(positive, 0.0) <= 0.5:
+                    residual[index] = min(pulse, residual[index] + pulse)
+                if clean.get(negative, 0.0) > 0.5 and self.inputs.get(negative, 0.0) <= 0.5:
+                    residual[index] = max(-pulse, residual[index] - pulse)
             announce = moving and not self.takeover_active
             self.takeover_active = moving
             self.inputs = clean
@@ -190,6 +209,8 @@ class ManualTeleop:
         with self.lock:
             return dict(owner=self.owner, stop_latched=self.stop_latched, neutral_seen=self.neutral_seen,
                 lease_age_s=max(0.0, self.lease-time.monotonic()), precision=self.precision,
+                arm_speed="precision" if self.precision else self.arm_speed,
+                arm_speed_selected=self.arm_speed,
                 arm_mode=self.arm_mode, generation=self.generation, inputs=dict(self.inputs),
                 drive_active=self.drive_active, arm_busy=self.arm_busy, error=self.error,
                 backend="shared_manual_teleop", control_scheme=SCHEME_ID, measured_joint_feedback=False)
@@ -207,7 +228,7 @@ class ManualTeleop:
         scale = 0.1 if precision else 1.0
         return [nx*0.80*scale, ny*0.72*scale, nz*1.67*scale]
 
-    def _arm_intent(self, values, precision):
+    def _arm_intent(self, values, precision, arm_speed="normal"):
         xyz = [values.get("arm_x_forward", 0.0)-values.get("arm_x_back", 0.0),
                values.get("arm_y_left", 0.0)-values.get("arm_y_right", 0.0),
                values.get("arm_z_up", 0.0)-values.get("arm_z_down", 0.0)]
@@ -217,7 +238,7 @@ class ManualTeleop:
                   values.get("pitch_up", 0.0)-values.get("pitch_down", 0.0),
                   values.get("wrist_right", 0.0)-values.get("wrist_left", 0.0),
                   values.get("grip_close", 0.0)-values.get("grip_open", 0.0)]
-        factor = 0.35 if precision else 1.0
+        factor = 0.35 if precision else 2.0 if arm_speed == "fast" else 1.0
         return [value*factor for value in xyz], [value*factor for value in joints]
 
     @staticmethod
@@ -227,9 +248,9 @@ class ManualTeleop:
     def _prepare_arm_segment_locked(self, values, now, precision):
         dt = max(0.0, min(0.12, now-self.last_integrator))
         self.last_integrator = now
-        if self.arm_busy or dt <= 0.0:
+        if dt <= 0.0:
             return None
-        xyz_velocity, joint_velocity = self._arm_intent(values, precision)
+        xyz_velocity, joint_velocity = self._arm_intent(values, precision, self.arm_speed)
         if self.arm_mode == "cartesian":
             joint_velocity[:5] = [0.0] * 5
         else:
@@ -237,30 +258,39 @@ class ManualTeleop:
         xyz_rate = 0.035
         joint_rates = [24.0, 24.0, 24.0, 30.0, 30.0, 36.0]
         for index, value in enumerate(xyz_velocity):
-            self.xyz_residual[index] = self.xyz_residual[index]+value*xyz_rate*dt if abs(value) > 0.08 else 0.0
+            if abs(value) > 0.08:
+                self.xyz_residual[index] = max(-0.010, min(0.010, self.xyz_residual[index]+value*xyz_rate*dt))
+            elif abs(self.xyz_residual[index]) < 0.003:
+                self.xyz_residual[index] = 0.0
         for index, value in enumerate(joint_velocity):
-            self.joint_residual[index] = self.joint_residual[index]+value*joint_rates[index]*dt if abs(value) > 0.08 else 0.0
+            if abs(value) > 0.08:
+                self.joint_residual[index] = max(-6.0, min(6.0, self.joint_residual[index]+value*joint_rates[index]*dt))
+            elif abs(self.joint_residual[index]) < 1.0:
+                self.joint_residual[index] = 0.0
+        if self.arm_busy:
+            return None
         xyz_norm = math.sqrt(sum(value*value for value in self.xyz_residual))
         xyz_delta = [0.0] * 3
         if xyz_norm >= 0.003:
-            scale = min(1.0, 0.006/xyz_norm)
+            scale = min(1.0, (0.010 if self.arm_speed == "fast" and not precision else 0.006)/xyz_norm)
             xyz_delta = [value*scale for value in self.xyz_residual]
             self.xyz_residual = [old-sent for old, sent in zip(self.xyz_residual, xyz_delta)]
         joint_delta = []
         for index, residual in enumerate(self.joint_residual):
-            step = max(-3, min(3, self._integer_step(residual)))
+            limit = 6 if self.arm_speed == "fast" and not precision else 3
+            step = max(-limit, min(limit, self._integer_step(residual)))
             joint_delta.append(step)
             self.joint_residual[index] -= step
         if not any(abs(value) > 0.0 for value in xyz_delta) and not any(joint_delta):
             return None
         return xyz_delta, joint_delta, self.arm_mode, self.generation
 
-    def _arm_segment(self, xyz_delta, joint_delta, arm_mode, generation, deadline, precision):
+    def _arm_segment(self, xyz_delta, joint_delta, arm_mode, generation, deadline, precision, arm_speed):
         try:
             with self.lock:
                 if generation != self.generation or self.stop_latched:
                     raise ValueError("Команда устарела после смены режима или STOP")
-            self.teaching.teleop(self.model(), xyz_delta, joint_delta, True, deadline, precision, arm_mode)
+            self.teaching.teleop(self.model(), xyz_delta, joint_delta, True, deadline, precision, arm_mode, arm_speed)
             self.error = None
         except (OSError, ValueError) as exc:
             self.error = str(exc)
@@ -299,7 +329,7 @@ class ManualTeleop:
             segment = self._prepare_arm_segment_locked(values, now, precision)
             if segment is not None and self.arm and self.model:
                 self.arm_busy = True
-                args = (*segment, now+0.8, precision)
+                args = (*segment, now+0.8, precision, self.arm_speed)
                 threading.Thread(target=self._arm_segment, args=args, daemon=True).start()
 
     def _run(self):

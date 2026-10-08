@@ -16,9 +16,10 @@ mapping:
   cartesian_arm: {x: right_y, y: right_x, z: y_a, joint6: l2_r2}
   joint_arm: {joint1: right_x, joint2: right_y, joint3: y_a, joint4: dpad_y, joint5: dpad_x, joint6: l2_r2}
   precision_toggle: x
+  arm_speed_toggle: right_stick
   stop: b
   resume_after_neutral: start
-  unassigned_motion: [left_stick, right_stick, mode]
+  unassigned_motion: [left_stick, mode]
 deadzone: 0.15
 drive_expo: 0.5
 drive_profile: normal
@@ -34,7 +35,7 @@ operator_chassis_accepted: true
 operator_acceptance_scope: manual_and_local_autonomy_without_radio_loss_claim
 arm_step_deg: 5
 gripper_step_deg: 5
-notes: Physical Linux event mapping recorded with the operator. Chassis axes use a 50 percent cubic expo for a softer center response. SELECT toggles Cartesian and joint arm control; L1/R1 always turn the base. MODE produced no event.
+notes: Physical Linux event mapping recorded with the operator. Chassis axes use a 50 percent cubic expo for a softer center response. SELECT toggles Cartesian and joint arm control; L1/R1 always turn the base. Right-stick click toggles normal/fast arm speed; X temporarily selects precision. MODE produced no event.
 
 bounded_arm_steps_verified: true
 bounded_steps_evidence: data/arm-short-step-validation.json
