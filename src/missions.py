@@ -22,7 +22,12 @@ def navigation_attained(pose,x,y,yaw):
 
 def navigation_position_attained(pose,x,y):
     values=[pose.get("x"),pose.get("y"),x,y]
-    return all(type(value) in (int,float) and math.isfinite(value) for value in values) and math.hypot(pose["x"]-x,pose["y"]-y)<=.15
+    valid=all(isinstance(value,(int,float,np.integer,np.floating)) and not isinstance(value,(bool,np.bool_)) and math.isfinite(float(value)) for value in values)
+    return valid and math.hypot(float(pose["x"])-float(x),float(pose["y"])-float(y))<=.15
+
+
+def position_only_arrival(kind,requested,rotation_only):
+    return not rotation_only and (requested is True or kind=="explore")
 
 def readiness(s,now,scope="localized",health=None):
     reasons=[]
@@ -327,7 +332,8 @@ class Missions:
         if result.status!=4:raise ValueError('Navigation did not succeed: '+str(result.status))
         self.hold_base(mid)
         pose=self.maps.pose()
-        position_only=(self.active or {}).get("position_only") is True
+        active=self.active or {}
+        position_only=position_only_arrival(active.get("kind"),active.get("position_only"),rotation_only)
         if not (navigation_position_attained(pose,x,y) if position_only else navigation_attained(pose,x,y,yaw)):
             raise ValueError('Goal result disagrees with live position/orientation')
         with self.db() as db:db.execute('INSERT INTO visits(seen,x,y,yaw,frame,provisional) VALUES(?,?,?,?,?,?)',(time.time(),pose['x'],pose['y'],pose['yaw'],'map',1))

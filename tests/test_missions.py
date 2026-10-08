@@ -1,6 +1,7 @@
 import unittest,copy,threading,math
+import numpy as np
 from types import SimpleNamespace
-from missions import Missions,readiness,navigation_attained,navigation_position_attained,FLAGS
+from missions import Missions,readiness,navigation_attained,navigation_position_attained,position_only_arrival,FLAGS
 class MissionReadinessTest(unittest.TestCase):
     def ready(self):return dict(at=100,stop_latched=False,mode='AUTONOMOUS',commissioning=dict.fromkeys(FLAGS,True),sensor_age=dict.fromkeys(['imu','odom','scan0','scan1','battery'],0),battery=12,reason='COMMAND EXPIRED')
     def test_each_missing_prerequisite_blocks(self):
@@ -39,3 +40,12 @@ class MissionReadinessTest(unittest.TestCase):
         self.assertTrue(navigation_position_attained(pose,.95,.39))
         self.assertFalse(navigation_attained(pose,.95,.39,.49))
         self.assertFalse(navigation_position_attained(pose,1.2,.39))
+        self.assertTrue(navigation_position_attained(pose,np.float64(.95),np.float64(.39)))
+        self.assertFalse(navigation_position_attained(pose,True,.39))
+
+    def test_frontier_accepts_measured_position_but_rotation_and_return_need_heading(self):
+        self.assertTrue(position_only_arrival("explore",False,False))
+        self.assertFalse(position_only_arrival("explore",False,True))
+        self.assertFalse(position_only_arrival("navigate",False,False))
+        self.assertTrue(position_only_arrival("navigate",True,False))
+        self.assertFalse(position_only_arrival("navigate",True,True))

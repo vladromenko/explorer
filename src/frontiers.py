@@ -91,7 +91,7 @@ def candidates(grid,resolution,origin,pose,radius=.38,origin_yaw=0.,footprint=No
         # the stopped arm pans toward frontier sides after arrival. A forced
         # turn at a close frontier can sweep the arm into adjacent furniture.
         target_yaw=heading if footprint is not None else math.atan2(cy-y,cx-x)+origin_yaw
-        out.append(dict(x=origin[0]+cosine*lx-sine*ly,y=origin[1]+sine*lx+cosine*ly,
+        out.append(dict(x=float(origin[0]+cosine*lx-sine*ly),y=float(origin[1]+sine*lx+cosine*ly),
                         yaw=target_yaw,path_distance_m=float(distances[y,x]),
                         frontier_cells=n,information_gain_cells=n,clearance_m=float(clearance[y,x]),
                         risk_cost=float(risk),score=utility,

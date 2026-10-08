@@ -8,6 +8,8 @@ class FrontiersTest(unittest.TestCase):
         p=candidates(g,.05,[0,0],[1,1])
         self.assertTrue(p)
         for t in p:
+            self.assertIs(type(t['x']),float)
+            self.assertIs(type(t['y']),float)
             self.assertEqual(g[int(t['y']/.05),int(t['x']/.05)],0)
             self.assertLess(t['x'],2.25-.35)
     def test_disconnected_space_not_selected(self):
