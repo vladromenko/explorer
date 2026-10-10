@@ -113,12 +113,35 @@
       "camera_frames_recorded": 32,
       "base_velocity_and_odometry_zero": true,
       "stop_latched_after_execution": true,
-      "operator_visual_alignment": "pending",
+      "operator_visual_alignment": {
+        "report": "Да, захват над носком, примерно 10 см",
+        "alignment_confirmed": true,
+        "approximately_10cm_above": true,
+        "measurement_source": "operator_visual_observation"
+      },
       "measured_joints": false,
       "physical_contact_executed": false,
       "closure_executed": false,
       "lift_executed": false,
       "autonomous_success_claimed": false
+    },
+    "descent_preview": {
+      "journal": "data/onboard-validation/1791676098864600208-observed-descent-preparation",
+      "goal_deg": [
+        102,
+        36,
+        0,
+        84,
+        88,
+        30
+      ],
+      "height_above_object_m": 0.02,
+      "nominal_linkage_paths_checked": 3,
+      "full_moveit_path_retained": true,
+      "duration_s": 1.507143746,
+      "executed": false,
+      "separate_permission_pending": true,
+      "contact_closure_lift_allowed": false
     }
   },
   "rgbd_cache_benchmark_ms": {
