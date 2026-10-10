@@ -120,5 +120,23 @@
     ],
     "targeted_tests_passed": 54,
     "stop_invalidation_passed": true
+  },
+  "implementation_commit": "d82e47b5d24304ddb764ccea1b6de4c4775ec8e4",
+  "final_power": {
+    "at": 1791654181.795571,
+    "battery_voltage_v": 10.815177917480469,
+    "state": "CRITICAL",
+    "camera_service": "stopped_by_power_manager",
+    "perception_service": "stopped_by_power_manager",
+    "base_velocity": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "stop_latched": true,
+    "charging": null,
+    "automatic_shutdown_available": false,
+    "shutdown_error": "sudo: a password is required",
+    "next_action": "Charge ROSMASTER actuator battery; verify fresh voltage before physical tests"
   }
 }
