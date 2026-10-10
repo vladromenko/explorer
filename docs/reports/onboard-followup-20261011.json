@@ -5,10 +5,10 @@
   "branch": "codex/explorer-onboard-20261010",
   "tests": {
     "jetson": {
-      "passed": 730,
+      "passed": 731,
       "skipped": 3,
-      "elapsed_s": 38.72,
-      "log": "Explorer-backups/20261011-grasp-guard/full-test-final-20261011.log"
+      "elapsed_s": 39.3,
+      "log": "Explorer-backups/20261011-grasp-guard/full-test-diagnostic-20261011.log"
     },
     "javascript_and_regressions_mac": {
       "passed": 11,
@@ -76,7 +76,17 @@
     "current_blocker": "view_unavailable",
     "projection_is_nominal_not_hardware_measurement": true,
     "sdk_minimum_depth_source": "https://orbbec.com.cn/index.php/index/Product/info.html?cate=38&id=55",
-    "actual_grasp_success_not_claimed": true
+    "actual_grasp_success_not_claimed": true,
+    "contact_view_operator_check": {
+      "operator_report": "Метка у кончиков не видна",
+      "stationary_marker_test": true,
+      "physical_motion_commanded": false,
+      "camera_contact_visible": false,
+      "journal": "data/onboard-validation/1791673778449496198-contact-view-operator",
+      "near_depth_measured": false
+    },
+    "preflight_diagnostics_persist_after_restart": true,
+    "supervised_grasp_executed": false
   },
   "rgbd_cache_benchmark_ms": {
     "compressed": [

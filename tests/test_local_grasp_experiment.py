@@ -106,6 +106,10 @@ class LocalGraspSafetyTests(unittest.TestCase):
                     "gripper_linkage_rad": -.8, "grasp_quaternion_xyzw": [0,0,0,1]}, 1)
         experiment.trajectory.plan.assert_not_called()
         self.assertEqual(len(experiment.state["target_preflight"]["checks"][0]["visibility"]), 3)
+        action = experiment.state["next_action"]
+        self.assertFalse(action["motion_required"])
+        self.assertFalse(action["execution_permission_granted"])
+        self.assertEqual(action["code"], "check_contact_camera_view")
 
     def test_guarded_stop_never_becomes_a_hold_and_lift(self):
         experiment = self.experiment()

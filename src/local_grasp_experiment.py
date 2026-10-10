@@ -160,7 +160,14 @@ class LocalGraspExperiment:
             "position_uncertainty_m": uncertainty, "frame": "base_footprint", "measured_joints": False}
         if not rows:
             if any(check["visibility"] for check in checks):
-                raise ValueError("view_unavailable: target leaves RGB-D tracking view in planned grasp path")
+                instruction = ("На неподвижной руке проверьте по видео небольшую яркую метку "
+                    "ровно между кончиками захвата. Если её не видно, контакт требует "
+                    "наблюдения оператором; автоматический захват не запускается.")
+                self.state["next_action"] = {"code": "check_contact_camera_view",
+                    "instruction": instruction, "motion_required": False,
+                    "execution_permission_granted": False, "projection_source": "nominal_model"}
+                raise ValueError("view_unavailable: точка захвата выходит из пригодного обзора RGB-D. "
+                    + instruction)
             raise ValueError("unreachable: no collision-free approach/contact/lift IK candidate")
         extent=observation.get('object_extent_xyz_m',[.05,.04,.025])
         context=dict(object_width_m=float(extent[0]),object_height_m=float(extent[2]),
@@ -295,7 +302,10 @@ class LocalGraspExperiment:
                 if workflow.get('active_episode'):
                     self.workflows.finish_autonomous_episode(workflow_id,'infrastructure_error',
                         {'reason':str(exc)},'infrastructure_error',None)
-                self.workflows.fail(workflow_id,str(exc))
+                self.workflows.fail(workflow_id, str(exc), {
+                    "target_preflight": self.state.get("target_preflight"),
+                    "next_action": self.state.get("next_action"),
+                    "physical_execution_started": self.state.get("physical_execution") is True})
             except (OSError,ValueError,KeyError,TypeError):pass
             self.state.update(phase='blocked',reason=str(exc),physical_execution=False)
         finally:

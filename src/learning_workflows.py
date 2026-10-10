@@ -162,11 +162,15 @@ class LearningWorkflows:
                        (time.time(),identifier));self.event(db,identifier,'cancelled',{})
         return self.get(identifier)
 
-    def fail(self,identifier,reason):
+    def fail(self,identifier,reason,evidence=None):
+        detail = {"reason": str(reason)}
+        if evidence is not None:
+            detail["evidence"] = evidence
+        payload = json.dumps(detail, ensure_ascii=False, allow_nan=False)
         with self.db() as db:
             db.execute("UPDATE workflows SET state='failed',updated=?,active_episode='',detail=? WHERE id=?",
-                       (time.time(),json.dumps({'reason':str(reason)},ensure_ascii=False),identifier))
-            self.event(db,identifier,'failed',{'reason':str(reason)})
+                       (time.time(),payload,identifier))
+            self.event(db,identifier,"failed",detail)
         return self.get(identifier)
 
     def _train_then_autonomy(self,identifier):

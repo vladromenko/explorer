@@ -30,6 +30,20 @@ class TypedEpisodeTests(unittest.TestCase):
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_preflight_failure_survives_restart_without_counting_a_grasp_attempt(self):
+        with tempfile.TemporaryDirectory() as folder:
+            manager = LearningWorkflows(folder)
+            job = manager.start("AUTONOMOUS", "grasp", "sock", 0, 1)
+            evidence = {"physical_execution_started": False,
+                "target_preflight": {"checks": [{"visibility": [{"observable": False}]}]},
+                "next_action": {"code": "check_contact_camera_view", "motion_required": False}}
+            manager.fail(job["id"], "view_unavailable", evidence)
+            restored = LearningWorkflows(folder).get(job["id"])
+            self.assertEqual(restored["state"], "failed")
+            self.assertEqual(restored["detail"]["evidence"], evidence)
+            self.assertEqual(restored["autonomous_done"], 0)
+            self.assertEqual(restored["success"], 0)
+
     def legacy(self,root,outcome='success'):
         path=Path(root)/'data/demonstrations/demo/episode.json';path.parent.mkdir(parents=True)
         path.write_text(json.dumps({'id':'demo','name':'sock','created':time.time(),'ended':time.time(),
