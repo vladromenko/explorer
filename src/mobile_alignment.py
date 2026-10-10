@@ -1,6 +1,38 @@
 """Plan a bounded base correction that puts an object in the arm's front workspace."""
 import math
 
+
+def reachable_correction(object_xyz, reachable, preferred_distance_m=.24):
+    """Choose a base position using the complete arm approach/contact/lift test.
+
+    This is geometry only. Nav2 must check the map and execute the base goal;
+    after arrival the object must be detected again before arm execution.
+    Sampling distances does not change any joint or collision limits.
+    """
+    initial = correction(object_xyz, preferred_distance_m)
+    x, y, z = (float(value) for value in object_xyz)
+    distance = initial["object_distance_m"]
+    if abs(initial["bearing_rad"]) <= .12 and reachable([x, y, z]):
+        return dict(initial, aligned=True, actions=[], reobserve_required=False,
+            reachability_checked=True, nominal_arm_geometry=True)
+    choices = {preferred_distance_m + delta for delta in (0., -.02, .02, -.04, .04, -.06, .06)}
+    choices.add(distance)
+    distances = sorted(choices, key=lambda value: (abs(value - distance), abs(value - preferred_distance_m)))
+    for target_distance in distances:
+        if .03 < target_distance <= 1. and reachable([target_distance, 0., z]):
+            plan = correction(object_xyz, target_distance, bearing_tolerance_rad=0.)
+            # A small correction still matters if the current IK failed. Do not
+            # discard it using correction()'s ordinary 2.5 cm range tolerance.
+            if abs(distance - target_distance) > .001 and not any(
+                    action["kind"] == "translate" for action in plan["actions"]):
+                delta = distance - target_distance
+                plan["actions"].append({"kind": "translate", "distance_m": delta,
+                    "direction": "forward" if delta > 0 else "backward"})
+            if plan["actions"]:
+                return dict(plan, aligned=False, reobserve_required=True,
+                    reachability_checked=True, nominal_arm_geometry=True)
+    raise ValueError("Нет позиции базы с достижимыми подходом, контактом и подъёмом предмета")
+
 def correction(object_xyz, desired_distance_m=.24, bearing_tolerance_rad=.12):
     x,y,z=(float(v) for v in object_xyz)
     distance=math.hypot(x,y);bearing=math.atan2(y,x)

@@ -56,6 +56,8 @@ class CapabilityReadiness:
     def facts(self,now=None):
         now=time.time() if now is None else now
         status=read(self.root/'data/status.json');perception=read(self.root/'data/perception.json')
+        camera_path = self.root / "data/camera-frame.json"
+        camera = read(camera_path) if camera_path.exists() else perception
         power=read(self.root/'data/power.json');handeye=read(self.root/'config/handeye-accepted.json')
         commissioning=read(self.root/'config/commissioning.json');arm=read(self.root/'data/arm-state.json')
         navigation=read(self.root/'data/navigation-health.json');planning=read(self.root/'data/planning-health.json')
@@ -76,7 +78,8 @@ class CapabilityReadiness:
         return dict(
           runtime=dict(
             controller=(fresh(status,now,2) and sensors.get('odom',99)<.5),
-            camera=(fresh(perception,now,2) and perception.get('image_stamp',0)>now-2),
+            camera=(fresh(camera,now,2) and type(camera.get("image_stamp")) in (int,float)
+                    and 0 <= now-camera["image_stamp"] < 2),
             grounding=(self.root/'.venv-learning/bin/python').exists(),
             arm=arm_ready,
             stationary=(status.get('stop_latched') is True or status.get('base_hold_confirmed') is True) and

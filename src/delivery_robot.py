@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 from grasp_verification import verify_lift, verify_place
 from delivery_vision import FeatureObject, reacquire_candidate
-from mobile_alignment import correction
+from mobile_alignment import reachable_correction
 from semantic_world import guarded_closure
 from learning_stack import CandidateScorer
 from factory_delivery import load_factory_settings, factory_reference, elapsed_reference
@@ -175,6 +175,19 @@ class DeliveryRobot:
         profile=self.arm.profile
         return load_settings(self.root,profile["firmware_source_sha256"],profile["calibration_sha256"])
 
+    def grasp_path(self, point):
+        """Check the whole manipulation before either base or arm approaches."""
+        seed = self.arm.reference()["servo_deg"][:5]
+        checks = []
+        for height in (self.settings["approach_height_m"], 0., self.settings["lift_height_m"]):
+            solution = self.model().ik(np.asarray(point, dtype=float) + [0, 0, height], seed,
+                self.settings["gripper_linkage_rad"], self.settings["grasp_quaternion_xyzw"])
+            checks.append(solution)
+            if not solution.get("solved") or solution.get("collision"):
+                return {"reachable": False, "checks": checks}
+            seed = solution["servo_deg"]
+        return {"reachable": True, "checks": checks}
+
     def select_grasp(self,point,observation):
         extent=observation.get('object_extent_xyz_m',[.05,.04,.025])
         uncertainty=float(observation.get('object_position_uncertainty_m',.01))
@@ -182,8 +195,9 @@ class DeliveryRobot:
         for lateral in (0.,-.01,.01):
             candidate=np.asarray(point,dtype=float)+[0,lateral,0]
             above=candidate+[0,0,self.settings['approach_height_m']]
-            solved=self.model().ik(above,self.arm.reference()['servo_deg'][:5],self.settings['gripper_linkage_rad'],self.settings['grasp_quaternion_xyzw'])
-            if solved.get('solved') and not solved.get('collision'):
+            checked = self.grasp_path(candidate)
+            solved = checked["checks"][0]
+            if checked["reachable"]:
                 candidates.append(dict(approach_x=float(candidate[0]),approach_y=float(candidate[1]),approach_z=float(candidate[2]),
                     aperture_m=min(.07,max(.01,float(extent[1])*1.15)),roll_rad=0.,base_shift_m=0.,
                     clearance_m=max(.001,float(self.settings['approach_height_m'])-uncertainty),
@@ -360,15 +374,21 @@ class DeliveryRobot:
         # The accepted bounded release searches saved base poses with a reachable
         # foreground object. It never drives blind using optical-frame coordinates.
         self.hold();observation=self.vision.latest();point=np.asarray(observation['object_xyz'])
-        alignment=correction(point)
+        grasp_point = point.copy()
+        grasp_point[2] += self.settings["grasp_tcp_offset_m"]
+        alignment = reachable_correction(grasp_point, lambda candidate: self.grasp_path(candidate)["reachable"])
         if alignment['reobserve_required']:
             pose=self.missions.maps.pose();bearing=pose['yaw']+alignment['bearing_rad']
             world_x=pose['x']+math.cos(pose['yaw'])*point[0]-math.sin(pose['yaw'])*point[1]
             world_y=pose['y']+math.sin(pose['yaw'])*point[0]+math.cos(pose['yaw'])*point[1]
             goal_x=world_x-alignment['desired_distance_m']*math.cos(bearing)
             goal_y=world_y-alignment['desired_distance_m']*math.sin(bearing)
+            # A camera on the wrist must return to its accepted driving view
+            # before navigation. The mission's normal camera guard remains on.
             self.vision.stop();self.tracking=False
+            self._move(self.settings["transport_deg"])
             self.missions.go(self.mid,goal_x,goal_y,bearing);self.hold()
+            self._move(self.settings["search_deg"])
             return dict(reachable=False,base_repositioned=True,reobserve_required=True,
                         alignment=alignment,goal_map=dict(x=goal_x,y=goal_y,yaw=bearing))
         point[2]+=self.settings['grasp_tcp_offset_m'];point=self.select_grasp(point,observation)

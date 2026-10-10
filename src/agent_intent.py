@@ -30,6 +30,8 @@ def prepare_intent(text, runtime, places=(), model=None):
         plan = single("look_direction", {"view": "right"})
     elif re.fullmatch(r"(?:посмотри|поверни камеру|смотри) (?:вперёд|вперед)", query):
         plan = single("look_direction", {"view": "forward"})
+    elif query in {"посмотри вниз", "смотри вниз", "поверни камеру вниз", "осмотри пол перед рукой"}:
+        plan = single("look_direction", {"view": "down"})
     elif query in {"исследуй комнату", "исследуй помещение", "осмотри комнату", "исследуй квартиру"}:
         plan = single("explore_area", {"max_goals": 5})
     elif query in {"открой захват", "открой гриппер", "раскрой пальцы"}:

@@ -9,7 +9,8 @@ import time
 import numpy as np
 from lerobot_bridge import write_json
 
-VIEWS={"forward":[90,90,60,15,90],"left":[60,90,60,15,90],"right":[120,90,60,15,90]}
+VIEWS={"forward":[90,90,60,15,90],"left":[60,90,60,15,90],"right":[120,90,60,15,90],
+    "down":[90,90,30,0,90]}
 
 
 class CameraViews:
@@ -38,7 +39,11 @@ class CameraViews:
             model.set_state(pose[:5],0.)
             transform=np.asarray(model.state.get_global_link_transform("arm4"))@np.asarray(accepted["camera_to_mount_reference"])
             if model.collision() or transform[2,3]<.22:raise ValueError("Обзорная поза пересекает корпус/пол")
-        if transform[2,2]>=0 or transform[0,2]<.65:raise ValueError("Камера не направлена вперёд и немного вниз")
+        if pose[:5] == VIEWS["down"]:
+            if transform[2,2]>-.65 or transform[0,2]<.15:
+                raise ValueError("Камера не направлена вниз в область перед рукой")
+        elif transform[2,2]>=0 or transform[0,2]<.65:
+            raise ValueError("Камера не направлена вперёд и немного вниз")
         return {"camera_to_base_estimate":transform.tolist(),"optical_axis_base_estimate":transform[:3,2].tolist(),
             "handeye_source":accepted.get("physical_validation_sha256"),"measured_joints":False}
 
@@ -57,7 +62,7 @@ class CameraViews:
         goal=list(VIEWS[view])+[start[5]]
         geometry=self.geometry(goal)
         axis=geometry.get("optical_axis_base_estimate")
-        if view!="forward" and (axis is None or (axis[1] if view=="left" else -axis[1])<.2):
+        if view in ("left", "right") and (axis is None or (axis[1] if view=="left" else -axis[1])<.2):
             raise ValueError("Camera view disagrees with base-frame left/right")
         self.state=dict(phase="positioning",view=view,measured_joints=False)
         started=time.monotonic()

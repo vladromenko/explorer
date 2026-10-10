@@ -35,6 +35,20 @@ class CapabilityReadinessTests(unittest.TestCase):
   with tempfile.TemporaryDirectory() as folder:
    row=self.rows(self.prepare(folder))['LEARN_PLACE_LOCAL']
    self.assertEqual([item['id'] for item in row['evidence_workflow']],['local_grasp_profile','local_reset_profile'])
+ def test_fresh_camera_does_not_depend_on_object_detector_throughput(self):
+  with tempfile.TemporaryDirectory() as folder:
+   root=self.prepare(folder);now=time.time()
+   (root/"data/perception.json").write_text(json.dumps(dict(at=now-10,image_stamp=now-10)))
+   (root/"data/camera-frame.json").write_text(json.dumps(dict(at=now,image_stamp=now)))
+   self.assertTrue(CapabilityReadiness(root).facts(now)["runtime"]["camera"])
+ def test_stale_camera_cannot_borrow_a_recent_detector_timestamp(self):
+  with tempfile.TemporaryDirectory() as folder:
+   root=self.prepare(folder);now=time.time()
+   for stamp in (now-3,now+1,float("nan")):
+    (root/"data/camera-frame.json").write_text(json.dumps(dict(at=now,image_stamp=stamp)))
+    self.assertFalse(CapabilityReadiness(root).facts(now)["runtime"]["camera"])
+   (root/"data/camera-frame.json").write_text("invalid JSON")
+   self.assertFalse(CapabilityReadiness(root).facts(now)["runtime"]["camera"])
  def test_persistent_day_profile_grants_only_listed_capability_scopes(self):
   with tempfile.TemporaryDirectory() as folder:
    root=self.prepare(folder);hour=time.localtime().tm_hour

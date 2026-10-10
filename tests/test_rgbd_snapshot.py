@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+import zipfile
 import numpy as np
 from rgbd_snapshot import registered_pair, save_snapshot
 
@@ -40,3 +41,5 @@ def test_cache_persists_depth_units_and_both_actual_timestamps(tmp_path):
         assert len(str(raw["frame_id"])) == 32
         assert len(str(raw["camera_info_version"])) == 64
     assert not path.with_suffix(".tmp").exists()
+    with zipfile.ZipFile(path) as archive:
+        assert all(item.compress_type == zipfile.ZIP_STORED for item in archive.infolist())

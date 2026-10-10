@@ -32,7 +32,10 @@ def save_snapshot(path, pair):
     path = Path(path)
     temporary = path.with_suffix(".tmp")
     with temporary.open("wb") as stream:
-        np.savez_compressed(stream, rgb=image, depth=depth[0].astype(np.float32)*depth[3],
+        # This is one replaceable live frame, not a recording archive. Deflate
+        # stalls the tracking loop on Jetson; preserve the same lossless NPZ
+        # contract without compression and keep the atomic replacement.
+        np.savez(stream, rgb=image, depth=depth[0].astype(np.float32)*depth[3],
                             k=np.array(info.k).reshape(3, 3), d=np.array(info.d), stamp=stamp,
                             depth_stamp=depth[1], frame=frame, frame_id=uuid.uuid4().hex,
                             camera_info_version=hashlib.sha256(signature.encode()).hexdigest())

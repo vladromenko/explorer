@@ -1,12 +1,44 @@
 import math
 from types import SimpleNamespace
 import unittest
+from unittest.mock import Mock
 import numpy as np
 
 from delivery_robot import DeliveryRobot, placement_zone, validated_places
 
 
 class DeliveryRobotTests(unittest.TestCase):
+    def test_contact_failure_rejects_grasp_before_any_motion(self):
+        model = SimpleNamespace(ik=Mock(side_effect=[
+            {"solved": True, "collision": False, "servo_deg": [90] * 5},
+            {"solved": False, "collision": False}]))
+        robot = DeliveryRobot(".", None, SimpleNamespace(reference=lambda: {"servo_deg": [90] * 6}),
+            None, None, None, lambda: model)
+        robot.settings = {"approach_height_m": .055, "lift_height_m": .065,
+            "gripper_linkage_rad": -.8, "grasp_quaternion_xyzw": [0, 0, 0, 1]}
+        self.assertFalse(robot.grasp_path([.24, 0, .02])["reachable"])
+        self.assertEqual(model.ik.call_count, 2)
+
+    def test_base_alignment_restores_driving_then_search_view_before_refinding(self):
+        calls = []
+        missions = SimpleNamespace(maps=SimpleNamespace(pose=lambda: {"x": 1., "y": 2., "yaw": 0.}),
+            go=lambda *args: calls.append(("go", args)))
+        vision = SimpleNamespace(latest=lambda: {"object_xyz": [.33, -.07, .035]},
+            stop=lambda: calls.append(("vision_stop",)))
+        robot = DeliveryRobot(".", missions, None, None, None, vision, None)
+        robot.settings = {"grasp_tcp_offset_m": 0., "transport_deg": [90] * 6, "search_deg": [80] * 6}
+        robot.mid = "task"; robot.tracking = True
+        robot.hold = lambda: calls.append(("hold",))
+        robot._move = lambda pose: calls.append(("arm", pose))
+        robot.grasp_path = lambda point: {"reachable": abs(point[0] - .26) < .0001 and point[1] == 0.}
+        result = robot.approach({})
+        self.assertTrue(result["reobserve_required"])
+        self.assertFalse(result["reachable"])
+        self.assertEqual([row[0] for row in calls], ["hold", "vision_stop", "arm", "go", "hold", "arm"])
+        self.assertEqual(calls[2][1], robot.settings["transport_deg"])
+        self.assertEqual(calls[5][1], robot.settings["search_deg"])
+        self.assertFalse(robot.tracking)
+
     def adapter(self, phase='reached', measured=None):
         initial=[90.]*6;goal=[91.]*6
         references=iter([dict(servo_deg=initial),dict(servo_deg=goal if measured is None else measured)])

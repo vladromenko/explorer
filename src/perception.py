@@ -144,7 +144,7 @@ def cache_rgbd(node):
         if pair is not None:
             try:previous=save_snapshot(ROOT/"data/rgbd-snapshot.npz",pair)
             except (OSError,ValueError) as exc:node.get_logger().warning("RGB-D cache: "+str(exc))
-        time.sleep(.15)
+        time.sleep(.10)
 
 def run():
     rclpy.init()

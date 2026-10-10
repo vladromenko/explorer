@@ -1,0 +1,103 @@
+{
+  "date": "2026-10-11",
+  "firmware_changed": false,
+  "baseline_commit": "6c2160d",
+  "branch": "codex/explorer-onboard-20261010",
+  "tests": {
+    "jetson": {
+      "passed": 730,
+      "skipped": 3,
+      "elapsed_s": 38.72,
+      "log": "Explorer-backups/20261011-grasp-guard/full-test-final-20261011.log"
+    },
+    "javascript_and_regressions_mac": {
+      "passed": 11,
+      "agent_script_syntax": "passed"
+    }
+  },
+  "arm_observation": {
+    "operator_confirmed_visible_and_smooth": true,
+    "measured_joints": false,
+    "series": [
+      "data/arm-stream-validation/1791669204732114229",
+      "data/arm-stream-validation/1791669426854210585"
+    ],
+    "J1_deg": [
+      90,
+      95,
+      85,
+      90
+    ],
+    "J4_deg": [
+      15,
+      20,
+      10,
+      15
+    ]
+  },
+  "camera_down": {
+    "physically_commanded": true,
+    "pose_deg": [
+      90,
+      90,
+      30,
+      0,
+      90,
+      90
+    ],
+    "task": "a520484305e649ab8ab05f18b9579caa",
+    "journal": "data/onboard-validation/1791670051294445180-local-grasp"
+  },
+  "local_grasp": {
+    "physical_contact_executed": false,
+    "lift_verified": false,
+    "last_detection_journal": "data/onboard-validation/1791671603262072696-local-grasp-trial",
+    "preflight_journal": "data/onboard-validation/1791672118851753444-grasp-preflight-readonly",
+    "object_base_m": [
+      0.2263718751837877,
+      -0.042596181760007616,
+      0.0347537105622501
+    ],
+    "radial_ik_three_stages_solved": true,
+    "view_observable": false,
+    "contact_camera_xyz_m": [
+      0.007770061731626025,
+      0.048654550476509906,
+      0.08958013887007327
+    ],
+    "contact_projected_pixel": [
+      363.72464342042707,
+      505.4952093454541
+    ],
+    "image_size": [
+      640,
+      480
+    ],
+    "current_blocker": "view_unavailable",
+    "projection_is_nominal_not_hardware_measurement": true,
+    "sdk_minimum_depth_source": "https://orbbec.com.cn/index.php/index/Product/info.html?cate=38&id=55",
+    "actual_grasp_success_not_claimed": true
+  },
+  "rgbd_cache_benchmark_ms": {
+    "compressed": [
+      84.16,
+      80.99,
+      82.41
+    ],
+    "uncompressed": [
+      5.79,
+      7.71,
+      8.42
+    ],
+    "compression_change_applies_to_latest_frame_only": true,
+    "freshness_and_sync_limits_preserved": true
+  },
+  "mobile_alignment": {
+    "code_implemented": true,
+    "physical_repositioning_executed": false,
+    "path": "DeliveryRobot.approach -> reachable_correction -> Nav2 -> search_pose -> find_aligned",
+    "current_local_trial_base_stationary": true
+  },
+  "calibration_files_changed": false,
+  "secrets_images_and_datasets_committed": false
+}

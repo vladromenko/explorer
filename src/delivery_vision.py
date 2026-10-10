@@ -202,6 +202,30 @@ class MeasuredVision:
             mount=np.array(model.state.get_global_link_transform('arm4'))
             tool=np.array(model.state.get_global_link_transform('Gripping'))
         return mount@np.asarray(settings['camera_to_mount']),tool[:3,3],angles
+
+    def preview_visibility(self, point, servo_deg, settings):
+        """Nominal view at an IK endpoint; never measured or executed feedback."""
+        sample = self.snapshot()
+        model = self.model()
+        with model.lock:
+            model.set_state(servo_deg[:5], settings["gripper_linkage_rad"])
+            transform = np.asarray(model.state.get_global_link_transform("arm4")) @ np.asarray(
+                settings["camera_to_mount"])
+        camera_point = (np.linalg.inv(transform) @ np.r_[point, 1.])[:3]
+        height, width = sample["rgb"].shape[:2]
+        depth = float(camera_point[2])
+        pixel = None
+        if depth > 0:
+            projected, _ = cv2.projectPoints(camera_point.reshape(1, 1, 3), np.zeros(3),
+                np.zeros(3), sample["k"], sample["d"])
+            pixel = projected[0, 0].tolist()
+        in_image = pixel is not None and 1 <= pixel[0] < width - 1 and 1 <= pixel[1] < height - 1
+        # Match the existing FeatureObject policy, not an invented sensor range.
+        depth_trackable = .15 < depth < 2.
+        return {"observable": bool(in_image and depth_trackable), "point_camera_m": camera_point.tolist(),
+            "pixel": pixel, "image_size": [width, height], "in_image": bool(in_image),
+            "within_tracking_depth_policy": bool(depth_trackable), "tracking_depth_policy_m": [.15, 2.],
+            "source": "nominal_ik_camera_projection", "measured": False, "executed": False}
     def start(self, sample, bbox, settings):
         with self.lock:
             self.generation+=1;self.settings=settings;self.track=FeatureObject(sample,bbox)

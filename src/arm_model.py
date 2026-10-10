@@ -12,6 +12,7 @@ from moveit_msgs.msg import CollisionObject
 from shape_msgs.msg import SolidPrimitive
 from geometry_msgs.msg import Pose
 from servo_coordinates import to_radians,to_servo
+from grasp_orientation import radial_orientation
 ROOT=Path('/home/vlad/Explorer')
 LOW=np.radians([-90]*5);HIGH=np.radians([90,90,90,90,180])
 
@@ -99,6 +100,13 @@ class ArmModel:
             return dict(solved=poserr<=.002 and (angerr is None or angerr<=.02),servo_deg=to_servo(expand(fit.x)).tolist(),
                         position_error_m=poserr,orientation_error_rad=angerr,collision=collided,
                         reference_only=True,executed=False,execution_allowed=False)
+
+    def grasp_orientation(self, point, reference_quaternion):
+        # The yaw origin is the installed model's arm1 transform, not the
+        # chassis origin. Their 33.6 mm offset matters for nearby objects.
+        with self.lock:
+            origin = np.asarray(self.state.get_global_link_transform("arm1"))[:3, 3].copy()
+        return radial_orientation(point, origin, reference_quaternion)
 
     def path(self,start_deg,goal_deg,gripper_rad):
         with self.lock:

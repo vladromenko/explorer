@@ -7,6 +7,24 @@ import numpy as np
 from delivery_vision import FeatureObject,JointHistory,JointSamplePending,MeasuredVision,MAX_PENDING_FRAMES
 
 class VisionTests(unittest.TestCase):
+    def test_visibility_preflight_distinguishes_reach_from_valid_camera_observation(self):
+        model = SimpleNamespace(lock=threading.RLock(), set_state=lambda *args: None,
+            state=SimpleNamespace(get_global_link_transform=lambda name: np.eye(4)))
+        vision = MeasuredVision.__new__(MeasuredVision)
+        vision.model = lambda: model
+        vision.snapshot = self.sample
+        transform = np.eye(4); transform[:3, 3] = [.1, 0, .02]
+        settings = {"gripper_linkage_rad": -.8, "camera_to_mount": transform.tolist()}
+        visible = vision.preview_visibility([.1, 0, .52], [90] * 5, settings)
+        self.assertTrue(visible["observable"])
+        self.assertFalse(visible["measured"])
+        close = vision.preview_visibility([.1, 0, .12], [90] * 5, settings)
+        self.assertTrue(close["in_image"])
+        self.assertFalse(close["within_tracking_depth_policy"])
+        outside = vision.preview_visibility([.1, .4, .52], [90] * 5, settings)
+        self.assertFalse(outside["in_image"])
+        self.assertFalse(outside["observable"])
+
     def sample(self,t=1.,dx=0):
         rng=np.random.default_rng(33)
         rgb=np.zeros((120,160,3),np.uint8)

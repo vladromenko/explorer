@@ -38,6 +38,30 @@ class CameraViewTests(unittest.TestCase):
         result=self.camera.move("forward",lambda:None)
         self.assertEqual(result["servo_deg"][-1],77)
         self.assertFalse(result["measured_joints"])
+    def test_downward_view_preserves_gripper_and_cannot_be_used_for_driving(self):
+        self.start=[*VIEWS["down"],77]
+        (self.root/"data/arm-state.json").write_text(json.dumps(dict(
+            boot_id="boot",phase="command_elapsed_observation_required",servo_deg=self.start)))
+        self.camera.geometry=lambda goal:{"optical_axis_base_estimate":[.48,0,-.88],"measured_joints":False}
+        self.camera.fresh_frame=lambda after=0:time.time()
+        result=self.camera.move("down",lambda:None)
+        self.assertEqual(result["servo_deg"],self.start)
+        with self.assertRaisesRegex(ValueError,"вперёд"):
+            self.camera.navigation_guard({"velocity":[.05,0,0]})
+    def test_downward_geometry_rejects_sideways_or_shallow_axis(self):
+        (self.root/"config/handeye-accepted.json").write_text(json.dumps(dict(
+            execution_authorized=True,reference_mount="arm4",camera_to_mount_reference=np.eye(4).tolist())))
+        transform=np.eye(4);transform[2,3]=.30
+        model=SimpleNamespace(lock=threading.Lock(),set_state=lambda pose,jaw:None,
+            state=SimpleNamespace(get_global_link_transform=lambda name:transform),collision=lambda:False)
+        self.camera.model=lambda:model
+        for axis in ([.48,0,-.88],[.99,0,-.1],[-.48,0,-.88]):
+            transform[:3,2]=axis
+            if axis==[.48,0,-.88]:
+                self.assertFalse(self.camera.geometry(VIEWS["down"]+[77])["measured_joints"])
+            else:
+                with self.assertRaisesRegex(ValueError,"направлена вниз"):
+                    self.camera.geometry(VIEWS["down"]+[77])
     def test_fault_and_nonfinite_estimate_stop_navigation(self):
         (self.root/"data/perception.json").write_text(json.dumps({"image_stamp":time.time()}))
         path=self.root/"data/arm-state.json";value=json.loads(path.read_text())

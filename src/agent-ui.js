@@ -74,7 +74,9 @@ function renderFields() {
     label.textContent = name + (skill.inputSchema.required.includes(name) ? " *" : "");
     const input = schema.enum ? document.createElement("select") : document.createElement("input");
     input.dataset.argument = name;
-    if (schema.enum) schema.enum.forEach((value) => { const option = document.createElement("option"); option.value = value; option.textContent = value; input.append(option); });
+    if (schema.enum) schema.enum.forEach((value) => { const option = document.createElement("option"); option.value = value;
+      const views = {forward: "Вперёд", left: "Налево", right: "Направо", down: "Вниз перед захватом"};
+      option.textContent = name === "view" ? (views[value] || value) : value; input.append(option); });
     else { input.type = schema.type === "boolean" ? "checkbox" : schema.type === "integer" || schema.type === "number" ? "number" : "text";
       if (schema.minimum !== undefined) input.min = schema.minimum;
       if (schema.maximum !== undefined) input.max = schema.maximum;

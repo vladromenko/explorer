@@ -16,6 +16,7 @@ import torch
 from transformers import AutoProcessor,AutoModelForZeroShotObjectDetection
 ROOT=Path('/home/vlad/Explorer');sys.path.insert(0,str(ROOT/'src'))
 from surface_foreground import locate
+from detection_candidates import unique_candidates
 folder=Path(sys.argv[1]);request=json.loads((folder/'request.json').read_text())
 sample=np.load(folder/'rgbd.npz',allow_pickle=False)
 image=Image.fromarray(cv2.cvtColor(sample['rgb'],cv2.COLOR_BGR2RGB));started=time.monotonic()
@@ -32,10 +33,16 @@ for box,score,label in zip(result['boxes'],result['scores'],labels):
     bbox=box.cpu().tolist();geometry=locate(sample,bbox)
     objects.append(dict(label=str(label),requested_label=request['label'],bbox=bbox,confidence=float(score),
                         position=geometry['position'],depth_evidence=geometry))
-    x1,y1,x2,y2=map(int,bbox);cv2.rectangle(annotated,(x1,y1),(x2,y2),(80,230,140),2)
-    cv2.putText(annotated,request['english_label']+' '+str(round(float(score),2)),(x1,max(16,y1-7)),cv2.FONT_HERSHEY_SIMPLEX,.5,(80,230,140),1)
+raw_objects = list(objects)
+objects = unique_candidates(raw_objects)
+for item in objects:
+    x1, y1, x2, y2 = map(int, item["bbox"])
+    cv2.rectangle(annotated, (x1, y1), (x2, y2), (80, 230, 140), 2)
+    cv2.putText(annotated, request["english_label"] + " " + str(round(item["confidence"], 2)),
+        (x1, max(16, y1 - 7)), cv2.FONT_HERSHEY_SIMPLEX, .5, (80, 230, 140), 1)
 cv2.imwrite(str(folder/'result.jpg'),annotated)
-record=dict(objects=objects,image_stamp=float(sample['stamp']),frame=str(sample['frame']),
+record=dict(objects=objects,raw_objects=raw_objects,duplicate_filter="same_label_iou_nms_0.5",
+            image_stamp=float(sample['stamp']),frame=str(sample['frame']),
             processing_seconds=time.monotonic()-started,model='GroundingDINO-tiny',
             world_coordinates_validated=False,executed=False,identity_verified=False)
 (folder/'result.json').write_text(json.dumps(record,allow_nan=False))
