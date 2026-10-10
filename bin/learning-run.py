@@ -14,14 +14,68 @@ import subprocess
 import sys
 import time
 
-ROOT=Path('/home/vlad/Explorer')
-os.environ['HF_HOME']=str(ROOT/'data/hf-learning-cache')
-os.environ['HF_DATASETS_CACHE']=str(ROOT/'data/hf-learning-cache/datasets')
-os.environ['TORCH_HOME']=str(ROOT/'data/torch-learning-cache')
-os.environ['HF_HUB_DISABLE_TELEMETRY']='1'
-os.environ['HF_HUB_OFFLINE']='1'
+ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'src'))
-from lerobot_bridge import training_budget,write_json
+from learning_environment import configure,config_notes
+CACHE_ENVIRONMENT=configure(ROOT)
+from lerobot_bridge import training_budget,write_json,save_job
+from mobile_policy_contract import SAMPLE_CONTRACT,CONTRACT_SHA256,read_bundle
+
+
+class TrainingDeferred(ValueError):
+    """Foreground work or power preempted a background learner."""
+
+
+def budget():
+    try:training_budget(ROOT)
+    except (OSError,ValueError,KeyError) as exc:raise TrainingDeferred(str(exc)) from exc
+
+
+def export_once(exporter,episodes,source,destination,repo_id,task=None):
+    fingerprint=hashlib.sha256(json.dumps(episodes,sort_keys=True).encode()).hexdigest()
+    ready=destination/"explorer-export-ready.json"
+    if ready.exists() and json.loads(ready.read_text()).get("input_sha256")==fingerprint:
+        return
+    if destination.exists():
+        destination.rename(destination.with_name(destination.name+"-partial-"+str(time.time_ns())))
+    if task is None:exporter(episodes,source,destination,repo_id)
+    else:exporter(episodes,source,destination,repo_id,task)
+    write_json(ready,{"input_sha256":fingerprint,"finalized":True,"at":time.time()})
+
+
+def resumable_checkpoint(folder):
+    candidates=list((folder/"model/checkpoints").glob("*/pretrained_model/train_config.json"))
+    complete=[]
+    required=("training_step.json","optimizer_state.safetensors","rng_state.safetensors")
+    for config in candidates:
+        state=config.parent.parent/"training_state"
+        if (config.parent/"model.safetensors").is_file() and all((state/name).is_file() for name in required):
+            step=json.loads((state/"training_step.json").read_text())["step"]
+            complete.append((int(step),config))
+    return max(complete,key=lambda item:item[0]) if complete else None
+
+
+def create_mobile_bundle(folder,state):
+    checkpoint=folder/"model/checkpoints/last/pretrained_model"
+    bundle_files={str(path.relative_to(checkpoint)):hashlib.sha256(path.read_bytes()).hexdigest()
+                  for path in checkpoint.rglob("*") if path.is_file()}
+    if "model.safetensors" not in bundle_files or "config.json" not in bundle_files:
+        raise ValueError("Checkpoint не содержит обязательные веса и конфигурацию")
+    provenance=json.loads((folder/"train/explorer-provenance.json").read_text())
+    bundle={"format":"explorer_mobile_act_bundle_v2","created":time.time(),
+        "skill_id":state.get("skill_id"),"task":state["task"],"dataset_kind":"mobile_manipulation_9dof",
+        "episodes":state["episodes"],"dataset_fingerprint":state.get("dataset_fingerprint"),
+        "checkpoint_relative":"model/checkpoints/last/pretrained_model","checkpoint_sha256":bundle_files,
+        "framework":"lerobot","policy":"act","observation_order":SAMPLE_CONTRACT["action_order"],
+        "action_order":SAMPLE_CONTRACT["action_order"],"units":SAMPLE_CONTRACT["units"],
+        "joint_state_source":"command_estimate","camera_feature":"observation.images.wrist",
+        "sample_contract":SAMPLE_CONTRACT,"sample_contract_sha256":CONTRACT_SHA256,
+        "dataset_fps":provenance["dataset_fps"],"chunk_size":1,"action_steps":1,
+        "validation":state["validation"],"physical_success_verified":False,
+        "autonomous_motion_on_registration":False}
+    write_json(folder/"bundle.json",bundle)
+    read_bundle(folder)
+    return bundle
 
 def export_dataset(episodes,source,destination,repo_id):
     import cv2
@@ -83,8 +137,12 @@ def export_mobile_dataset(episodes,source,destination,repo_id,task_name=None):
         for start,end in zip(boundaries,boundaries[1:]):
             if end-start>=3:
                 for current,future in zip(rows[start:end-1],rows[start+1:end]):
-                    state=np.asarray(current['command'],dtype=np.float32)
-                    action=np.asarray(future['command'],dtype=np.float32)
+                    if current.get("sample_contract_sha256") not in (None,CONTRACT_SHA256):
+                        raise ValueError("Несовместимые единицы или семантика команд показа")
+                    if current.get("executed_action_source") not in (None,"operator_manual_control"):
+                        raise ValueError("Команды модели не используются как успешный показ")
+                    state=np.asarray(current.get("observation_state",current["command"]),dtype=np.float32)
+                    action=np.asarray(future.get("applied_action",future["command"]),dtype=np.float32)
                     if state.shape!=(9,) or action.shape!=(9,) or not np.isfinite(state).all() or not np.isfinite(action).all():
                         raise ValueError('Invalid mobile command sample')
                     image=cv2.imread(str(source/episode['id']/current['image']))
@@ -97,9 +155,14 @@ def export_mobile_dataset(episodes,source,destination,repo_id,task_name=None):
                                   "first_image_stamp":rows[start]["image_stamp"],
                                   "last_image_stamp":rows[end-1]["image_stamp"]})
         if not fragments:raise ValueError("После пропусков кадров нет непрерывного фрагмента")
-        provenance.append({"episode":episode,"fragments":fragments,"dropped_short_fragments":len(boundaries)-1-len(fragments)})
+        input_files=[source/episode["id"]/"samples.jsonl"]
+        input_files.extend(source/episode["id"]/row["image"] for row in rows)
+        inputs={str(path.relative_to(source)):hashlib.sha256(path.read_bytes()).hexdigest() for path in input_files}
+        provenance.append({"episode":episode,"fragments":fragments,"input_sha256":inputs,
+            "dropped_short_fragments":len(boundaries)-1-len(fragments)})
     ds.finalize();write_json(destination/'explorer-provenance.json',dict(episodes=provenance,
-        format='explorer_mobile_episode_v2',joint_state_source='commanded_not_measured',
+        format="explorer_mobile_episode_v3",joint_state_source="commanded_not_measured",
+        sample_contract=SAMPLE_CONTRACT,sample_contract_sha256=CONTRACT_SHA256,
         dataset_fps=fps,physical_rates_hz=rates,original_timestamps="samples.jsonl:image_stamp,at,state_stamp",
         automatic_execution_allowed=False))
 
@@ -113,10 +176,14 @@ def run():
         raise InterruptedError('Обучение остановлено; сохранённые контрольные точки оставлены')
     signal.signal(signal.SIGTERM,stop)
     try:
-        training_budget();state['state']='exporting';write_json(folder/'job.json',state)
+        budget();state.update(state="exporting",at=time.time());save_job(folder/"job.json",state)
         mobile=state.get('dataset_kind')=='mobile_manipulation_9dof'
         source=ROOT/('data/mobile-demonstrations' if mobile else 'data/demonstrations')
         episodes=[json.loads((source/e/'episode.json').read_text()) for e in state['episodes']]
+        for identifier,files in state.get("input_sha256",{}).items():
+            for name,digest in files.items():
+                if hashlib.sha256((source/identifier/name).read_bytes()).hexdigest()!=digest:
+                    raise ValueError("Показ изменён после постановки в очередь")
         expected_source='operator_mobile_demonstration' if mobile else 'operator_demonstration'
         if not episodes or any(e['outcome']!='success' or e['label_source']!='operator' or
                                   e['state']!='complete' or (e.get('skill_id')!=state['skill_id'] if state.get('skill_id') else e['name']!=state['task']) or
@@ -127,64 +194,62 @@ def run():
         training=episodes[:-heldout] if heldout else episodes
         validation=episodes[-heldout:] if heldout else episodes
         if mobile:
-            exporter(training,source,folder/'train','explorer/train',state['task'])
-            exporter(validation,source,folder/'validation','explorer/validation',state['task'])
+            export_once(exporter,training,source,folder/"train","explorer/train",state["task"])
+            export_once(exporter,validation,source,folder/"validation","explorer/validation",state["task"])
         else:
-            exporter(training,source,folder/'train','explorer/train')
-            exporter(validation,source,folder/'validation','explorer/validation')
+            export_once(exporter,training,source,folder/"train","explorer/train")
+            export_once(exporter,validation,source,folder/"validation","explorer/validation")
         write_json(folder/'split.json',dict(train=[e['id'] for e in training],
                    validation=[e['id'] for e in validation],heldout_independent=bool(heldout)))
         config=dict(dataset=dict(repo_id='explorer/train',root=str(folder/'train'),video_backend='pyav'),
             policy=dict(type='act',device='cuda',push_to_hub=False,chunk_size=1,n_action_steps=1,
+                        pretrained_backbone_weights=None,
                         dim_model=256,n_heads=4,dim_feedforward=1024,n_encoder_layers=2,
                         n_vae_encoder_layers=2),output_dir=str(folder/'model'),
-            batch_size=4,num_workers=0,steps=state['steps'],save_freq=500,log_freq=25,
-            env_eval_freq=0,wandb=dict(enable=False))
+            batch_size=4,num_workers=0,steps=state["steps"],save_freq=25,log_freq=25,
+            env_eval_freq=0,wandb=dict(enable=False,notes=config_notes(CACHE_ENVIRONMENT)))
         write_json(folder/'train-config.json',config)
-        state['state']='training';write_json(folder/'job.json',state)
+        write_json(folder/"train-config.environment.json",CACHE_ENVIRONMENT)
+        checkpoint=resumable_checkpoint(folder)
+        args=[str(ROOT/".venv-learning/bin/lerobot-train")]
+        if checkpoint:
+            args.extend(["--config_path="+str(checkpoint[1]),"--resume=true"])
+            state["resumed_step"]=checkpoint[0]
+        else:
+            if (folder/"model").exists():
+                (folder/"model").rename(folder/("model-partial-"+str(time.time_ns())))
+            args.append("--config_path="+str(folder/"train-config.json"))
+        state.update(state="training",at=time.time());save_job(folder/"job.json",state)
         env=dict(os.environ,HF_HUB_DISABLE_TELEMETRY='1',WANDB_MODE='disabled',OMP_NUM_THREADS='2')
         with (folder/'train.log').open('a') as log:
-            child=subprocess.Popen([str(ROOT/'.venv-learning/bin/lerobot-train'),
-                 '--config_path='+str(folder/'train-config.json')],stdout=log,stderr=log,env=env)
+            child=subprocess.Popen(args,stdout=log,stderr=log,env=env)
             while child.poll() is None:
-                training_budget();time.sleep(2)
+                if json.loads((folder/"job.json").read_text()).get("cancel_requested"):
+                    raise InterruptedError("Обучение отменено оператором")
+                budget();state["at"]=time.time();save_job(folder/"job.json",state);time.sleep(2)
             if child.returncode:raise RuntimeError('LeRobot завершился с ошибкой; см. журнал обучения')
-        state.update(state='validating');write_json(folder/'job.json',state)
+        state.update(state="validating",at=time.time());save_job(folder/"job.json",state)
         state['validation']=validate(folder)
         if mobile:
-            checkpoint=folder/"model/checkpoints/last/pretrained_model"
-            bundle_files={}
-            for path in checkpoint.rglob("*"):
-                if path.is_file():bundle_files[str(path.relative_to(checkpoint))]=hashlib.sha256(path.read_bytes()).hexdigest()
-            if "model.safetensors" not in bundle_files or "config.json" not in bundle_files:
-                raise ValueError("Checkpoint не содержит обязательные веса и конфигурацию")
-            provenance=json.loads((folder/"train/explorer-provenance.json").read_text())
-            bundle={"format":"explorer_mobile_act_bundle_v1","created":time.time(),
-                    "skill_id":state.get("skill_id"),"task":state["task"],"dataset_kind":"mobile_manipulation_9dof",
-                    "episodes":state["episodes"],"checkpoint_relative":"model/checkpoints/last/pretrained_model",
-                    "checkpoint_sha256":bundle_files,"framework":"lerobot","policy":"act",
-                    "observation_order":["base","shoulder","elbow","wrist_pitch","wrist_roll","gripper","vx","vy","wz"],
-                    "action_order":["base","shoulder","elbow","wrist_pitch","wrist_roll","gripper","vx","vy","wz"],
-                    "units":["deg"]*6+["m/s","m/s","rad/s"],
-                    "joint_state_source":"command_estimate","camera_feature":"observation.images.wrist",
-                    "dataset_fps":provenance["dataset_fps"],"chunk_size":1,"action_steps":1,
-                    "validation":state["validation"],"physical_success_verified":False,
-                    "autonomous_motion_on_registration":False}
-            write_json(folder/"bundle.json",bundle)
+            create_mobile_bundle(folder,state)
             state["bundle"]="bundle.json"
         terminal='validated_offline' if heldout else 'trained_unvalidated'
         note=('Проверка по отдельным показам завершена. Физическое исполнение не разрешено' if heldout else
               'Модель обучена на единственном показе; независимой offline-выборки нет, продвижение запрещено')
         state.update(state=terminal,finished=time.time(),note=note)
     except (Exception,KeyboardInterrupt) as exc:
-        state.update(state='interrupted' if isinstance(exc,(InterruptedError,KeyboardInterrupt)) else 'failed',
+        interrupted=isinstance(exc,(TrainingDeferred,InterruptedError,KeyboardInterrupt))
+        state.update(state="deferred" if interrupted else "failed",
                      error=str(exc),finished=time.time())
     finally:
         if child and child.poll() is None:
             child.terminate()
             try:child.wait(timeout=5)
             except subprocess.TimeoutExpired:child.kill();child.wait()
-        write_json(folder/'job.json',state)
+        persisted=json.loads((folder/"job.json").read_text())
+        if persisted.get("cancel_requested"):
+            state.update(state="cancelled",cancel_requested=True)
+        state["at"]=time.time();save_job(folder/"job.json",state,terminal=True)
 
 def validate(folder,check_budget=True):
     import numpy as np
@@ -200,7 +265,7 @@ def validate(folder,check_budget=True):
     errors=[];baseline=[]
     with torch.no_grad():
         for sample in torch.utils.data.DataLoader(ds,batch_size=1,shuffle=False,num_workers=0):
-            if check_budget:training_budget()
+            if check_budget:budget()
             expected=sample['action'].clone().cpu().numpy()
             previous=sample['observation.state'].clone().cpu().numpy()
             policy.reset()

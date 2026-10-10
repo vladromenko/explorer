@@ -86,5 +86,57 @@ class ManualTeleopTests(unittest.TestCase):
         self.assertGreaterEqual(segment[1][2],1)
         self.assertLessEqual(segment[1][2],6)
 
+    def test_live_stream_receives_packets_without_finite_delta_workers(self):
+        panel=self.panel();self.select(panel);panel.set_arm_mode("keyboard","joint")
+        arm=Mock();arm.supports_velocity_stream=True;arm.streaming_active=True
+        panel.bind_arm(arm,Mock())
+        panel.update("keyboard",{"joint2_increase":.5,"grip_close":1,"forward":1},True)
+        velocity=arm.stream_velocity.call_args.args[0]
+        self.assertEqual(velocity,[0,12,0,0,0,36])
+        panel.tick()
+        panel.drive.assert_called()
+        panel.teaching.teleop.assert_not_called()
+        panel.update("keyboard",{},True)
+        self.assertEqual(arm.stream_velocity.call_args.args[0],[0]*6)
+
+    def test_live_stream_generation_stop_lease_and_mode_invalidations(self):
+        panel=self.panel();self.select(panel)
+        arm=Mock();arm.supports_velocity_stream=True;arm.streaming_active=True
+        panel.bind_arm(arm,Mock())
+        panel.update("keyboard",{"arm_x_forward":1},True)
+        permit=arm.stream_velocity.call_args.args[4]
+        self.assertTrue(permit())
+        panel.set_arm_mode("keyboard","joint")
+        self.assertFalse(permit())
+        panel.update("keyboard",{"joint2_increase":1},True)
+        permit=arm.stream_velocity.call_args.args[4]
+        panel.stop()
+        self.assertFalse(permit())
+        arm.stop.assert_called()
+        panel.update("keyboard",{},True);panel.resume("keyboard",True)
+        panel.update("keyboard",{"joint2_increase":1},True)
+        permit=arm.stream_velocity.call_args.args[4]
+        panel.tick(panel.lease+1)
+        self.assertFalse(permit())
+        self.assertIsNone(panel.owner)
+
+    def test_cartesian_keeps_pitch_roll_and_gripper_controls(self):
+        panel=self.panel();self.select(panel)
+        arm=Mock();arm.supports_velocity_stream=True;arm.streaming_active=True
+        panel.bind_arm(arm,Mock())
+        panel.update("keyboard",{"arm_x_forward":1,"pitch_up":1,"wrist_right":1,"grip_close":1},True)
+        velocity,xyz=arm.stream_velocity.call_args.args[:2]
+        self.assertEqual(velocity,[0,0,0,30,30,36])
+        self.assertEqual(xyz,[.035,0,0])
+
+    def test_neutral_owner_expiry_does_not_globally_stop_foreign_arm(self):
+        panel=self.panel();self.select(panel)
+        arm=Mock();arm.supports_velocity_stream=True;arm.streaming_active=True
+        panel.bind_arm(arm,Mock())
+        generation=panel.generation
+        panel.tick(panel.lease+1)
+        arm.stop.assert_not_called()
+        arm.stop_stream.assert_called_once_with("keyboard",generation)
+
 
 if __name__=='__main__':unittest.main()

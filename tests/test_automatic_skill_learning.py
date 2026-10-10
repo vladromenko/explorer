@@ -101,7 +101,7 @@ class AutomaticLearningTests(unittest.TestCase):
                     "joint_state_source":"command_estimate","checkpoint_relative":"model",
                     "checkpoint_sha256":digests}
             (root/"bundle.json").write_text(json.dumps(bundle))
-            self.assertEqual(read_bundle(root)[1],checkpoint)
+            self.assertEqual(read_bundle(root)[1],checkpoint.resolve())
             (checkpoint/"model.safetensors").write_bytes(b"damaged")
             with self.assertRaisesRegex(ValueError,"Контрольная сумма"):
                 read_bundle(root)

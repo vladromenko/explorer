@@ -2,6 +2,14 @@
 # Separate environment: never change the ROS/perception Python environment.
 set -euo pipefail
 task_root=/home/vlad/Explorer
+export HF_HOME="$task_root/data/hf-learning-cache"
+export HF_DATASETS_CACHE="$HF_HOME/datasets"
+export HF_HUB_CACHE="$HF_HOME/hub"
+export HUGGINGFACE_HUB_CACHE="$HF_HUB_CACHE"
+export HF_ASSETS_CACHE="$HF_HOME/assets"
+export HF_LEROBOT_HOME="$task_root/data/lerobot-cache"
+export TORCH_HOME="$task_root/data/torch-learning-cache"
+mkdir -p "$HF_HOME" "$HF_DATASETS_CACHE" "$HF_HUB_CACHE" "$HF_ASSETS_CACHE" "$HF_LEROBOT_HOME" "$TORCH_HOME"
 python3 -m venv "$task_root/.venv-learning"
 "$task_root/.venv-learning/bin/pip" install --upgrade pip uv
 "$task_root/.venv-learning/bin/uv" pip install --python "$task_root/.venv-learning/bin/python" \

@@ -22,12 +22,14 @@ sudo apt-get install -y --no-install-recommends python3-venv python3-opencv pyth
 python3 -m venv --system-site-packages "$root/.venv"
 "$root/.venv/bin/pip" install --upgrade pip
 "$root/.venv/bin/pip" install -r "$root/config/runtime-requirements.txt"
+"$root/bin/install-motion.sh"
 python3 "$root/bin/install-moveit-user.py"
 if [ "$learning" = 1 ]; then "$root/bin/install-learning.sh"; fi
 python3 -m venv "$root/.venv-voice"
 "$root/.venv-voice/bin/pip" install --upgrade pip
 "$root/.venv-voice/bin/pip" install -r "$root/config/voice-environment.lock.txt"
 python3 "$root/bin/install-assets.py" --source "$assets"
+"$root/.venv/bin/python" "$root/bin/install-human-models.py" --check-runtime
 "$root/bin/install-hardware.sh"
 if [ ! -s "$root/config/access_token" ]; then
   "$root/.venv/bin/python" - <<'PY'
@@ -38,5 +40,5 @@ PY
 fi
 python3 "$root/bin/install-services.py"
 source "$root/bin/env.sh"
-python3 -m pytest -q tests
+"$root/bin/test-jetson.sh"
 echo 'Установка завершена. Настройте секреты по docs/INSTALL-AND-RECOVERY.ru.md и выполните: bin/explorer status'

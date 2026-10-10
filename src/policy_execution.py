@@ -57,7 +57,7 @@ class PolicyExecution:
             if self.teaching.active or self.preview.lock.locked():raise ValueError('Завершите показ или предварительный расчёт')
             training_budget(self.root)
             jobs=self.jobs.status()['jobs']
-            if any(j['state'] in ('queued','exporting','training','validating') for j in jobs):raise ValueError('Дождитесь окончания обучения')
+            if any(j["state"] in ("exporting","training","validating") for j in jobs):raise ValueError("Дождитесь окончания обучения")
             candidates=[j for j in jobs if j['task']==task and j['state']=='validated_offline' and j.get('validation',{}).get('improves_hold_baseline')]
             if not candidates:raise ValueError('Сначала запишите показы и обучите проверенную модель этого навыка')
             self.teaching.observation()

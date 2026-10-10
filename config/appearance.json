@@ -1,4 +1,4 @@
 {
-  "rgb_mode": "auto",
-  "headlight_brightness": 0.8
+  "rgb_mode": "headlights",
+  "headlight_brightness": 1.0
 }

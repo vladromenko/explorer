@@ -2,6 +2,7 @@ import fcntl
 import json
 from pathlib import Path
 import tempfile
+import threading
 import time
 import unittest
 from unittest.mock import Mock,patch
@@ -170,5 +171,113 @@ class ManualArmTests(unittest.TestCase):
                 self.arm.execute_path(self.start,self.goal,None,lambda:None,self.arm.stop_revision)
         self.pub.publish.assert_not_called()
         self.assertFalse(self.arm.lock.locked())
+
+    def test_stream_continues_and_brakes_without_new_gripper_goal(self):
+        with patch("manual_arm.coordinated_status"):
+            self.arm.stream_velocity([24,0,0,0,0,0],[0,0,0],12,time.monotonic()+1,
+                lambda:True,owner="keyboard")
+            end=time.monotonic()+.7
+            while self.pub.publish.call_count<3 and time.monotonic()<end:time.sleep(.005)
+            self.assertGreaterEqual(self.pub.publish.call_count,3)
+            self.arm.stream_velocity([0]*6,[0]*3,12,time.monotonic()+1,
+                lambda:True,owner="keyboard")
+            end=time.monotonic()+.5
+            while self.arm.streaming_active and time.monotonic()<end:time.sleep(.005)
+        self.assertFalse(self.arm.streaming_active)
+        self.assertFalse(self.arm.lock.locked())
+        self.assertTrue(all(call.args[0].joint6==30 for call in self.pub.publish.call_args_list))
+        self.assertTrue(all(call.args[0].time==80 for call in self.pub.publish.call_args_list))
+        state=json.loads((self.root/"data/arm-state.json").read_text())
+        self.assertEqual(state["motion_profile"],"ruckig_community_velocity")
+        self.assertEqual(state["command_generation"],12)
+        self.assertTrue(state["command_completed"])
+        self.assertFalse(state["measured"])
+        self.assertEqual(state["servo_deg"],state["q_commanded_deg"])
+        self.assertIn("q_estimated_deg",state)
+
+    def test_stream_stop_sends_no_next_target_and_retains_grip(self):
+        with patch("manual_arm.coordinated_status"):
+            self.arm.stream_velocity([24,0,0,0,0,0],[0]*3,13,time.monotonic()+1,
+                lambda:True,owner="keyboard")
+            end=time.monotonic()+.7
+            while self.pub.publish.call_count<3 and time.monotonic()<end:time.sleep(.005)
+            self.arm.stop()
+            count=self.pub.publish.call_count
+            end=time.monotonic()+.5
+            while self.arm.streaming_active and time.monotonic()<end:time.sleep(.005)
+        self.assertEqual(self.pub.publish.call_count,count)
+        self.assertTrue(all(call.args[0].joint6==30 for call in self.pub.publish.call_args_list))
+        self.assertFalse(self.arm.streaming_active)
+        self.assertTrue(json.loads((self.root/"data/arm-state.json").read_text())["cancelled"])
+
+    def test_stream_expired_input_and_foreign_owner_do_not_publish(self):
+        with self.assertRaisesRegex(ValueError,"expired"):
+            self.arm.stream_velocity([24,0,0,0,0,0],[0]*3,1,time.monotonic()-1,lambda:True)
+        with patch("manual_arm.threading.Thread"):
+            self.arm.stream_velocity([6,0,0,0,0,0],[0]*3,5,time.monotonic()+1,lambda:True,owner="gaze")
+        neutral=self.arm.stream_velocity([0]*6,[0]*3,6,time.monotonic()+1,lambda:True,owner="keyboard")
+        self.assertTrue(neutral["neutral_ignored"])
+        with self.assertRaisesRegex(ValueError,"владельцем"):
+            self.arm.stream_velocity([24,0,0,0,0,0],[0]*3,6,time.monotonic()+1,lambda:True,owner="keyboard")
+        self.pub.publish.assert_not_called()
+
+    def test_short_reversal_release_retains_latest_direction(self):
+        with patch("manual_arm.threading.Thread"):
+            for rate in (24.0,-24.0,0.0):
+                self.arm.stream_velocity([rate,0,0,0,0,0],[0]*3,41,time.monotonic()+1,
+                    lambda:True,owner="keyboard")
+        self.assertEqual(self.arm.stream_intent["joints"],[0]*6)
+        self.assertEqual(self.arm.stream_intent["pulse"]["joints"],[-24.0,0,0,0,0,0])
+        self.pub.publish.assert_not_called()
+
+    def test_short_press_during_final_ack_starts_fresh_worker(self):
+        self._press_during_final_ack(cancel_pending=False)
+
+    def test_stop_invalidates_press_waiting_during_final_ack(self):
+        self._press_during_final_ack(cancel_pending=True)
+
+    def test_busy_finite_owner_does_not_restart_unchanged_intent(self):
+        self.arm.lock.acquire()
+        try:
+            self.arm.stream_velocity([24,0,0,0,0,0],[0]*3,43,time.monotonic()+2,
+                lambda:True,owner="keyboard")
+            worker=self.arm.stream_thread
+            worker.join(.5)
+            self.assertFalse(worker.is_alive())
+            self.assertFalse(self.arm.streaming_active)
+            self.assertIs(self.arm.stream_thread,worker)
+            self.assertTrue(self.arm.lock.locked())
+            self.pub.publish.assert_not_called()
+        finally:self.arm.lock.release()
+
+    def _press_during_final_ack(self,cancel_pending):
+        draining=threading.Event();release_ack=threading.Event()
+        def acknowledge(*args):
+            draining.set()
+            release_ack.wait(.7)
+            return True
+        self.pub.wait_for_all_acked.side_effect=acknowledge
+        with patch("manual_arm.coordinated_status"):
+            self.arm.stream_velocity([24,0,0,0,0,0],[0]*3,42,time.monotonic()+2,
+                lambda:True,owner="keyboard")
+            deadline=time.monotonic()+.7
+            while self.pub.publish.call_count<3 and time.monotonic()<deadline:time.sleep(.005)
+            self.assertGreaterEqual(self.pub.publish.call_count,3)
+            self.arm.stream_velocity([0]*6,[0]*3,42,time.monotonic()+2,
+                lambda:True,owner="keyboard")
+            self.assertTrue(draining.wait(.5))
+            published=self.pub.publish.call_count
+            for rate in (48,0):
+                self.arm.stream_velocity([rate,0,0,0,0,0],[0]*3,42,time.monotonic()+2,
+                    lambda:True,owner="keyboard")
+            if cancel_pending:self.arm.stop()
+            release_ack.set()
+            deadline=time.monotonic()+.7
+            while self.arm.streaming_active and time.monotonic()<deadline:time.sleep(.005)
+            self.assertFalse(self.arm.streaming_active)
+            self.assertFalse(self.arm.lock.locked())
+            if cancel_pending:self.assertEqual(self.pub.publish.call_count,published)
+            else:self.assertGreater(self.pub.publish.call_count,published)
+            self.assertTrue(all(call.args[0].joint6==30 for call in self.pub.publish.call_args_list))
 
 if __name__=='__main__':unittest.main()

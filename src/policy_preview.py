@@ -44,7 +44,7 @@ class PolicyPreview:
         try:
             training_budget(self.root)
             jobs=self.jobs.status()['jobs']
-            if any(j['state'] in ('queued','exporting','training','validating') for j in jobs):
+            if any(j["state"] in ("exporting","training","validating") for j in jobs):
                 raise ValueError('Сначала завершите обучение')
             candidates=[j for j in jobs if j['task']==task and j['state']=='validated_offline']
             if not candidates:raise ValueError('Нет проверенной модели этого навыка: сначала запишите показы и обучите ACT')

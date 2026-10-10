@@ -55,6 +55,26 @@ class ManualTeleop:
         self.model = model
         arm.gamepad_permit = lambda: self._arm_permitted()
 
+    def _stream_permitted(self, generation):
+        with self.lock:
+            return (generation == self.generation and not self.stop_latched
+                and self.owner is not None and time.monotonic() < self.lease)
+
+    def _update_arm_stream_locked(self, values, precision):
+        xyz, joints = self._arm_intent(values, precision, self.arm_speed)
+        xyz_rate = 0.035
+        rates = [24.0, 24.0, 24.0, 30.0, 30.0, 36.0]
+        joints = [value * rate for value, rate in zip(joints, rates)]
+        if self.arm_mode == "cartesian":
+            joints[:3] = [0.0] * 3
+            xyz = [value * xyz_rate for value in xyz]
+        else:
+            xyz = [0.0] * 3
+        generation = self.generation
+        self.arm.stream_velocity(joints, xyz, generation, self.lease,
+            lambda: self._stream_permitted(generation), owner=self.owner)
+        self.arm_busy = self.arm.streaming_active
+
     def _arm_permitted(self):
         with self.lock:
             return not self.stop_latched and self.owner is not None and time.monotonic() < self.lease
@@ -63,6 +83,13 @@ class ManualTeleop:
         self.joint_residual = [0.0] * 6
         self.xyz_residual = [0.0] * 3
         self.last_integrator = time.monotonic()
+
+    def _cancel_owned_arm_locked(self):
+        if self.arm:
+            if getattr(self.arm, "supports_velocity_stream", False) is True:
+                self.arm.stop_stream(self.owner, self.generation)
+            else:
+                self.arm.stop()
 
     def select_source(self, source, observing, neutral=True):
         if source not in ("keyboard", "gamepad"):
@@ -75,8 +102,7 @@ class ManualTeleop:
             changed = self.owner != source
             if changed:
                 self._release_locked()
-                if self.arm:
-                    self.arm.stop()
+                self._cancel_owned_arm_locked()
                 self.generation += 1
                 self._reset_arm_locked()
             self.owner = source
@@ -99,12 +125,11 @@ class ManualTeleop:
             if self.owner != source:
                 raise ValueError("Сначала явно выберите источник управления")
             if self.arm_mode != mode:
+                self._cancel_owned_arm_locked()
                 self.arm_mode = mode
                 self.inputs = {key: value for key, value in self.inputs.items() if key not in ARM_ACTIONS}
                 self.generation += 1
                 self._reset_arm_locked()
-                if self.arm:
-                    self.arm.stop()
                 self._record_locked("arm_mode_changed")
         return self.status()
 
@@ -131,9 +156,10 @@ class ManualTeleop:
         with self.lock:
             if self.owner != source:
                 raise ValueError("Источник управления не выбран")
-            for positive, negative, residual, index, pulse in (
+            for positive, negative, residual, index, pulse in (() if
+                self.arm and getattr(self.arm, "supports_velocity_stream", False) is True else (
                 ("arm_z_up", "arm_z_down", self.xyz_residual, 2, 0.003),
-                ("joint3_increase", "joint3_decrease", self.joint_residual, 2, 1.0)):
+                ("joint3_increase", "joint3_decrease", self.joint_residual, 2, 1.0))):
                 if clean.get(positive, 0.0) > 0.5 and self.inputs.get(positive, 0.0) <= 0.5:
                     residual[index] = min(pulse, residual[index] + pulse)
                 if clean.get(negative, 0.0) > 0.5 and self.inputs.get(negative, 0.0) <= 0.5:
@@ -148,6 +174,12 @@ class ManualTeleop:
             self._record_locked("input")
         if announce and self.takeover_callback:
             self.takeover_callback()
+        with self.lock:
+            # Preserve a brief press/release without a queue of old deltas:
+            # the stream receives every latest packet, including neutral.
+            if (self.owner == source and not self.stop_latched and self.arm and self.model
+                    and getattr(self.arm, "supports_velocity_stream", False) is True):
+                self._update_arm_stream_locked(clean, self.precision)
         return self.status()
 
     @staticmethod
@@ -188,6 +220,7 @@ class ManualTeleop:
     def disconnect(self, source):
         with self.lock:
             if self.owner == source:
+                self._cancel_owned_arm_locked()
                 self.inputs = {}
                 self.owner = None
                 self.lease = 0.0
@@ -195,8 +228,6 @@ class ManualTeleop:
                 self.generation += 1
                 self._reset_arm_locked()
                 self._release_locked()
-                if self.arm:
-                    self.arm.stop()
                 self._record_locked("disconnected")
         return self.status()
 
@@ -207,12 +238,13 @@ class ManualTeleop:
 
     def status(self):
         with self.lock:
+            streaming_error = getattr(self.arm, "error", None) if self.arm and getattr(self.arm, "supports_velocity_stream", False) is True else None
             return dict(owner=self.owner, stop_latched=self.stop_latched, neutral_seen=self.neutral_seen,
                 lease_age_s=max(0.0, self.lease-time.monotonic()), precision=self.precision,
                 arm_speed="precision" if self.precision else self.arm_speed,
                 arm_speed_selected=self.arm_speed,
                 arm_mode=self.arm_mode, generation=self.generation, inputs=dict(self.inputs),
-                drive_active=self.drive_active, arm_busy=self.arm_busy, error=self.error,
+                drive_active=self.drive_active, arm_busy=self.arm_busy, error=self.error or streaming_error,
                 backend="shared_manual_teleop", control_scheme=SCHEME_ID, measured_joint_feedback=False)
 
     def _drive_vector(self, values, precision):
@@ -306,13 +338,12 @@ class ManualTeleop:
                 self.last_integrator = now
                 return
             if now >= self.lease:
+                self._cancel_owned_arm_locked()
                 self.inputs = {}
                 self.owner = None
                 self.generation += 1
                 self._reset_arm_locked()
                 self._release_locked()
-                if self.arm:
-                    self.arm.stop()
                 return
             values = dict(self.inputs)
             precision = self.precision
@@ -326,11 +357,15 @@ class ManualTeleop:
                 self.drive_active = True
             else:
                 self._release_locked()
-            segment = self._prepare_arm_segment_locked(values, now, precision)
-            if segment is not None and self.arm and self.model:
-                self.arm_busy = True
-                args = (*segment, now+0.8, precision, self.arm_speed)
-                threading.Thread(target=self._arm_segment, args=args, daemon=True).start()
+            if self.arm and self.model and getattr(self.arm, "supports_velocity_stream", False) is True:
+                self._reset_arm_locked()
+                self._update_arm_stream_locked(values, precision)
+            else:
+                segment = self._prepare_arm_segment_locked(values, now, precision)
+                if segment is not None and self.arm and self.model:
+                    self.arm_busy = True
+                    args = (*segment, now+0.8, precision, self.arm_speed)
+                    threading.Thread(target=self._arm_segment, args=args, daemon=True).start()
 
     def _run(self):
         while not self.closed:

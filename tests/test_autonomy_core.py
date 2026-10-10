@@ -3,6 +3,7 @@ from pathlib import Path
 import tempfile
 import time
 import unittest
+from unittest import mock
 import numpy as np
 from autonomy_contracts import GoalSpec, Outcome, PolicyVersion, Truth
 from episode_store import EpisodeStore
@@ -97,6 +98,24 @@ class EpisodeAndDiscoveryTests(unittest.TestCase):
 
 
 class SupervisorTests(unittest.TestCase):
+    def test_restart_interrupts_queued_motion_without_replay(self):
+        with tempfile.TemporaryDirectory() as folder:
+            gateway = mock.Mock(return_value={"state": "success"})
+            world = lambda: {"scene_version": "scene-1", "predicates": {}}
+            readiness = lambda: {"hardware": {"physical_execution_ready": True}, "permissions": {}}
+            with mock.patch("autonomy_runtime.threading.Thread.start"):
+                first = AutonomySupervisor(folder, world, readiness, gateway)
+                item = first.submit("restart-request-1234", {"goal": "place sock", "target_predicates": {"placed": True}})
+                self.assertEqual(item["state"], "queued")
+                first.shutdown()
+                recovered = AutonomySupervisor(folder, world, readiness, gateway)
+                self.assertEqual(recovered.get(item["id"])["state"], "interrupted")
+                self.assertEqual(recovered.status()["active"], [])
+                gateway.assert_not_called()
+                self.assertEqual(recovered.resume(item["id"])["state"], "queued")
+                gateway.assert_not_called()
+                recovered.shutdown()
+
     def test_idempotent_job_persists_without_asking_for_physical_acceptance(self):
         with tempfile.TemporaryDirectory() as folder:
             world=lambda:dict(scene_version='scene-1',map_epoch='map-1',predicates={

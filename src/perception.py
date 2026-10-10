@@ -1,5 +1,6 @@
 """Latest-frame TensorRT perception, camera-frame depth association and SQLite memory."""
 import ctypes as C
+import hashlib
 import json
 import math
 import os
@@ -8,6 +9,7 @@ import sqlite3
 import threading
 import time
 import yaml
+import uuid
 from collections import deque
 import cv2
 import numpy as np
@@ -17,6 +19,7 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image, CameraInfo
 from cv_bridge import CvBridge
 import tensorrt as trt
+from rgbd_snapshot import registered_pair, save_snapshot
 
 ROOT=Path('/home/vlad/Explorer')
 LABELS='person,bicycle,car,motorcycle,airplane,bus,train,truck,boat,traffic light,fire hydrant,stop sign,parking meter,bench,bird,cat,dog,horse,sheep,cow,elephant,bear,zebra,giraffe,backpack,umbrella,handbag,tie,suitcase,frisbee,skis,snowboard,sports ball,kite,baseball bat,baseball glove,skateboard,surfboard,tennis racket,bottle,wine glass,cup,fork,knife,spoon,bowl,banana,apple,sandwich,orange,broccoli,carrot,hot dog,pizza,donut,cake,chair,couch,potted plant,bed,dining table,toilet,tv,laptop,mouse,remote,keyboard,cell phone,microwave,oven,toaster,sink,refrigerator,book,clock,vase,scissors,teddy bear,hair drier,toothbrush'.split(',')
@@ -89,6 +92,7 @@ class Perception(Node):
         self.rgb=deque(maxlen=8)
         self.depth=deque(maxlen=8)
         self.info=None
+        self.info_version=None
         self.lock=threading.Lock()
         self.preview_lock=threading.Lock()
         self.preview_at=0.
@@ -97,7 +101,10 @@ class Perception(Node):
         self.create_subscription(CameraInfo,'/camera/color/camera_info',self.info_cb,qos_profile_sensor_data)
     def color_cb(self,msg):
         frame=self.bridge.imgmsg_to_cv2(msg,'bgr8')
-        with self.lock:self.rgb.append((frame,stamp(msg),msg.header.frame_id))
+        with self.lock:
+            self.rgb.append((frame,stamp(msg),msg.header.frame_id))
+            camera_info=self.info
+            info_version=self.info_version
         now=time.monotonic()
         if now-self.preview_at>=.12 and self.preview_lock.acquire(False):
             try:
@@ -109,7 +116,13 @@ class Perception(Node):
                     metadata=ROOT/"data/camera-frame.tmp"
                     metadata.write_text(json.dumps(dict(at=time.time(),image_stamp=stamp(msg),frame=msg.header.frame_id,
                         width=frame.shape[1],height=frame.shape[0],source="onboard_color_callback",
-                        jpeg="frame-raw.jpg",same_frame_hash_verified=False)))
+                        camera_id="onboard_rgbd",frame_id=uuid.uuid4().hex,
+                        camera_info_version=info_version,
+                        intrinsic_k=list(camera_info.k) if camera_info is not None and camera_info.width==frame.shape[1] and camera_info.height==frame.shape[0] else None,
+                        distortion_d=list(camera_info.d) if camera_info is not None else None,
+                        exposure_time_source="ROS_image_header_device_timestamp",
+                        jpeg_sha256=hashlib.sha256(jpg.tobytes()).hexdigest(),
+                        jpeg="frame-raw.jpg",same_frame_hash_verified=True)))
                     metadata.replace(ROOT/"data/camera-frame.json")
                     self.preview_at=now
             finally:self.preview_lock.release()
@@ -117,13 +130,28 @@ class Perception(Node):
         scale=.001 if msg.encoding in ('16UC1','mono16') else 1.
         with self.lock:self.depth.append((self.bridge.imgmsg_to_cv2(msg),stamp(msg),msg.header.frame_id,scale))
     def info_cb(self,msg):
-        with self.lock:self.info=msg
+        signature=json.dumps({"k":list(msg.k),"d":list(msg.d),"width":msg.width,"height":msg.height,
+                              "frame":msg.header.frame_id,"distortion_model":msg.distortion_model},sort_keys=True)
+        with self.lock:
+            self.info=msg
+            self.info_version=hashlib.sha256(signature.encode()).hexdigest()
+
+def cache_rgbd(node):
+    previous=0
+    while rclpy.ok():
+        with node.lock:rgbs,depths,info=list(node.rgb),list(node.depth),node.info
+        pair=registered_pair(rgbs,depths,info,previous=previous)
+        if pair is not None:
+            try:previous=save_snapshot(ROOT/"data/rgbd-snapshot.npz",pair)
+            except (OSError,ValueError) as exc:node.get_logger().warning("RGB-D cache: "+str(exc))
+        time.sleep(.15)
 
 def run():
     rclpy.init()
     node=Perception()
     thread=threading.Thread(target=rclpy.spin,args=(node,),daemon=True)
     thread.start()
+    threading.Thread(target=cache_rgbd,args=(node,),daemon=True,name="rgbd-cache").start()
     engine=Engine()
     db=sqlite3.connect(ROOT/'data/world.sqlite3')
     db.execute('PRAGMA journal_mode=WAL')
@@ -152,16 +180,6 @@ def run():
             frame=raw.copy()
             previous=ts
             detections=engine.infer(frame)
-            registered=(depth is not None and info is not None and abs(ts-depth[1])<.05
-                        and depth[0].shape==raw.shape[:2] and depth[2]==frame_id)
-            if registered:
-                # One atomic, synchronized snapshot for demand-loaded object grounding.
-                snapshot=ROOT/'data/rgbd-snapshot.tmp'
-                with snapshot.open('wb') as stream:
-                    np.savez_compressed(stream,rgb=raw,depth=depth[0].astype(np.float32)*depth[3],
-                                        k=np.array(info.k).reshape(3,3),d=np.array(info.d),
-                                        stamp=ts,frame=frame_id)
-                snapshot.replace(ROOT/'data/rgbd-snapshot.npz')
             used=set()
             for d in detections:
                 box=d['bbox']; center=np.array([(box[0]+box[2])/2,(box[1]+box[3])/2])

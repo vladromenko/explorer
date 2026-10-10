@@ -1,0 +1,24 @@
+Add only after existing ensure_llm/status/navigation/delivery/trajectory definitions:
+
+from onboard_agent import OnboardAgent
+from agent_ports import ExplorerPorts
+from agent_api import install_agent_api
+from agent_intent import local_llama_plan
+agent_ports=ExplorerPorts(ROOT,lambda:tool("get_status",{}),missions,navigation_tasks,object_finder,
+    semantic_world,camera_views,manual_arm,trajectory_execution,delivery_task,missions.surveys,profiles,
+    before_grounding=unload_agent_llm)
+onboard_agent=OnboardAgent(ROOT,agent_ports.catalog()+additional_agent_ports)
+install_agent_api(app,ROOT,onboard_agent,TOKEN,missions.places,stop_all,
+    model=lambda text,catalog,places:local_llama_plan(text,catalog,places,ensure_llm))
+
+Root owns optional extra ports bound to OnboardVision/active gaze/etc. additional_agent_ports=[] is valid.
+unload_agent_llm: real resource-release callback before grounding; avoid simultaneous nested model inference.
+No callback is required for compatibility: pass before_grounding=None if existing scheduler already ensures release.
+In existing public UI middleware path allowlist add /agent and /agent-ui.js ONLY.
+At top of stop_all and manual_takeover call agent.cancel_all if globals().get("onboard_agent") exists.
+Register shutdown handler onboard_agent.shutdown. It cancels only owned pending tasks; no replay on next start.
+Add a navigation link /agent to existing UI without removing or moving tabs.
+
+Optional ports are SkillPort objects with strict JSON schemas, explicit resource ownership and operation(args,context).
+context.permit() must be called before and after long calculations and on each physical renewal.
+Return {"state":"succeeded|failed|unknown|waiting","evidence":{...}}. Accepted request/ACK is not a result.

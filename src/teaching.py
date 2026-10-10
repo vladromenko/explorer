@@ -66,7 +66,10 @@ class TeachingController:
             return self.measured_reference()['servo_deg']
         arm=json.loads((self.root/'data/arm-state.json').read_text())
         boot=Path('/proc/sys/kernel/random/boot_id').read_text().strip()
-        if arm.get('boot_id')!=boot or arm.get('phase')!='command_elapsed_observation_required':
+        stream_estimate=(arm.get("phase")=="command_in_progress"
+            and arm.get("motion_profile")=="ruckig_community_velocity"
+            and time.time()-arm.get("updated_at",0)<0.5)
+        if arm.get("boot_id")!=boot or (arm.get("phase")!="command_elapsed_observation_required" and not stream_estimate):
             raise ValueError('Исходное положение руки не подтверждено в текущем сеансе')
         fault=self.root/'data/arm-telemetry-fault.json'
         if fault.exists() and json.loads(fault.read_text()).get('at',0)>arm['at']:

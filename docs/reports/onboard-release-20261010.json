@@ -1,0 +1,124 @@
+{
+  "date": "2026-10-10",
+  "hardware_firmware_changed": false,
+  "installed_on": "Jetson Orin Nano 8 GB / ROS 2 Jazzy",
+  "tests": {
+    "jetson": {
+      "passed": 705,
+      "skipped": 3,
+      "elapsed_s": 38.35
+    },
+    "javascript_on_mac": {
+      "passed": 4,
+      "agent_script_syntax": "passed"
+    },
+    "actual_human_models_on_jetson": {
+      "passed": 19
+    }
+  },
+  "read_only_scenario": {
+    "passed": true,
+    "journal": "data/onboard-validation/1791652621542615667-read-only.json",
+    "idempotent": true,
+    "task_state": "succeeded",
+    "camera": {
+      "bytes": 73713,
+      "jpeg_sha256": "77ec806c803d3aaa8290eeef88908af5143e43d48ace89272ae623dd0bb964de",
+      "frame_id": "0c94fac2a8914277a406f980f5c10a85"
+    },
+    "depth_points": 80,
+    "depth_units": "metres",
+    "zone": "unchanged",
+    "map_pose": {
+      "x": 0.024367201859677796,
+      "y": 0.030703120829301274,
+      "yaw": -0.003379311032338794,
+      "frame": "map",
+      "source": "slam_toolbox_lidar_map_tf",
+      "age_s": 0.031503274,
+      "localization_verified": false,
+      "provisional": true
+    },
+    "actuator_commands_requested": false
+  },
+  "arm_physical_series": {
+    "journal": "data/arm-stream-validation/1791650578521373434",
+    "J1_deg": [
+      90,
+      95,
+      85,
+      90
+    ],
+    "J4_deg": [
+      15,
+      20,
+      10,
+      15
+    ],
+    "six_durations_s": [
+      0.55825757,
+      0.740312425,
+      0.55825757,
+      0.49096949,
+      0.64379618,
+      0.49096949
+    ],
+    "command_completed": true,
+    "measured_joint_attainment": false,
+    "operator_smoothness_confirmation": "pending",
+    "base_motion": false,
+    "J6_changed": false
+  },
+  "learning_technical": {
+    "passed": true,
+    "technical_chain": [
+      "mobile_export",
+      "official_ACT_weight_update",
+      "optimizer_checkpoint",
+      "official_optimizer_resume",
+      "bundle_checksum_and_contract",
+      "compatible_policy_reload",
+      "finite_9D_inference"
+    ],
+    "folder": "/home/vlad/Explorer/data/learning-selftest/mobile-1791647704344636064",
+    "device": "cpu",
+    "elapsed_s": 45.346,
+    "checkpoint_step": 2,
+    "weight_sha256": [
+      "d2d2b07e34bc5417f64e57019bcc2a106f322b9101072b45e21061b8f29f90ca",
+      "cf84732c4fa86b989415a8e13bdabe1b8b2384791b05141ed8c6a2ade21eb433"
+    ],
+    "contract_sha256": "908a9017a872ea9b2b203b04db486ad614b66e4dd690ac38168b0035ea28962e",
+    "dataset_fps": 4,
+    "action_shape": [
+      1,
+      9
+    ],
+    "cache_environment": {
+      "HF_HOME": "/home/vlad/Explorer/data/hf-learning-cache",
+      "HF_DATASETS_CACHE": "/home/vlad/Explorer/data/hf-learning-cache/datasets",
+      "HF_HUB_CACHE": "/home/vlad/Explorer/data/hf-learning-cache/hub",
+      "HUGGINGFACE_HUB_CACHE": "/home/vlad/Explorer/data/hf-learning-cache/hub",
+      "HF_ASSETS_CACHE": "/home/vlad/Explorer/data/hf-learning-cache/assets",
+      "HF_LEROBOT_HOME": "/home/vlad/Explorer/data/lerobot-cache",
+      "TORCH_HOME": "/home/vlad/Explorer/data/torch-learning-cache"
+    },
+    "test_data": "synthetic; no real demonstrations existed in current installation",
+    "physical_success_verified": false,
+    "actuator_commands_sent": 0
+  },
+  "not_physically_accepted": [
+    "new_arm_smoothness",
+    "gripper_contact_retention_and_placement",
+    "relocalization",
+    "full_autonomous_delivery"
+  ],
+  "manual_arm_regressions": {
+    "fixed": [
+      "latest_direction_short_reversal",
+      "input_during_final_ack"
+    ],
+    "targeted_tests_passed": 54,
+    "stop_invalidation_passed": true
+  }
+}

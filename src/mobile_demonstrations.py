@@ -13,6 +13,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 from lerobot_bridge import write_json
+from mobile_policy_contract import SAMPLE_CONTRACT,CONTRACT_SHA256
 
 STAGES=("travel_to_object", "grasp", "carry", "place")
 
@@ -36,6 +37,13 @@ def episode_quality(folder,full_task=False):
     base_changes=sum(any(abs(value)>0.025 for value in command[6:]) for command in commands)
     arm_changes=len({command[:6] for command in commands})
     reasons=[]
+    if any(not np.isfinite(stamp) for stamp in stamps) or any(gap<=0 for gap in gaps):
+        reasons.append("Времена кадров не возрастают")
+    if any(not np.isfinite(command).all() for command in commands):reasons.append("В командах есть нечисловые значения")
+    if any(row.get("sample_contract_sha256") not in (None,CONTRACT_SHA256) for row in rows):
+        reasons.append("Несовместимая семантика команд")
+    if any(row.get("executed_action_source") not in (None,"operator_manual_control") for row in rows):
+        reasons.append("Самостоятельные команды модели не являются показом оператора")
     if len(rows)<12 or duration<5:reasons.append("Нужен более длинный показ")
     if len(set(commands))<5:reasons.append("В записи почти нет разных команд")
     if max(gaps)>1.5:reasons.append("Есть длинный пропуск кадров")
@@ -86,8 +94,23 @@ def sample(root,now):
     try:manual=json.loads((root/'data/manual-teleop.json').read_text())
     except (OSError,ValueError,TypeError):manual={}
     if now-manual.get('at',0)>1:manual={}
+    issued_source=arm.get("command_source",arm.get("source"))
+    if arm.get("phase") in ("command_in_progress","EXECUTING") and issued_source in (
+        "supervised_mobile_policy","local_mission","autonomous","learned_policy"):
+        raise ValueError("Самостоятельное движение не записывается как показ оператора")
+    estimated=arm.get("q_estimated_deg") or angles
+    observation=np.asarray([*(estimated or []),*state.get("velocity",[])],dtype=float)
+    if observation.shape!=(9,) or not np.isfinite(observation).all():raise ValueError("Неполная оценка для записи")
     return dict(at=now,image_stamp=stamp,state_stamp=state['at'],command=action.tolist(),
+                schema="explorer_mobile_sample_v3",sample_contract_sha256=CONTRACT_SHA256,
+                observation_state=observation.tolist(),applied_action=action.tolist(),
+                executed_action_source="operator_manual_control",sample_contract=SAMPLE_CONTRACT,
                 image_stamp_source="onboard_camera_acquisition_estimate",command_stamp=arm.get("at"),
+                arm_command_sent_at=arm.get("command_sent_at",arm.get("at")),
+                arm_velocity_deg_s=arm.get("velocity_deg_s"),arm_acceleration_deg_s2=arm.get("acceleration_deg_s2"),
+                command_generation=arm.get("command_generation"),arm_owner=arm.get("owner",arm.get("input_source")),
+                applied_command_source=issued_source,
+                observation_arm_source="command_trajectory_estimate" if arm.get("q_estimated_deg") else "command_estimate",
                 proposed_manual_action=manual.get("normalized_actions"),
                 issued_body_velocity=state.get("velocity"),observed_body_velocity=state.get("odom_velocity"),
                 camera_state_offset_s=camera_state_offset,
@@ -142,6 +165,8 @@ class MobileDemonstrations:
                 object_label=object_label[:80],object_class=object_class,size_class=size_class,destination=destination[:80],
                 workflow_id=workflow_id,skill_id=skill_id,
                 transfer_context=dict(grasp_family='learned_from_operator',contact_feedback='visual_only'))
+            self.active.update(sample_contract=SAMPLE_CONTRACT,sample_contract_sha256=CONTRACT_SHA256,
+                format="explorer_mobile_episode_v3",synchronization="timestamped_bounded_offset_no_measured_joint_ground_truth")
             self.lease=time.monotonic()+2;self.save()
             threading.Thread(target=self.run,args=(ident,),daemon=True).start()
             return self.status()

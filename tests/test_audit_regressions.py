@@ -77,25 +77,58 @@ class AuditRegressions(unittest.TestCase):
             self.assertEqual(robot.begin.call_args.kwargs["goal"]["destination"]["name"],"basket")
             robot.find.assert_not_called()
 
-    def test_failed_training_can_be_retried_without_duplicate_live_job(self):
+    def test_corrected_training_data_can_be_retried_without_duplicate_live_job(self):
         import hashlib
+        import cv2
+        import numpy as np
         from lerobot_bridge import LearningJobs
+        from mobile_demonstrations import episode_quality
+        from mobile_policy_contract import CONTRACT_SHA256
         for previous in ("failed","interrupted","cancelled","rejected","queued","complete"):
             with self.subTest(previous=previous),tempfile.TemporaryDirectory() as folder:
                 root=Path(folder);source=root/"data/mobile-demonstrations/demo";source.mkdir(parents=True)
+                samples=[]
+                for index in range(13):
+                    image=f"{index:06d}.jpg"
+                    self.assertTrue(cv2.imwrite(str(source/image),np.full((8,8,3),index*10,dtype=np.uint8)))
+                    samples.append({"image":image,"image_stamp":1+index*.5,"state_stamp":1+index*.5,
+                        "command":[90+index,90,90,90,90,90+index,.1,0,0],
+                        "executed_action_source":"operator_manual_control",
+                        "sample_contract_sha256":CONTRACT_SHA256})
+                (source/"samples.jsonl").write_text("".join(json.dumps(row)+"\n" for row in samples))
+                quality=episode_quality(source,full_task=True)
+                self.assertTrue(quality["usable"],quality)
                 (source/"episode.json").write_text(json.dumps({"id":"demo","name":"sock","state":"complete",
-                    "outcome":"success","label_source":"operator","quality":{"usable":True}}))
+                    "outcome":"success","label_source":"operator","quality":quality}))
+                inputs={"demo":{name:hashlib.sha256((source/name).read_bytes()).hexdigest()
+                                for name in ("episode.json","samples.jsonl")}}
+                fingerprint=hashlib.sha256(json.dumps(inputs,sort_keys=True).encode()).hexdigest()
                 jobs=LearningJobs(root);old=jobs.folder/"old";old.mkdir()
                 old_record={"id":"old","at":9999999999,"state":previous,"skill_id":None,
-                    "dataset_fingerprint":hashlib.sha256(json.dumps(["demo"]).encode()).hexdigest()}
+                    "dataset_fingerprint":fingerprint,"input_sha256":inputs}
                 (old/"job.json").write_text(json.dumps(old_record))
                 (root/"data/learning-backend.json").write_text(json.dumps({"ready":True}))
                 with patch("lerobot_bridge.training_budget"),patch("lerobot_bridge.subprocess.run",return_value=Mock(stdout="inactive")) as run:
                     result=jobs.start_mobile(1000,"sock")
-                if previous in ("queued","complete"):
-                    self.assertEqual(result["id"],"old");run.assert_not_called()
-                else:
-                    self.assertNotEqual(result["id"],"old");self.assertEqual(result["state"],"queued")
+                    # A restart must preserve terminal outcomes and explicit cancellation.
+                    self.assertEqual(result["id"],"old")
+                    self.assertEqual(result["state"],previous)
+                    # A corrected demonstration has new source provenance and can queue once.
+                    samples[-1]["command"][0]=101
+                    (source/"samples.jsonl").write_text("".join(json.dumps(row)+"\n" for row in samples))
+                    corrected_episode=json.loads((source/"episode.json").read_text())
+                    corrected_episode["quality"]=episode_quality(source,full_task=True)
+                    self.assertTrue(corrected_episode["quality"]["usable"])
+                    (source/"episode.json").write_text(json.dumps(corrected_episode))
+                    corrected=jobs.start_mobile(1000,"sock")
+                    duplicate=LearningJobs(root).start_mobile(1000,"sock")
+                    self.assertNotEqual(corrected["id"],"old")
+                    self.assertEqual(corrected["state"],"queued")
+                    self.assertEqual(duplicate["id"],corrected["id"])
+                    self.assertNotEqual(corrected["input_sha256"]["demo"]["samples.jsonl"],
+                                        inputs["demo"]["samples.jsonl"])
+                    self.assertEqual(json.loads((old/"job.json").read_text()),old_record)
+                    run.assert_not_called()
 
     def test_help_labels_are_literal_text_and_click_preserves_choice(self):
         import shutil

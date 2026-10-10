@@ -2,6 +2,7 @@ import asyncio
 import base64
 import cv2
 import io
+import hashlib
 import json
 import math
 import os
@@ -121,7 +122,7 @@ def heavy_jobs():
     if execution and execution.lock.locked():jobs.append('policy')
     mobile_execution=globals().get("mobile_policy_execution")
     if mobile_execution and mobile_execution.lock.locked():jobs.append("mobile_policy")
-    if any(j.get('state') in ('queued','exporting','training','validating') for j in learning_jobs.status()['jobs']):jobs.append('train')
+    if any(j.get("state") in ("exporting","training","validating") for j in learning_jobs.status()["jobs"]):jobs.append("train")
     return jobs
 profiles=ResourceProfiles(ROOT,heavy_jobs)
 from power_endurance import PowerEndurance
@@ -186,6 +187,10 @@ def base_step_status():return observed_base.status()
 def base_step(c:BaseStep):return map_operation(observed_base.start,c.direction,c.duration,c.observing,c.compact)
 
 def stop_all():
+    active_agent=globals().get("onboard_agent")
+    if active_agent:active_agent.cancel_all("Operator STOP")
+    gaze=globals().get("target_gaze")
+    if gaze:gaze.cancel()
     room_task=globals().get("navigation_tasks")
     if room_task and room_task.status()["busy"]:room_task.cancel()
     experiments.cancel()
@@ -203,6 +208,19 @@ def stop_all():
     if trajectory:trajectory.stop()
     return emit('stop')
 def manual_takeover():
+    from manual_teleop import ARM_ACTIONS
+    arm_actions=set(ARM_ACTIONS)|{"grip_open","grip_close"}
+    panel=globals().get("gamepad_panel")
+    inputs=panel.teleop.status().get("inputs",{}) if panel else {}
+    resources=set()
+    if any(abs(value)>.08 for key,value in inputs.items() if key in arm_actions):resources.add("arm")
+    if any(abs(value)>.08 for key,value in inputs.items() if key not in arm_actions):resources.update(("base","navigation"))
+    active_agent=globals().get("onboard_agent")
+    if active_agent:
+        if resources:active_agent.cancel_resources(resources,"Manual takeover")
+        else:active_agent.cancel_all("Explicit manual resumption")
+    gaze=globals().get("target_gaze")
+    if gaze and (not resources or "arm" in resources):gaze.cancel()
     room_task=globals().get("navigation_tasks")
     if room_task and room_task.status()["busy"]:room_task.cancel()
     experiments.cancel()
@@ -216,7 +234,9 @@ def manual_takeover():
         mobile_player.takeover(manual.get("inputs"))
 
 def resume_manual():
-    manual_takeover();emit('clear_stop');emit('mode',mode='MANUAL')
+    manual_takeover()
+    from manual_resume import resume_confirmed
+    return resume_confirmed(emit,lambda:json.loads((ROOT/"data/status.json").read_text()))
 gamepad_panel=GamepadPanel(ROOT,teaching,stop_all,lambda values:emit('drive',velocity=values,source='manual'),
                           lambda:emit('manual_release',initiator='manual_teleop'),resume=resume_manual,takeover=manual_takeover)
 
@@ -499,6 +519,9 @@ def training_guide():return Response((ROOT/'docs/TRAINING-GUIDE.ru.md').read_tex
 @app.get('/learning-implementation')
 def learning_implementation():return Response((ROOT/'docs/LEARNING-IMPLEMENTATION.ru.md').read_text(),media_type='text/plain; charset=utf-8')
 
+@app.get("/onboard-guide")
+def onboard_guide():return Response((ROOT/"docs/EXPLORER-ONBOARD-RELEASE-20261010.ru.md").read_text(),media_type="text/plain; charset=utf-8")
+
 @app.get('/mobile')
 def mobile_interface():return HTMLResponse((ROOT/'src/mobile.html').read_text())
 
@@ -510,7 +533,7 @@ def mobile_guide():return Response((ROOT/'docs/MOBILE-REMOTE.ru.md').read_text()
 
 @app.middleware('http')
 async def auth(request:Request,call_next):
-    if request.url.path not in ('/','/mobile','/mobile-guide','/guide','/training-guide','/learning-implementation','/delivery-guide','/room-guide','/lab.js','/skill-ui.js',"/experiment-ui.js","/mapping-ui.js"):
+    if request.url.path not in ("/","/mobile","/mobile-guide","/guide","/training-guide","/learning-implementation","/delivery-guide","/room-guide","/lab.js","/skill-ui.js","/experiment-ui.js","/mapping-ui.js","/agent","/agent-ui.js","/onboard-guide"):
         supplied=request.headers.get('authorization','').removeprefix('Bearer ')
         if not secrets.compare_digest(supplied,TOKEN):
             from fastapi.responses import JSONResponse
@@ -1188,6 +1211,7 @@ class CameraClick(BaseModel):
     u:float
     v:float
     observing:bool=False
+    kind:str="object"
 
 @app.get("/api/navigation/target-frame")
 def target_frame():
@@ -1197,11 +1221,11 @@ def target_frame():
 @app.post("/api/navigation/click-target")
 def click_target(request:CameraClick):
     if request.observing is not True:raise HTTPException(409,"Подтвердите наблюдение за роботом")
-    goal=map_operation(target_frames.goal,request.frame_id,request.u,request.v)
+    goal=map_operation(target_frames.goal,request.frame_id,request.u,request.v,request.kind)
     goal=map_operation(safe_approach_step,goal,maps.preview)
     task=map_operation(navigation_tasks.start,dict(kind="navigate_current",x=goal["x"],y=goal["y"],
         yaw=goal["yaw"],holonomic=True,position_only=True,observing=True,max_goals=1))
-    return dict(task=task,target=goal,claim="Короткий подход к выбранной глубине; класс предмета и захват не подтверждены")
+    return dict(task=task,target=goal,claim="Ограниченный маршрут к проверенному участку пола" if request.kind=="floor" else "Короткий подход к выбранной глубине; класс предмета и захват не подтверждены")
 
 class NavigationTaskRequest(BaseModel):
     kind:str
@@ -1669,5 +1693,246 @@ def agent(prompt:Prompt):
     except (OSError,KeyError,ValueError) as exc:
         raise HTTPException(503,'Local model unavailable: '+str(exc))
     finally:agent_lock.release()
+
+
+# Additive onboard skills reuse all existing actuator and camera owners.
+from onboard_vision import OnboardVision
+from target_gaze import TargetGaze
+from route_graph import RouteGraph
+from onboard_agent import OnboardAgent, SkillPort
+from agent_ports import ExplorerPorts, object_schema, TEXT
+from agent_api import install_agent_api
+from agent_intent import local_llama_plan
+onboard_vision=OnboardVision(ROOT)
+target_gaze=TargetGaze(ROOT,onboard_vision,manual_arm,reference_arm)
+road_network=RouteGraph(ROOT,missions.places,maps.epoch,maps.preview)
+vision_timer=node.create_timer(.1,onboard_vision.tick)
+
+class VisionSelection(BaseModel):
+    frame_id:str=Field(min_length=32,max_length=32)
+    bbox:list[float]=Field(min_length=4,max_length=4)
+
+@app.get("/api/vision/frame")
+def vision_frame():
+    identifier,jpeg=map_operation(onboard_vision.capture)
+    return Response(jpeg,media_type="image/jpeg",headers={"Cache-Control":"no-store","X-Target-Frame-ID":identifier})
+
+@app.post("/api/vision/select")
+def vision_select(request:VisionSelection):return map_operation(onboard_vision.select,request.frame_id,request.bbox)
+
+@app.get("/api/vision/target")
+def vision_target():return onboard_vision.tick()
+
+@app.post("/api/vision/cancel")
+def vision_cancel():
+    target_gaze.cancel()
+    return onboard_vision.cancel()
+
+@app.get("/api/vision/colors")
+def vision_colors():return map_operation(onboard_vision.colors)
+
+@app.get("/api/vision/tags")
+def vision_tags():return map_operation(onboard_vision.tags)
+
+@app.get("/api/vision/cloud")
+def vision_cloud(max_points:int=1500):return map_operation(onboard_vision.cloud,max_points)
+
+class RoadNetworkRequest(BaseModel):edges:list[dict]=Field(max_length=100)
+@app.get("/api/navigation/road-network")
+def road_network_status():return map_operation(road_network.status)
+@app.post("/api/navigation/road-network")
+def road_network_save(request:RoadNetworkRequest):return map_operation(road_network.save,request.edges)
+
+
+def unload_agent_llm():
+    if agent_lock.locked():raise ValueError("Дождитесь текущего ответа локальной модели")
+    subprocess.run(["systemctl","--user","stop","explorer-llm.service"],check=True,timeout=8)
+
+
+def agent_model_plan(text,catalog,places):
+    if not agent_lock.acquire(False):raise ValueError("Локальная модель уже занята")
+    try:return local_llama_plan(text,catalog,places,ensure_llm)
+    finally:agent_lock.release()
+
+
+agent_ports=ExplorerPorts(ROOT,lambda:tool("get_status",{}),missions,navigation_tasks,object_finder,
+    semantic_world,camera_views,manual_arm,trajectory_execution,delivery_task,missions.surveys,profiles,
+    before_grounding=unload_agent_llm)
+
+
+def read_only_skill(function):
+    def operation(args,context):
+        context.permit()
+        result=function(**args)
+        context.permit()
+        return {"state":"succeeded","evidence":result}
+    return operation
+
+
+def graph_route_skill(args,context):
+    context.permit()
+    route=road_network.route(args["start"],args["destination"])
+    context.event("permitted_route",route)
+    return agent_ports.route({"places":route["places"]},context)
+
+
+def selected_floor_skill(args,context):
+    context.permit()
+    goal=target_frames.goal(args["frame_id"],args["u"],args["v"],"floor")
+    goal=safe_approach_step(goal,maps.preview)
+    context.event("measured_floor_goal",goal)
+    return agent_ports.navigation_skill(dict(kind="navigate_current",x=goal["x"],y=goal["y"],
+        yaw=goal["yaw"],holonomic=True,position_only=True,max_goals=1),context)
+
+
+from fleet_demo import simulate_formation
+from human_perception import HumanPerception
+from gesture_control import GestureControl
+from scene_reports import SceneReports,ZoneWatch,scene_composition
+from arm_library import ArmLibrary
+human_perception=HumanPerception(ROOT)
+gesture_control=GestureControl(human_perception,agent_ports)
+scene_reports=SceneReports(ROOT)
+zone_watch=ZoneWatch()
+zone_lock=threading.RLock()
+arm_library=ArmLibrary(ROOT,reference_arm,reference_planner())
+
+
+def observe_humans(modes=None):
+    if heavy_jobs():raise ValueError("Дождитесь завершения тяжёлой задачи перед распознаванием человека")
+    if not human_perception.lock.acquire(False):raise ValueError("Распознавание человека уже занято")
+    try:return observe_humans_locked(modes)
+    finally:human_perception.lock.release()
+
+
+def observe_humans_locked(modes):
+    try:
+        result=human_perception.observe(tuple(modes or ["hand"]))
+        if result.get("errors"):raise ValueError("Human perception unavailable: "+json.dumps(result["errors"],ensure_ascii=False))
+        if result.get("stale"):raise ValueError("Human perception finished after the valid frame interval")
+        return result
+    finally:human_perception.unload()
+
+
+@app.get("/api/scene-reports/{identifier}/{filename}")
+def scene_report_artifact(identifier:str,filename:str):
+    path=map_operation(scene_reports.artifact,identifier,filename)
+    media="image/jpeg" if filename.endswith(".jpg") else {"json":"application/json","csv":"text/csv","html":"text/html"}[filename.rsplit(".",1)[-1]]
+    return Response(path.read_bytes(),media_type=media,headers={"Cache-Control":"no-store"})
+
+
+class HumanObservationRequest(BaseModel):
+    modes:list[str]=Field(default_factory=lambda:["hand"],min_length=1,max_length=3)
+
+@app.post("/api/vision/humans")
+def human_observation(request:HumanObservationRequest):
+    return map_operation(observe_humans,request.modes)
+
+@app.get("/api/vision/humans/frame/{identifier}")
+def human_observation_frame(identifier:str):
+    with human_perception.lock:
+        saved=getattr(human_perception,"latest",None)
+        if not saved or saved[0]!=identifier:raise HTTPException(404,"Observation image was replaced")
+        return Response(saved[1],media_type="image/jpeg",headers={"Cache-Control":"no-store"})
+
+class LibraryPoseRequest(BaseModel):
+    name:str=Field(min_length=1,max_length=80)
+    operator_observed:bool=False
+
+class LibrarySceneRequest(BaseModel):
+    name:str=Field(min_length=1,max_length=80)
+    obstacles:list[dict]=Field(max_length=32)
+
+@app.post("/api/arm/library/pose")
+def arm_library_save_pose(request:LibraryPoseRequest):
+    return map_operation(arm_library.save_pose,request.name,manual_arm.reference()["servo_deg"],request.operator_observed)
+
+@app.post("/api/arm/library/scene")
+def arm_library_save_scene(request:LibrarySceneRequest):
+    return map_operation(arm_library.save_scene,request.name,request.obstacles)
+
+@app.get("/api/arm/planner")
+def arm_planner_status():return reference_planner().status()
+
+@app.post("/api/arm/planner/warmup")
+def arm_planner_warmup():return reference_planner().warmup_async()
+
+
+def fixed_zone_reference(metadata):
+    core=missions.state()
+    if not 0<=time.time()-core.get("at",0)<.8:raise ValueError("Fresh base state unavailable")
+    speeds=core.get("velocity",[])+core.get("odom_velocity",[])
+    if len(speeds)!=6 or any(abs(v)>.005 for v in speeds):raise ValueError("Stop the base before watching a fixed zone")
+    q=manual_arm.reference()["servo_deg"]
+    pose=maps.pose()
+    handeye=ROOT/"config/handeye-accepted.json"
+    if not handeye.is_file():raise ValueError("Accepted camera geometry unavailable")
+    return dict(at=core["at"],stationary=True,reference_valid=True,arm_deg=q,
+        base_pose=[pose["x"],pose["y"],pose["yaw"]],map_epoch=maps.epoch(),
+        calibration_id=hashlib.sha256(handeye.read_bytes()).hexdigest(),
+        measured_arm=False,base_pose_provisional=pose.get("provisional",True))
+
+class ZoneRequest(BaseModel):
+    roi:list[int]=Field(min_length=4,max_length=4)
+
+@app.post("/api/vision/zone/begin")
+def zone_begin(request:ZoneRequest):
+    def begin():
+        _,jpeg,metadata=onboard_vision.frame()
+        with zone_lock:return zone_watch.begin(jpeg,metadata,fixed_zone_reference(metadata),request.roi)
+    return map_operation(begin)
+
+@app.post("/api/vision/zone/compare")
+def zone_compare():
+    def compare():
+        _,jpeg,metadata=onboard_vision.frame()
+        with zone_lock:return zone_watch.compare(jpeg,metadata,fixed_zone_reference(metadata))
+    return map_operation(compare)
+
+@app.post("/api/vision/zone/cancel")
+def zone_cancel():
+    with zone_lock:return zone_watch.cancel()
+
+@app.get("/api/arm/library")
+def arm_library_catalog():return map_operation(arm_library.catalog)
+
+
+def preview_named_pose(name,scene=None):
+    return arm_library.preview_named(name,manual_arm.reference()["servo_deg"],scene)
+
+
+def preview_cartesian_pose(target_xyz,scene=None):
+    return arm_library.preview_cartesian(manual_arm.reference()["servo_deg"],target_xyz,scene)
+
+
+def preview_random_pose(seed=0):
+    return arm_library.preview_random(manual_arm.reference()["servo_deg"],seed=seed)
+
+
+additional_agent_ports=[
+    SkillPort("gesture_action","Один заранее выбранный жест → один навык руки",object_schema({"gesture":{"type":"string","enum":["open_palm","fist","pinch","point"]},"action":{"type":"string","enum":["look_left","look_right","look_up","look_down","open_gripper","close_gripper","wave","nod","trace_2d"]},"operator_roi":{"type":"array","items":{"type":"number","minimum":0,"maximum":1280},"minItems":4,"maxItems":4},"duration_s":{"type":"number","minimum":1,"maximum":20}},("gesture","action","operator_roi")),("arm","camera","cpu_vision"),gesture_control.run,agent_ports.cancel,units="pixels and servo degrees",frame="camera/base",requirements=("explicit_operator_region","fresh_single_hand","chosen_gesture_and_action","arm_reference"),physical=True),
+    SkillPort("observe_humans","Ориентиры кистей, тела и лица; распознавание без движения",object_schema({"modes":{"type":"array","items":{"type":"string","enum":["hand","pose","face"]},"minItems":1,"maxItems":3}}),("camera","cpu_vision"),read_only_skill(observe_humans),units="image pixels",frame="camera"),
+    SkillPort("scene_composition","Гипотезы предметов и их количества в одном текущем кадре",object_schema(),("camera",),read_only_skill(lambda:scene_composition(agent_ports.read_json("perception.json"))),frame="camera"),
+    SkillPort("arm_pose_library","Сохранённые позы и сцены руки",object_schema(),(),read_only_skill(arm_library.catalog),frame="base_footprint"),
+    SkillPort("preview_named_arm_pose","Рассчитать полный путь к именованной позе, без движения",object_schema({"name":TEXT,"scene":TEXT},("name",)),("arm_planning",),read_only_skill(preview_named_pose),units="servo degrees",frame="base_footprint"),
+    SkillPort("preview_cartesian_arm","Проверить прямой Cartesian путь кисти без движения",object_schema({"target_xyz":{"type":"array","items":{"type":"number","minimum":-1,"maximum":1},"minItems":3,"maxItems":3},"scene":TEXT},("target_xyz",)),("arm_planning",),read_only_skill(preview_cartesian_pose),units="metres",frame="base_footprint"),
+    SkillPort("preview_random_arm","Проверить достижимость нескольких соседних поз в симуляции",object_schema({"seed":{"type":"integer","minimum":0,"maximum":1000000}}),("arm_planning",),read_only_skill(preview_random_pose),units="servo degrees",frame="base_footprint"),
+    SkillPort("simulate_fleet","Изолированная симуляция построения нескольких роботов",object_schema({"count":{"type":"integer","minimum":2,"maximum":8},"shape":{"type":"string","enum":["line","grid","v"]},"spacing":{"type":"number","minimum":.5,"maximum":3}}),(),read_only_skill(simulate_formation),units="metres",frame="simulation",physical=False),
+    SkillPort("navigate_selected_floor","Короткая поездка к выбранному и проверенному участку пола",object_schema({"frame_id":{"type":"string","pattern":"[a-f0-9]{32}"},"u":{"type":"number","minimum":0,"maximum":1280},"v":{"type":"number","minimum":0,"maximum":1280}},("frame_id","u","v")),("base","navigation","arm","camera"),selected_floor_skill,agent_ports.cancel,units="pixels and metres",frame="map",requirements=("exact_fresh_RGBD_frame","measured_floor","live_navigation_readiness"),physical=True),
+    SkillPort("detect_colors","Цвет, видимая форма и поворот предметов",object_schema(),("camera",),read_only_skill(onboard_vision.colors),frame="image pixels"),
+    SkillPort("detect_tags","Идентификаторы AprilTag 36h11 в кадре",object_schema(),("camera",),read_only_skill(onboard_vision.tags),frame="image pixels"),
+    SkillPort("observe_depth","Цветное облако и измеренная плоскость в системе камеры",object_schema({"max_points":{"type":"integer","minimum":80,"maximum":2000}}),("camera",),read_only_skill(onboard_vision.cloud),units="metres",frame="camera optical"),
+    SkillPort("track_target","Сопровождать выбранную область изображения и плавно удерживать взгляд",object_schema({"target_id":TEXT,"duration_s":{"type":"number","minimum":1,"maximum":30}},("target_id",)),("arm",),target_gaze.run,target_gaze.cancel,units="pixels and degrees/sec",frame="camera",requirements=("fresh_selected_roi","accepted_handeye","arm_reference"),physical=True),
+    SkillPort("follow_road_network","Пройти кратчайший открытый разрешённый маршрут между местами",object_schema({"start":TEXT,"destination":TEXT},("start","destination")),("base","arm","camera","navigation"),graph_route_skill,agent_ports.cancel,units="metres",frame="map",requirements=("current_map_graph","live_navigation_readiness"),physical=True),
+]
+from visual_navigation_adapter import VisualNavigationAdapter
+visual_navigation_adapter=VisualNavigationAdapter(ROOT,onboard_vision,maps,missions,camera_views,agent_ports)
+onboard_agent=OnboardAgent(ROOT,agent_ports.catalog()+additional_agent_ports+visual_navigation_adapter.skill_ports())
+install_agent_api(app,ROOT,onboard_agent,TOKEN,missions.places,stop_all,model=agent_model_plan)
+
+@app.on_event("shutdown")
+def onboard_shutdown():
+    target_gaze.cancel()
+    onboard_agent.shutdown()
 
 if __name__=='__main__':uvicorn.run(app,host='0.0.0.0',port=8080,log_level='warning')

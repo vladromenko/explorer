@@ -5,6 +5,8 @@ from pathlib import Path
 os.environ['HF_HUB_OFFLINE']='1';os.environ['HF_HUB_DISABLE_TELEMETRY']='1'
 os.environ['OMP_NUM_THREADS']='2'
 ROOT=Path('/home/vlad/Explorer');sys.path.insert(0,str(ROOT/'src'))
+from learning_environment import configure
+configure(ROOT)
 import cv2,torch
 from lerobot.policies.act import ACTPolicy
 from lerobot.policies import make_pre_post_processors

@@ -12,6 +12,7 @@ import subprocess
 import threading
 import time
 import uuid
+from contextlib import contextmanager
 
 from mobile_demonstrations import episode_quality
 
@@ -32,10 +33,13 @@ class SkillLearning:
         if interval>0:
             threading.Thread(target=self._loop,daemon=True,name="explorer-skill-queue").start()
 
+    @contextmanager
     def db(self):
         connection=sqlite3.connect(self.database,timeout=10)
         connection.row_factory=sqlite3.Row
-        return connection
+        try:
+            with connection:yield connection
+        finally:connection.close()
 
     def _schema(self):
         with self.db() as db:
@@ -106,7 +110,7 @@ class SkillLearning:
         else:data["latest_job"]=None
         if data["latest_job"]:
             state=data["latest_job"]["state"]
-            if state in ("queued","exporting","training","validating"):
+            if state in ("queued","deferred","exporting","training","validating"):
                 data["next_action"]="Данные обрабатываются на Explorer"
             elif state=="validated_offline":
                 data["next_action"]="Модель готова к отдельной наблюдаемой проверке"
@@ -163,9 +167,7 @@ class SkillLearning:
                         last_finished=max(item["completed"] for item in eligible)
                         batch_ready=len(eligible)>=next_count or (previous is not None and
                             len(eligible)>previous_count and time.time()-last_finished>1800)
-                        active=any(item.get("state") in ("queued","exporting","training","validating")
-                                   for item in self.jobs.status()["jobs"])
-                        if batch_ready and not active:
+                        if batch_ready:
                             try:
                                 job=self.jobs.start_mobile(1000,skill["name"],skill_id=skill["id"])
                             except (OSError,ValueError,KeyError,subprocess.SubprocessError) as exc:
@@ -176,6 +178,8 @@ class SkillLearning:
                                     db.execute("INSERT OR IGNORE INTO training "
                                                "(fingerprint,skill_id,job_id,created,episode_count) VALUES(?,?,?,?,?)",
                                                (fingerprint,skill["id"],job["id"],time.time(),len(eligible)))
+            if hasattr(self.jobs,"dispatch"):
+                self.jobs.dispatch()
 
     def _loop(self):
         while not self.closed:

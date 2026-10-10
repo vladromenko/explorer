@@ -54,6 +54,55 @@ def approach_goal(camera_point, camera_to_base, robot_pose, stand_off=.55, max_s
         yaw=yaw,advance_m=float(advance),object_distance_m=float(distance),stand_off_m=stand_off)
 
 
+def floor_goal(depth, k, distortion, u, v, camera_to_base, robot_pose):
+    """A measured local horizontal floor patch, never a wall/table depth click."""
+    point, distance, spread = selected_depth_point(depth, k, distortion, u, v)
+    transform = np.asarray(camera_to_base, dtype=float)
+    if (transform.shape != (4, 4) or not np.isfinite(transform).all()
+            or not np.allclose(transform[3], [0, 0, 0, 1])
+            or not np.allclose(transform[:3, :3].T @ transform[:3, :3], np.eye(3), atol=1e-4)):
+        raise ValueError("Недостоверная привязка камеры")
+    image = np.asarray(depth)
+    x, y = int(round(u)), int(round(v))
+    xa, xb = max(0, x-32), min(image.shape[1], x+33)
+    ya, yb = max(0, y-32), min(image.shape[0], y+33)
+    vv, uu = np.mgrid[ya:yb:3, xa:xb:3]
+    values = image[vv, uu]
+    valid = np.isfinite(values) & (values > .20) & (values < 3.5)
+    if np.count_nonzero(valid) < 100:
+        raise ValueError("Недостаточно глубины для проверки участка пола")
+    pixels = np.stack((uu[valid], vv[valid]), axis=1).astype(float).reshape(-1, 1, 2)
+    rays = cv2.undistortPoints(pixels, np.asarray(k).reshape(3, 3), np.asarray(distortion)).reshape(-1, 2)
+    camera = np.column_stack((rays * values[valid, None], values[valid]))
+    base = camera @ transform[:3, :3].T + transform[:3, 3]
+    near_floor = np.abs(base[:, 2]) <= .06
+    if np.count_nonzero(near_floor) < 100 or np.mean(near_floor) < .80:
+        raise ValueError("Выбрана поверхность выше пола; предмет выбирайте отдельным режимом")
+    cloud = base[near_floor]
+    center = np.median(cloud, axis=0)
+    _, singular, axes = np.linalg.svd(cloud-center, full_matrices=False)
+    normal = axes[-1]
+    residuals = np.abs((cloud-center) @ normal)
+    if singular[1] < .04 or abs(normal[2]) < .97 or np.percentile(residuals, 90) > .015:
+        raise ValueError("Выбранный участок не подтверждён как ровный горизонтальный пол")
+    target = transform @ point
+    if abs(target[2]) > .06:
+        raise ValueError("Точка не лежит на подтверждённом полу")
+    distance_xy = math.hypot(target[0], target[1])
+    if target[0] < .20 or not .15 <= distance_xy <= 3.5:
+        raise ValueError("Точка пола вне доступного переднего диапазона")
+    advance = min(distance_xy, .8)
+    dx, dy = advance*target[0]/distance_xy, advance*target[1]/distance_xy
+    yaw = float(robot_pose["yaw"])
+    c, s = math.cos(yaw), math.sin(yaw)
+    return dict(x=float(robot_pose["x"]+c*dx-s*dy), y=float(robot_pose["y"]+s*dx+c*dy),
+        start_x=float(robot_pose["x"]), start_y=float(robot_pose["y"]), yaw=yaw,
+        advance_m=float(advance), depth_m=distance, depth_spread_m=spread,
+        floor_height_m=float(target[2]), floor_normal_base=normal.tolist(),
+        floor_fit_p90_m=float(np.percentile(residuals, 90)), floor_verified=True,
+        partial_approach=distance_xy > advance, target_kind="floor")
+
+
 def safe_approach_step(goal,preview):
     """Choose the longest path the current planner accepts; never bypass it."""
     start_x,start_y=goal["start_x"],goal["start_y"]
@@ -109,7 +158,7 @@ class TargetFrames:
         with self.lock:self.frames.append(item)
         return item["id"],jpeg.tobytes()
 
-    def goal(self,identifier,u,v):
+    def goal(self,identifier,u,v,kind="object"):
         with self.lock:frame=next((item for item in self.frames if item["id"]==identifier),None)
         if frame is None or not 0<=time.time()-frame["stored_at"]<5:
             raise ValueError("Кадр сменился; выберите предмет ещё раз")
@@ -121,7 +170,13 @@ class TargetFrames:
         drift=math.hypot(pose["x"]-frame["pose"]["x"],pose["y"]-frame["pose"]["y"])
         turn=abs(math.atan2(math.sin(pose["yaw"]-frame["pose"]["yaw"]),math.cos(pose["yaw"]-frame["pose"]["yaw"])))
         if drift>.05 or turn>.08:raise ValueError("Положение робота изменилось после кадра")
-        point,depth,spread=selected_depth_point(frame["depth"],frame["k"],frame["d"],u,v)
-        goal=approach_goal(point,frame["camera_to_base"],pose)
-        return dict(goal,frame_id=identifier,image_stamp=frame["stamp"],depth_m=depth,
-            depth_spread_m=spread,pose_source="command_estimate",map_position_verified=False)
+        if kind == "floor":
+            goal=floor_goal(frame["depth"],frame["k"],frame["d"],u,v,frame["camera_to_base"],pose)
+        elif kind == "object":
+            point,depth,spread=selected_depth_point(frame["depth"],frame["k"],frame["d"],u,v)
+            goal=dict(approach_goal(point,frame["camera_to_base"],pose),depth_m=depth,
+                depth_spread_m=spread,target_kind="object",class_verified=False)
+        else:
+            raise ValueError("Выберите режим пола или предмета")
+        return dict(goal,frame_id=identifier,image_stamp=frame["stamp"],
+            pose_source="command_estimate",map_position_verified=False)

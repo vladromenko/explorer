@@ -9,11 +9,23 @@ UNITS=["deg"]*6+["m/s","m/s","rad/s"]
 JOINT_LIMITS=[(0,180)]*4+[(0,270),(30,180)]
 BASE_LIMITS=[.8,.72,1.67]
 
+# This identifies semantics, not a firmware or checkpoint digest. Legacy v1
+# bundles keep their documented command-estimate interpretation.
+SAMPLE_CONTRACT={"schema":"explorer_mobile_sample_v3","action_order":ACTION_ORDER,
+    "units":UNITS,"arm_action":"applied_servo_endpoint",
+    "base_action":"applied_body_velocity","arm_observation":"command_estimate",
+    "clock":"unix_seconds","frame":"base_footprint","image":"wrist_rgb"}
+CONTRACT_SHA256=hashlib.sha256(json.dumps(SAMPLE_CONTRACT,sort_keys=True).encode()).hexdigest()
+
 
 def read_bundle(job_folder):
     folder=Path(job_folder).resolve()
     bundle=json.loads((folder/"bundle.json").read_text())
-    if bundle.get("format")!="explorer_mobile_act_bundle_v1":raise ValueError("Неверный формат комплекта")
+    if bundle.get("format") not in ("explorer_mobile_act_bundle_v1","explorer_mobile_act_bundle_v2"):
+        raise ValueError("Неверный формат комплекта")
+    if bundle.get("format")=="explorer_mobile_act_bundle_v2" and (
+        bundle.get("sample_contract")!=SAMPLE_CONTRACT or bundle.get("sample_contract_sha256")!=CONTRACT_SHA256):
+        raise ValueError("Семантика данных не совпадает с исполнителем Explorer")
     if bundle.get("dataset_kind")!="mobile_manipulation_9dof":raise ValueError("Комплект не для шасси и руки Explorer")
     if bundle.get("action_order")!=ACTION_ORDER or bundle.get("observation_order")!=ACTION_ORDER or bundle.get("units")!=UNITS:
         raise ValueError("Порядок или единицы команд не совпадают с Explorer")

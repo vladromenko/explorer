@@ -2,8 +2,10 @@
 """Synthetic installation test only. Never creates real demonstrations or moves hardware."""
 import importlib.util,json,sys,time,subprocess
 from pathlib import Path
-import cv2,numpy as np
 root=Path('/home/vlad/Explorer');sys.path.insert(0,str(root/'src'))
+from learning_environment import configure,config_notes
+cache_environment=configure(root)
+import cv2,numpy as np
 spec=importlib.util.spec_from_file_location('learning_run',root/'bin/learning-run.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 folder=root/'data/learning-selftest'/str(int(time.time()));folder.mkdir(parents=True)
 episodes=[]
@@ -17,8 +19,12 @@ m.export_dataset(episodes[2:],folder/'source',folder/'validation','explorer/vali
 config=dict(dataset=dict(repo_id='explorer/train',root=str(folder/'train'),video_backend='pyav'),
  policy=dict(type='act',device='cuda',push_to_hub=False,chunk_size=1,n_action_steps=1,
  pretrained_backbone_weights=None,dim_model=64,n_heads=4,dim_feedforward=128,n_encoder_layers=1,n_vae_encoder_layers=1),
- output_dir=str(folder/'model'),batch_size=1,num_workers=0,steps=1,save_freq=1,log_freq=1,env_eval_freq=0,wandb=dict(enable=False))
+ output_dir=str(folder/"model"),batch_size=1,num_workers=0,steps=1,save_freq=1,log_freq=1,env_eval_freq=0,
+ wandb=dict(enable=False,notes=config_notes(cache_environment)))
 (folder/'config.json').write_text(json.dumps(config))
+(folder/"train-config.environment.json").write_text(json.dumps(cache_environment))
+(folder/"job.json").write_text(json.dumps({"dataset_kind":"arm_decisions_6dof"}))
+(folder/"split.json").write_text(json.dumps({"train":["0","1"],"validation":["2"],"heldout_independent":True}))
 with (folder/'train.log').open('w') as log:
  p=subprocess.run([str(root/'.venv-learning/bin/lerobot-train'),'--config_path='+str(folder/'config.json')],stdout=log,stderr=log)
 if p.returncode:

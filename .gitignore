@@ -1,4 +1,5 @@
 .venv/
+.test-deps/
 .venv-learning/
 vendor/
 !firmware/vendor/

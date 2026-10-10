@@ -29,6 +29,17 @@ class TimedTrajectoryTests(unittest.TestCase):
             self.path(check)
         self.assertGreater(len(visited), 5)
 
+    def test_exact_timing_limiter_is_reported_without_changing_curve(self):
+        p = self.path()
+        limiter = p.timing_limiter
+        self.assertIsNotNone(limiter)
+        self.assertGreater(limiter["required_scale"], 1.0)
+        self.assertAlmostEqual(limiter["required_scale"], p.scale)
+        order = limiter["derivative_order"]
+        self.assertLessEqual(limiter["source_peak"] / p.scale**order,
+            limiter["limit"] + 1e-8)
+        self.assertTrue(np.allclose(p.positions[:,0], [0.0, 0.2, 0.4]))
+
     def test_ack_without_feedback_cannot_reach(self):
         path = self.path()
         clock = [0.]

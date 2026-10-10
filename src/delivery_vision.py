@@ -188,11 +188,10 @@ class MeasuredVision:
         return sample
     def geometry(self, sample, settings):
         if getattr(self,'factory_mode',False):
-            state=self.arm.reference();angles=state.get('servo_deg')
-            settled=float(state['at'])+float(state.get('runtime_ms',0))/1000+.12
-            if float(sample['stamp'])<settled:raise JointSamplePending('Camera exposure predates settled factory command estimate')
-            if not angles or len(angles)!=6 or state.get('phase')!='command_elapsed_observation_required':
-                raise ValueError('Factory arm command estimate is not stable')
+            from factory_arm_observation import settled_reference,CommandPosePending
+            try:state=settled_reference(self.root,self.arm.boot,float(sample["stamp"]))
+            except CommandPosePending as exc:raise JointSamplePending(str(exc)) from exc
+            angles=state["servo_deg"]
         else:
             state=self.arm._state();boot=(state.get('identity') or {}).get('boot')
             exposure=float(sample['stamp'])-(state['at']-state['monotonic_ns']/1e9)
@@ -225,20 +224,30 @@ class MeasuredVision:
             track,settings,generation=self.track,self.settings,self.generation
             if track is None or self.error is not None:return 0
             stamp=float(sample['stamp'])
+            if getattr(self,"factory_mode",False):
+                from factory_arm_observation import settled_reference,CommandPosePending
+                try:settled_reference(self.root,self.arm.boot,stamp)
+                except CommandPosePending as exc:
+                    # Follow identity in image space while the arm moves. No
+                    # base-frame coordinate or metric contact claim is produced.
+                    if stamp>track.stamp:track.update(sample)
+                    self.pending.clear();self.enqueued_stamp=stamp
+                    self.waiting_for_joints=str(exc)
+                    return 0
             if stamp>self.enqueued_stamp:
                 if len(self.pending)>=MAX_PENDING_FRAMES:
                     self.error='Measured camera pose queue overflow';self.pending.clear()
                     raise ValueError(self.error)
-                self.pending.append((sample,now+BRACKET_WAIT_SECONDS));self.enqueued_stamp=stamp
+                self.pending.append((sample,None if getattr(self,"factory_mode",False) else now+BRACKET_WAIT_SECONDS));self.enqueued_stamp=stamp
         processed=0
         for _ in range(MAX_PENDING_FRAMES):
             with self.lock:
                 if track is not self.track or generation!=self.generation or not self.pending:return processed
                 queued,deadline=self.pending[0]
             try:
-                if clock()>=deadline:raise ValueError('Measured joint bracket deadline expired')
+                if deadline is not None and clock()>=deadline:raise ValueError("Measured joint bracket deadline expired")
                 transform,tcp,angles=self.geometry(queued,settings)
-                if clock()>=deadline:raise ValueError('Measured joint bracket deadline expired')
+                if deadline is not None and clock()>=deadline:raise ValueError("Measured joint bracket deadline expired")
                 with self.lock:
                     if track is not self.track or generation!=self.generation:return processed
                     observation=track.update(queued)
@@ -271,7 +280,11 @@ class MeasuredVision:
                     self.waiting_for_joints=None;processed+=1
             except JointSamplePending as exc:
                 with self.lock:
-                    if track is self.track and generation==self.generation:self.waiting_for_joints=str(exc)
+                    if track is self.track and generation==self.generation:
+                        self.waiting_for_joints=str(exc)
+                        if getattr(self,"factory_mode",False):
+                            if float(queued["stamp"])>track.stamp:track.update(queued)
+                            self.pending.clear()
                 return processed
             except (OSError,ValueError,KeyError,TypeError,cv2.error) as exc:
                 with self.lock:
@@ -296,6 +309,14 @@ class MeasuredVision:
             if not self.frames or not 0<=time.time()-self.frames[-1]['at']<.5:
                 raise ValueError('Нет свежего положения отслеживаемого предмета')
             return dict(self.frames[-1])
+    def tracking_status(self):
+        with self.lock:
+            if self.error:raise ValueError("Object association lost: "+self.error)
+            if self.track is None or self.track.ended or not 0<=time.time()-self.track.stamp<.4:
+                raise ValueError("No fresh image-space object association")
+            return dict(object_id=self.track.object_id,image_stamp=self.track.stamp,
+                identity_association_verified=True,metric_pose_pending=self.waiting_for_joints is not None,
+                measured_joint_positions=False)
     def observe(self, permit, duration=1.2):
         started=time.time();end=time.monotonic()+duration+2
         while time.monotonic()<end:

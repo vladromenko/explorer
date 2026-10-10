@@ -14,6 +14,7 @@ from delivery_vision import FeatureObject, reacquire_candidate
 from mobile_alignment import correction
 from semantic_world import guarded_closure
 from learning_stack import CandidateScorer
+from factory_delivery import load_factory_settings, factory_reference, elapsed_reference
 
 SETUP_ARTIFACTS={'config/delivery.json','config/handeye-accepted.json','config/gripper-accepted.json',
                  'config/explorer.urdf','config/explorer.srdf'}
@@ -166,6 +167,13 @@ class DeliveryRobot:
         self.scorer=CandidateScorer(self.root)
         self.mid=None;self.settings=None;self.tracking=False;self.grasp_xyz=None;self.boot=None;self.owner_check=lambda:None;self.search_id=None
         self.drop_zone=None;self.destination_pose=None;self.grasp_selection=None
+        self.grip_deg=None
+
+    def _settings(self):
+        if getattr(self.arm, "factory_timed", False):
+            return load_factory_settings(self.root)
+        profile=self.arm.profile
+        return load_settings(self.root,profile["firmware_source_sha256"],profile["calibration_sha256"])
 
     def select_grasp(self,point,observation):
         extent=observation.get('object_extent_xyz_m',[.05,.04,.025])
@@ -193,7 +201,7 @@ class DeliveryRobot:
     def blockers(self):
         reasons=[]
         if self.finder.status().get('busy'):reasons.append('Дождитесь завершения текущего распознавания')
-        if not getattr(self.arm,'native',False):
+        if not getattr(self.arm,"native",False) and not getattr(self.arm,"factory_timed",False):
             flags={}
             try:flags=json.loads((self.root/'config/commissioning.json').read_text())
             except (OSError,ValueError):pass
@@ -212,8 +220,7 @@ class DeliveryRobot:
             if status.get('busy'):reasons.append('Рука уже выполняет движение')
             if self.trajectory.status().get('busy'):reasons.append('Исполнитель пути руки занят')
             try:
-                profile=self.arm.profile
-                load_settings(self.root,profile['firmware_source_sha256'],profile['calibration_sha256'])
+                self._settings()
             except FileNotFoundError as exc:reasons.append('Не завершена приёмка: '+Path(exc.filename).name)
             except (OSError,ValueError,KeyError,TypeError) as exc:reasons.append(str(exc))
         try:self.missions.require_ready()
@@ -225,11 +232,11 @@ class DeliveryRobot:
         self.owner_check=check
         reasons=self.blockers()
         if reasons:raise ValueError('; '.join(reasons))
-        self.settings=load_settings(self.root,self.arm.profile['firmware_source_sha256'],self.arm.profile['calibration_sha256'])
+        self.settings=self._settings()
         if goal is not None:validate_delivery_goal(goal,self.settings)
         validated_places(self.settings,self.missions.places(),self.missions.maps.epoch())
         self.boot=self.arm.reference()['boot_id']
-        self.mid=mid;self.tracking=False;self.drop_zone=None;self.destination_pose=None
+        self.mid=mid;self.tracking=False;self.drop_zone=None;self.destination_pose=None;self.grip_deg=None
         self.missions.begin_compound(mid,'delivery',900,check)
         check()
         self.hold()
@@ -240,8 +247,14 @@ class DeliveryRobot:
         self.owner_check()
         if self.mid!=mid:raise ValueError('Исполнитель доставки отменён')
         self.missions.survey_permit(mid)
-        self.arm.reference(expected_boot=self.boot)
-        if self.tracking:self.vision.latest()
+        if getattr(self.arm,"factory_timed",False):
+            factory_reference(self.root,self.arm,self.boot,allow_moving=self.trajectory.status().get("busy") is True)
+        else:
+            self.arm.reference(expected_boot=self.boot)
+        if self.tracking:
+            if getattr(self.arm,"factory_timed",False) and self.trajectory.status().get("busy"):
+                self.vision.tracking_status()
+            else:self.vision.latest()
 
     def hold(self):
         self.owner_check()
@@ -249,11 +262,16 @@ class DeliveryRobot:
         return dict(base_stationary_confirmed=True)
 
     def _move(self, goal):
+        factory=getattr(self.arm,"factory_timed",False)
+        if factory:
+            goal=[int(round(float(value))) for value in goal]
         self.permit(self.mid);self.hold()
         if self.arm.status().get('busy') or self.trajectory.status().get('busy'):
             raise ValueError('Другой исполнитель ещё управляет рукой')
         actual=self.arm.reference()['servo_deg']
         if np.allclose(actual,goal,atol=.3,rtol=0):
+            if getattr(self.arm,"factory_timed",False):
+                return elapsed_reference(factory_reference(self.root,self.arm,self.boot))
             state=self.arm._state();stamp=state.get('monotonic_ns');controller=state.get('controller',{})
             if (not isinstance(stamp,int) or not 0<=time.monotonic_ns()-stamp<350_000_000
                     or not state.get('telemetry_fresh') or controller.get('arm_enabled') is not False
@@ -261,7 +279,7 @@ class DeliveryRobot:
                 raise ValueError('Рука ещё исполняет или отменяет предыдущую команду')
             estimated=getattr(self.arm,'profile',{}).get('manual_reference_version')==1
             return dict(attained=not estimated,measured=not estimated,command_completed=True,already_at_command_goal=estimated)
-        plan=self.trajectory.plan([float(v) for v in goal]);mid=self.mid
+        plan=self.trajectory.plan(goal if factory else [float(v) for v in goal]);mid=self.mid
         started=self.trajectory.start_local(plan['plan_id'],lambda:self.permit(mid))
         session=started['session'];end=time.monotonic()+70
         while time.monotonic()<end:
@@ -274,7 +292,7 @@ class DeliveryRobot:
                 if (not completed or
                     not np.allclose(measured,goal,atol=.5,rtol=0)):
                     raise ValueError('Поза не достигнута: '+str(state.get('reason')))
-                estimated=getattr(self.arm,'profile',{}).get('manual_reference_version')==1
+                estimated=getattr(self.arm,"factory_timed",False) or getattr(self.arm,"profile",{}).get("manual_reference_version")==1
                 return dict(attained=not estimated,measured=not estimated,command_completed=True,session=session,
                             measured_deg=None if estimated else measured,q_estimated_deg=measured if estimated else None)
             time.sleep(.03)
@@ -382,24 +400,31 @@ class DeliveryRobot:
             above=(point+[0,0,self.settings['approach_height_m']]).tolist()
             corrections.append(dict(error_m=error,command=self._xyz(above,self.settings['open_deg'])))
         current=np.asarray(self.vision.latest()['object_xyz'],dtype=float)
+        current[2]+=self.settings["grasp_tcp_offset_m"]
         residual=float(np.linalg.norm(current-np.asarray(self.grasp_xyz)))
         if residual>.008:raise ValueError('Визуальное выравнивание не сошлось')
         return dict(aligned=True,corrections=corrections,error_m=residual)
     def pregrasp(self, target):return self._xyz((np.asarray(self.grasp_xyz)+[0,0,self.settings['approach_height_m']]).tolist(),self.settings['open_deg'])
     def observe(self):return self.vision.observe(lambda:self.permit(self.mid))
     def grasp(self, target):
+        self.grip_deg=None
         self._xyz(self.grasp_xyz,self.settings['open_deg'])
         if self.settings.get('guarded_closure_enabled') is not True:
-            return self._xyz(self.grasp_xyz,self.settings['close_deg'])
+            result=self._xyz(self.grasp_xyz,self.settings["close_deg"])
+            self.grip_deg=float(self.settings["close_deg"])
+            return result
         observations=self.vision.observe(lambda:self.permit(self.mid),duration=.25)
         angle=float(self.settings['open_deg']);commands=[]
         while angle<self.settings['close_deg']:
             decision=guarded_closure(observations,soft=self.settings.get('object_kind','soft')=='soft')
             if decision['action'] in ('hold','stop'):
+                if decision["action"]=="stop":raise ValueError("Визуальная проверка остановила сжатие: "+str(decision.get("reason")))
+                self.grip_deg=angle
                 return dict(guarded=True,decision=decision,commands=commands,final_deg=angle)
             step=float(decision.get('step_deg',1));angle=min(float(self.settings['close_deg']),angle+step)
             commands.append(self._xyz(self.grasp_xyz,angle))
             observations=self.vision.observe(lambda:self.permit(self.mid),duration=.25)
+        self.grip_deg=angle
         return dict(guarded=True,decision={'action':'hold','reason':'accepted_close_limit'},commands=commands,final_deg=angle)
     def regrasp(self,target):
         """One bounded retry after a visually proven empty grasp."""
@@ -408,9 +433,12 @@ class DeliveryRobot:
         point[2]+=self.settings['grasp_tcp_offset_m'];self.grasp_xyz=point.tolist()
         self.align(target)
         return self.grasp(target)
-    def lift(self):return self._xyz((np.asarray(self.grasp_xyz)+[0,0,self.settings['lift_height_m']]).tolist(),self.settings['close_deg'])
+    def _holding_angle(self):
+        if self.grip_deg is None:raise ValueError("Нет завершённого захвата для подъёма или перевозки")
+        return self.grip_deg
+    def lift(self):return self._xyz((np.asarray(self.grasp_xyz)+[0,0,self.settings["lift_height_m"]]).tolist(),self._holding_angle())
     def verify_hold(self, before):return verify_lift(before,self.observe(),True)
-    def transport(self):return self._move(self.settings['transport_deg'][:5]+[self.settings['close_deg']])
+    def transport(self):return self._move(self.settings["transport_deg"][:5]+[self._holding_angle()])
     def carry(self):
         places=validated_places(self.settings,self.missions.places(),self.missions.maps.epoch());p=places.get(self.settings['destination'])
         if not p or not p['compatible_map']:raise ValueError('Место доставки относится к другой карте')
@@ -421,13 +449,16 @@ class DeliveryRobot:
         self.permit(self.mid);self.hold()
         if self.destination_pose is None:raise ValueError('Нет принятого места доставки')
         self.drop_zone=placement_zone(self.settings['drop_zone'],self.destination_pose,self.missions.maps.pose())
-        return self._xyz(self.drop_zone['center_xyz'],self.settings['close_deg'])
-    def release(self):return self._xyz(self.drop_zone['center_xyz'],self.settings['open_deg'])
+        return self._xyz(self.drop_zone["center_xyz"],self._holding_angle())
+    def release(self):
+        result=self._xyz(self.drop_zone["center_xyz"],self.settings["open_deg"])
+        self.grip_deg=None
+        return result
     def withdraw(self):return self._xyz((np.asarray(self.drop_zone['center_xyz'])+[0,0,.08]).tolist(),self.settings['open_deg'])
     def verify_place(self, before):return verify_place(before,self.observe(),self.drop_zone,True)
     def _end(self, mid, state, details):
         if self.mid==mid:
-            search_id=self.search_id;self.mid=None;self.tracking=False;self.search_id=None
+            search_id=self.search_id;self.mid=None;self.tracking=False;self.search_id=None;self.grip_deg=None
             operations=[self.trajectory.stop,lambda:self.missions.finish(mid,state,details),self.vision.stop]
             if search_id:operations.append(lambda:self.finder.cancel(search_id))
             errors=[]

@@ -85,6 +85,7 @@ class MobilePolicyExecution:
         if not self.lock.acquire(blocking=False):raise ValueError("Попытка уже идёт")
         try:
             job,bundle,checkpoint=self._candidate(skill_id)
+            self.policy_sample_version=bundle["format"]
             self.session=uuid.uuid4().hex
             self.mission=None
             self.cancelled.clear()
@@ -234,7 +235,11 @@ class MobilePolicyExecution:
             image=frame["rgb"].copy()
         command=[float(value) for value in arm["servo_deg"]]+[float(value) for value in status["velocity"]]
         if len(command)!=9 or not np.isfinite(command).all():raise ValueError("Нет девяти достоверных оценок команд")
-        return command,image,stamp
+        estimate=((status.get("arm_command_state") or {}).get("q_estimated_deg") or command[:6]) if (
+            getattr(self,"policy_sample_version",None)=="explorer_mobile_act_bundle_v2") else command[:6]
+        observation=[float(value) for value in estimate]+command[6:]
+        if len(observation)!=9 or not np.isfinite(observation).all():raise ValueError("Нет оценки для политики")
+        return command,image,stamp,observation
 
     def _wait_file(self,path,timeout,process):
         deadline=time.monotonic()+timeout
@@ -291,12 +296,12 @@ class MobilePolicyExecution:
                 self.state["phase"]="observing"
                 for step in range(300):
                     self._permit()
-                    command,image,stamp=self._fresh_observation()
+                    command,image,stamp,observation=self._fresh_observation()
                     if not cv2.imwrite(str(folder/f"{step:04d}.jpg"),image):raise ValueError("Кадр не сохранён")
-                    write_json(folder/f"{step:04d}-request.json",{"state":command,"observed_at":stamp,
+                    write_json(folder/f"{step:04d}-request.json",{"state":observation,"observed_at":stamp,
                         "reset_history":step==0})
                     prediction=self._wait_file(folder/f"{step:04d}-result.json",1.0,process)
-                    if prediction.get("observed_at")!=stamp or prediction.get("state")!=command or time.time()-stamp>1.2:
+                    if prediction.get("observed_at")!=stamp or prediction.get("state")!=observation or time.time()-stamp>1.2:
                         raise ValueError("Предсказание относится к устаревшему наблюдению")
                     action=bound_action(command,prediction["action"])
                     self.latest_proposal=action["proposed"]
@@ -310,6 +315,7 @@ class MobilePolicyExecution:
                             source="supervised_mobile_policy",speed="teleop")
                     event={"at":time.time(),"step":step,"observed_at":stamp,
                            "state_source":"command_estimate","proposed":prediction["action"],
+                           "observation_state":observation,"applied_command_reference":command,
                            "issued":action,"physical_attainment_measured":False}
                     with (folder/"events.jsonl").open("a") as stream:
                         stream.write(json.dumps(event,ensure_ascii=False)+"\n")

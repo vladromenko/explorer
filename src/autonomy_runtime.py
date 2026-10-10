@@ -16,7 +16,7 @@ from learning_stack import CandidateScorer, PolicyRegistry, backend_status
 from skill_planner import SkillRegistry, TaskPlanner, recovery_plan
 
 
-TERMINAL=('succeeded','failed','cancelled','blocked','budget_exhausted')
+TERMINAL=("succeeded","failed","cancelled","blocked","budget_exhausted","interrupted")
 
 
 class AutonomySupervisor:
@@ -36,10 +36,10 @@ class AutonomySupervisor:
             CREATE TABLE IF NOT EXISTS attempts(id TEXT PRIMARY KEY, job_id TEXT, episode_id TEXT, state TEXT,
               outcome TEXT, evidence TEXT, started REAL, ended REAL);
             ''')
-            rows=db.execute("SELECT id FROM jobs WHERE state IN ('observing','planning','validating','executing','verifying','recording','resetting')").fetchall()
+            rows=db.execute("SELECT id FROM jobs WHERE state IN ('queued','observing','planning','validating','executing','verifying','recording','resetting')").fetchall()
             for row in rows:
-                db.execute("UPDATE jobs SET state='queued',updated=?,result=? WHERE id=?",
-                           (time.time(),json.dumps({'recovered':True,'reason':'Process restart: re-observe before any action'}),row[0]))
+                db.execute("UPDATE jobs SET state='interrupted',updated=?,result=? WHERE id=?",
+                           (time.time(),json.dumps({"recovered":True,"reason":"Process restart: explicit operator resumption required; no motion replay"}),row[0]))
         self.episodes.recover();self.thread=threading.Thread(target=self.loop,daemon=True,name='autonomy-supervisor');self.thread.start()
 
     def db(self):
@@ -82,7 +82,7 @@ class AutonomySupervisor:
         with self.db() as db:
             row=db.execute('SELECT * FROM jobs WHERE id=?',(identifier,)).fetchone()
             if not row:raise ValueError('Job not found')
-            if row['state'] not in ('blocked','failed','cancelled'):raise ValueError('Only stopped jobs can be resumed')
+            if row["state"] not in ("blocked","failed","cancelled","interrupted"):raise ValueError("Only stopped jobs can be resumed")
             db.execute("UPDATE jobs SET state='queued',cancel_requested=0,updated=?,snapshot='{}',plan='{}',result='{}' WHERE id=?",
                        (time.time(),identifier));self.event(db,identifier,'resumed',{})
         return self.get(identifier)

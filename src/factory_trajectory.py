@@ -1,9 +1,106 @@
 """Retain MoveIt's timed path and stream a smooth look-ahead to factory robotio."""
 import math
+import hashlib
+import json
 import numpy as np
 from arm_commissioning import HARD_LIMITS
 from servo_coordinates import SIGNS
-from timed_trajectory import Limits,TimedPath
+from timed_trajectory import Limits,TimedPath,quintic,derivative,exact_bounds
+
+
+def _straight_retime(times, positions, velocities, accelerations, limits):
+    """Retain a proved straight monotonic path with synchronized jerk timing.
+
+    A sampled TOTG stop has nonzero deceleration at its final point. Forcing
+    that acceleration to zero across a tiny last sample creates a numerical
+    jerk spike, slowing every segment. A collinear path permits exact scalar
+    retiming without changing any of its geometric curves or skipping points.
+    General curved and reversing paths retain their original quintics.
+    """
+    q,v,a=(np.asarray(value,dtype=float) for value in (positions,velocities,accelerations))
+    t=np.asarray(times,dtype=float)
+    delta=q[-1]-q[0]
+    norm=float(delta @ delta)
+    if norm<1e-12:return None
+    progress=(q-q[0]) @ delta / norm
+    if (np.max(np.abs(q-(q[0]+progress[:,None]*delta)))>1e-9
+            or np.any(np.diff(progress)<-1e-10)):
+        return None
+    for values in (v,a):
+        projected=(values @ delta / norm)[:,None]*delta
+        if np.max(np.abs(values-projected))>1e-9:return None
+    for index,dt in enumerate(np.diff(t)):
+        coefficients=quintic(q[index],q[index+1],v[index],v[index+1],a[index],a[index+1],dt)
+        scalar=derivative(coefficients) @ delta[:,None] / norm
+        low,_=exact_bounds(scalar)
+        if low[0]<-1e-9:return None
+    moving=np.abs(delta)>1e-10
+    speed=float(np.min(limits.velocity[moving]/np.abs(delta[moving])))
+    acceleration=float(np.min(limits.acceleration[moving]/np.abs(delta[moving])))
+    jerk=float(np.min(limits.jerk[moving]/np.abs(delta[moving])))
+    tj=min(acceleration/jerk,math.sqrt(speed/jerk))
+    ta=max(0.0,speed/(jerk*tj)-tj)
+    distance=speed*(2*tj+ta)
+    if distance<=1.0:
+        cruise=(1.0-distance)/speed
+    else:
+        cruise=0.0
+        tj=acceleration/jerk
+        if 1.0>=2*acceleration*tj*tj:
+            ta=max(0.0,(-3*tj+math.sqrt(tj*tj+4/acceleration))/2)
+        else:
+            tj=(1/(2*jerk))**(1/3)
+            ta=0.0
+    phases=[]
+    stamp=position=velocity=accel=0.0
+    for length,j in zip((tj,ta,tj,cruise,tj,ta,tj),(jerk,0.0,-jerk,0.0,-jerk,0.0,jerk)):
+        if length>1e-12:
+            phases.append((stamp,length,position,velocity,accel,j))
+            position+=velocity*length+accel*length**2/2+j*length**3/6
+            velocity+=accel*length+j*length**2/2
+            accel+=j*length
+            stamp+=length
+    duration=stamp
+    def sample(at):
+        phase=phases[-1]
+        for item in phases:
+            if item[0]<=at<item[0]+item[1]:
+                phase=item
+                break
+        beginning,length,p0,v0,a0,j=phase
+        dt=min(length,max(0.0,at-beginning))
+        return p0+v0*dt+a0*dt**2/2+j*dt**3/6,v0+a0*dt+j*dt**2/2,a0+j*dt
+    phase_stamps=[0.0,duration]+[phase[0] for phase in phases]
+    stamps=list(phase_stamps)
+    source_stamps=[]
+    for point in progress:
+        lo,hi=0.0,duration
+        for _ in range(55):
+            mid=(lo+hi)/2
+            if sample(mid)[0]<point:lo=mid
+            else:hi=mid
+        at=(lo+hi)/2
+        if abs(point)<1e-10:at=0.0
+        if abs(point-1.0)<1e-10:at=duration
+        source_stamps.append(at)
+        # A source waypoint one microsecond from a jerk switch is still
+        # crossed exactly by this curve. It must not create a tiny ill-
+        # conditioned Hermite segment beside that exact phase boundary.
+        if min(abs(at-knot) for knot in stamps)>=0.001:
+            stamps.append(at)
+    stamps=sorted(set(round(at,10) for at in stamps))
+    if np.min(np.diff(stamps))<0.001:return None
+    points=[];rates=[];accelerations_out=[]
+    for at in stamps:
+        p,rate,acc=sample(at)
+        points.append(q[0]+p*delta)
+        rates.append(rate*delta)
+        accelerations_out.append(acc*delta)
+    points[0]=q[0];points[-1]=q[-1]
+    rates[0]=rates[-1]=np.zeros(len(delta))
+    accelerations_out[0]=accelerations_out[-1]=np.zeros(len(delta))
+    return dict(times=stamps,positions=points,velocities=rates,accelerations=accelerations_out,
+        source_waypoint_times=source_stamps,algorithm="collinear_synchronized_jerk_limited")
 
 DEFAULT_MOTION=dict(
     velocity_deg_s=[28,28,28,35,35,40],
@@ -73,6 +170,11 @@ def compile_path(start,goal,trajectory,model,motion=None):
     limits=Limits(np.radians([v[0] for v in HARD_LIMITS]),np.radians([v[1] for v in HARD_LIMITS]),
                   np.radians(motion['velocity_deg_s']),np.radians(motion['acceleration_deg_s2']),
                   np.radians(motion['jerk_deg_s3']))
+    source_duration=float(times[-1]);source_count=len(times)
+    retimed=_straight_retime(times,positions,velocities,accelerations,limits) if trajectory is not None else None
+    if retimed:
+        times=retimed["times"];positions=retimed["positions"]
+        velocities=retimed["velocities"];accelerations=retimed["accelerations"]
     path=TimedPath(['servo'+str(i) for i in range(1,7)],times,positions,velocities,accelerations,limits,clear)
     # robotio exposes integer-degree targets only. Send a receding target ahead
     # of the desired state, before the preceding finite interpolation expires.
@@ -93,4 +195,10 @@ def compile_path(start,goal,trajectory,model,motion=None):
         commands.append(dict(at=at,end=path.duration,pose=final_pose,runtime_ms=max(20,round((path.duration-at)*1000))))
     return dict(commands=commands,duration=path.duration,source_sha256=path.source_sha256,
                 time_scale=path.scale,full_moveit_path_retained=trajectory is not None,
-                profile='coordinated_quintic_lookahead',motion=motion)
+                profile="coordinated_quintic_lookahead",motion=motion,
+                source_duration_s=source_duration, timing_limiter=path.timing_limiter,
+                source_waypoint_count=source_count,
+                retiming_algorithm=retimed["algorithm"] if retimed else "uniform_quintic_time_dilation",
+                original_moveit_sha256=hashlib.sha256(json.dumps(trajectory,sort_keys=True,
+                    allow_nan=False).encode()).hexdigest() if trajectory is not None else None,
+                retained_source_waypoint_times_s=[at*path.scale for at in retimed["source_waypoint_times"]] if retimed else None)

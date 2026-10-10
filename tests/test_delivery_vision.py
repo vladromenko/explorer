@@ -151,8 +151,13 @@ class VisionTests(unittest.TestCase):
 
     def test_factory_geometry_uses_only_settled_command_estimate(self):
         vision=MeasuredVision.__new__(MeasuredVision);vision.factory_mode=True
-        vision.arm=SimpleNamespace(reference=lambda:dict(at=10.,runtime_ms=1000,servo_deg=[90]*6,
-            phase='command_elapsed_observation_required'))
+        import tempfile,json
+        from pathlib import Path
+        temporary=tempfile.TemporaryDirectory();self.addCleanup(temporary.cleanup)
+        vision.root=Path(temporary.name);(vision.root/"data").mkdir()
+        (vision.root/"data/arm-state.json").write_text(json.dumps(dict(at=10.,runtime_ms=1000,
+            servo_deg=[90]*6,phase="command_elapsed_observation_required",boot_id="current")))
+        vision.arm=SimpleNamespace(boot="current")
         model=SimpleNamespace(lock=threading.Lock(),state=SimpleNamespace(get_global_link_transform=lambda name:np.eye(4)),
                               set_state=lambda *args:None)
         vision.model=lambda:model

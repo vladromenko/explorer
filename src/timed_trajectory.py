@@ -93,6 +93,7 @@ class TimedPath:
             names=list(names), times=t.tolist(), positions=q.tolist(), velocities=v.tolist(),
             accelerations=a.tolist()), sort_keys=True, allow_nan=False).encode()).hexdigest()
         segments, scale = [], 1.0
+        self.timing_limiter = None
         for index, dt in enumerate(np.diff(t)):
             c = quintic(q[index], q[index+1], v[index], v[index+1], a[index], a[index+1], dt)
             low, high = bernstein_bounds(c)
@@ -106,7 +107,15 @@ class TimedPath:
                 # extrema avoid turning a smooth 24 deg/s request into 5 deg/s.
                 low, high = exact_bounds(d)
                 bound = np.maximum(np.abs(low), np.abs(high)) / dt**order
-                scale = max(scale, float(np.max((bound / maximum)**(1 / order))))
+                ratios = (bound / maximum)**(1 / order)
+                candidate = float(np.max(ratios))
+                if candidate > scale:
+                    joint = int(np.argmax(ratios))
+                    self.timing_limiter = dict(segment=index, joint=joint,
+                        derivative_order=order, source_segment_s=float(dt),
+                        source_peak=float(bound[joint]), limit=float(maximum[joint]),
+                        required_scale=candidate)
+                    scale = candidate
             segments.append(c)
         # Uniform time dilation leaves the entire polynomial path unchanged,
         # including intermediate positions and nonzero waypoint velocities.

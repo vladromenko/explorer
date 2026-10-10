@@ -4,8 +4,12 @@ import importlib.metadata
 import json
 from pathlib import Path
 import time
+import sys
 
 root=Path('/home/vlad/Explorer');result=dict(at=time.time(),ready=False)
+sys.path.insert(0,str(root/"src"))
+from learning_environment import configure
+result["cache_environment"]=configure(root)
 try:
     import torch
     from lerobot.configs import FeatureType,PolicyFeature

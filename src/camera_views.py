@@ -42,7 +42,7 @@ class CameraViews:
         return {"camera_to_base_estimate":transform.tolist(),"optical_axis_base_estimate":transform[:3,2].tolist(),
             "handeye_source":accepted.get("physical_validation_sha256"),"measured_joints":False}
 
-    def move(self,view,permit):
+    def move(self,view,permit,progress=None):
         if view not in VIEWS:raise ValueError("Unknown camera view")
         permit()
         reference=json.loads((self.root/"data/arm-state.json").read_text())
@@ -60,15 +60,25 @@ class CameraViews:
         if view!="forward" and (axis is None or (axis[1] if view=="left" else -axis[1])<.2):
             raise ValueError("Camera view disagrees with base-frame left/right")
         self.state=dict(phase="positioning",view=view,measured_joints=False)
+        started=time.monotonic()
+        progress=progress or (lambda phase,details:None)
         try:
             if max(abs(a-b) for a,b in zip(start,goal))>.5:
                 self.arm.reference()  # Actuation still checks stationary base and arm power budget.
+                progress("planning_started",{"view":view,"goal_deg":goal})
                 plan=self.trajectory.plan(goal);permit()
+                planning_s=time.monotonic()-started
+                progress("planning_completed",{"planning_duration_s":planning_s,"plan_id":plan["plan_id"]})
                 request=self.trajectory.start_local(plan["plan_id"],permit)
-                session=request["session"];deadline=time.monotonic()+30
+                session=request["session"];deadline=time.monotonic()+120
+                previous_timing=None
                 while self.trajectory.status().get("busy"):
                     permit()
                     if time.monotonic()>deadline:raise ValueError("Camera positioning timed out")
+                    timing=self.arm.status().get("active_path_timing")
+                    if timing and previous_timing is None:
+                        progress("execution_timing",timing)
+                        previous_timing=timing
                     time.sleep(.05)
                 result=self.trajectory.status()
                 if result.get("session")!=session or result.get("phase") not in ("reached","command_completed"):
@@ -81,6 +91,7 @@ class CameraViews:
                 except (ValueError,OSError):time.sleep(.05)
             if stamp is None:raise ValueError("No camera frame after arm settled")
             self.state=dict(phase="ready",view=view,servo_deg=goal,settled_at=settled,image_stamp=stamp,**geometry)
+            self.state["total_duration_s"]=time.monotonic()-started
             write_json(self.root/"data/camera-view.json",self.state)
             return self.status()
         except Exception as exc:
