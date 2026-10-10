@@ -86,7 +86,40 @@
       "near_depth_measured": false
     },
     "preflight_diagnostics_persist_after_restart": true,
-    "supervised_grasp_executed": false
+    "supervised_grasp_executed": false,
+    "supervised_above_object_checkpoint": {
+      "journal": "data/onboard-validation/1791675820592533976-observed-above-sock",
+      "operator_permission_scope": "open_then_10cm_above_object_only",
+      "commanded_goals_deg": [
+        [
+          90,
+          90,
+          30,
+          0,
+          90,
+          30
+        ],
+        [
+          102,
+          66,
+          14,
+          40,
+          90,
+          30
+        ]
+      ],
+      "command_completed": true,
+      "approach_full_moveit_path_retained": true,
+      "camera_frames_recorded": 32,
+      "base_velocity_and_odometry_zero": true,
+      "stop_latched_after_execution": true,
+      "operator_visual_alignment": "pending",
+      "measured_joints": false,
+      "physical_contact_executed": false,
+      "closure_executed": false,
+      "lift_executed": false,
+      "autonomous_success_claimed": false
+    }
   },
   "rgbd_cache_benchmark_ms": {
     "compressed": [
