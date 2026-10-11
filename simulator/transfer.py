@@ -12,6 +12,7 @@ import uuid
 
 from src.mobile_policy_contract import read_bundle, CONTRACT_SHA256, ACTOR_CLOCK
 from simulator.learning import sha256, write_json
+from src.simulation_task_contract import simulation_qualification
 
 MAX_PACKAGE_BYTES = 2 * 1024 ** 3
 MAX_FILES = 10000
@@ -242,12 +243,123 @@ def import_package(archive, robot_root, register=False):
             physics_acceptance=False, physical_success_verified=False, automatic_execution=False,
             executed=False, observed_transfer_validation_required=True,
             registered=register, transfer_sha256=sha256(archive))
+        record['simulation_qualification'] = simulation_qualification(stage,bundle)
         write_json(stage / "job.json", record)
         # Keep the original manifest as provenance; job.json is now a local import record.
         (stage / "transfer.json").rename(stage / "source-transfer.json")
         stage.rename(target)
     return dict(path=str(target), job=record, registered=register,
                 automatic_execution_allowed=False, physics_acceptance=False)
+
+
+def export_curriculum(plan, destination):
+    """One checksummed archive for all finished task policies, including failures."""
+    from .curriculum import task_spec
+    destination = Path(destination)
+    if destination.exists():
+        raise ValueError('Curriculum archive already exists')
+    destination.parent.mkdir(parents=True,exist_ok=True)
+    manifest = dict(format='explorer_curriculum_v1',batch_id=plan['id'],tasks=[],
+                    created=time.time(),automatic_execution_allowed=False,files={})
+    with tempfile.TemporaryDirectory(dir=destination.parent) as name:
+        stage = Path(name)
+        for task in plan['tasks']:
+            entry = dict(task=task_spec(task['task_id']),state=task['state'],error=task.get('error'))
+            exported = task['stages'].get('export')
+            if exported:
+                package = Path(exported['path'])
+                if sha256(package) != exported['sha256']:
+                    raise ValueError('Task archive changed after export')
+                relative = 'policies/'+task['task_id']+'.tar.gz'
+                target = stage / relative
+                target.parent.mkdir(exist_ok=True)
+                shutil.copyfile(package,target)
+                manifest['files'][relative] = sha256(target)
+                entry['package'] = relative
+                entry['validation'] = task['stages'].get('validate')
+            manifest['tasks'].append(entry)
+        write_json(stage/'curriculum.json',manifest)
+        archive_path = stage/'result.tar.gz'
+        with tarfile.open(archive_path,'w:gz') as archive:
+            for relative in [*manifest['files'],'curriculum.json']:
+                archive.add(stage/relative,arcname=relative,recursive=False)
+        archive_path.replace(destination)
+    return dict(path=str(destination),sha256=sha256(destination),tasks=len(manifest['tasks']),
+                policies=len(manifest['files']),automatic_execution_allowed=False)
+
+
+def import_curriculum(archive, robot_root, register=False):
+    """Verify every nested policy before registering any; import never moves robot."""
+    from .curriculum import task_spec
+    root = Path(robot_root).resolve()
+    archive = Path(archive).resolve()
+    with tempfile.TemporaryDirectory() as name:
+        stage = Path(name)
+        with tarfile.open(archive,'r:gz') as handle:
+            members = handle.getmembers()
+            names = [item.name for item in members]
+            if len(names) != len(set(names)) or len(names)>100 or sum(m.size for m in members)>MAX_PACKAGE_BYTES:
+                raise ValueError('Curriculum archive exceeds limits or contains duplicate files')
+            for item in members:
+                _safe_name(item.name)
+                if not item.isfile():
+                    raise ValueError('Curriculum accepts regular files only')
+                target = stage/item.name
+                target.parent.mkdir(parents=True,exist_ok=True)
+                with handle.extractfile(item) as source, target.open('wb') as output:
+                    shutil.copyfileobj(source,output)
+        manifest = json.loads((stage/'curriculum.json').read_text())
+        if manifest.get('format') != 'explorer_curriculum_v1' or set(names) != {'curriculum.json',*manifest['files']}:
+            raise ValueError('Invalid curriculum manifest')
+        for relative,digest in manifest['files'].items():
+            _safe_name(relative)
+            if sha256(stage/relative)!=digest:
+                raise ValueError('Curriculum checksum mismatch')
+        seen = set()
+        nested_bytes = 0
+        for task in manifest['tasks']:
+            identifier = task['task']['id']
+            if task['task'] != task_spec(identifier) or identifier in seen:
+                raise ValueError('Unknown or duplicated task contract')
+            seen.add(identifier)
+            if task.get('package'):
+                if task['package'] not in manifest['files']:
+                    raise ValueError('Missing task policy')
+                checked = stage/('checked-'+identifier)
+                checked.mkdir()
+                with tarfile.open(stage/task['package'],'r:gz') as nested:
+                    nested_bytes += sum(member.size for member in nested.getmembers())
+                if nested_bytes > MAX_PACKAGE_BYTES:
+                    raise ValueError('Combined expanded policies exceed import limits')
+                _,bundle,_ = _extract_verified(stage/task['package'],checked)
+                if bundle.get('skill_id') != identifier:
+                    raise ValueError('Policy belongs to a different task')
+        imported = []
+        for task in manifest['tasks']:
+            if task.get('package'):
+                package = stage/task['package']
+                existing=root/'data'/('learning-jobs' if register else 'simulator-imports')/sha256(package)[:32]
+                if existing.exists():
+                    record=json.loads((existing/'job.json').read_text())
+                    read_bundle(existing)
+                    if record.get('transfer_sha256')!=sha256(package) or record.get('state')!='imported_simulation':
+                        raise ValueError('Conflicting import already exists')
+                    result=dict(path=str(existing),job=record,registered=register,
+                                automatic_execution_allowed=False,physics_acceptance=False)
+                else:
+                    result = import_package(package,root,register)
+                imported.append(dict(task=task['task'],**result))
+        if register:
+            folder = root/'data/simulation-curricula'
+            folder.mkdir(parents=True,exist_ok=True)
+            write_json(folder/(sha256(archive)+'.json'),dict(manifest=manifest,imports=imported))
+        return dict(tasks=imported,automatic_execution_allowed=False)
+
+
+def import_archive(archive, robot_root, register=False):
+    with tarfile.open(archive,'r:gz') as handle:
+        curriculum = 'curriculum.json' in handle.getnames()
+    return import_curriculum(archive,robot_root,register) if curriculum else import_package(archive,robot_root,register)
 
 
 def main():
@@ -262,7 +374,7 @@ def main():
     importer.add_argument("robot_root", type=Path)
     importer.add_argument("--register", action="store_true", help="Register an inactive simulation candidate only")
     args = parser.parse_args()
-    result = export_package(args.job_folder, args.destination, args.device) if args.command == "export" else import_package(args.archive, args.robot_root, args.register)
+    result = export_package(args.job_folder, args.destination, args.device) if args.command == "export" else import_archive(args.archive, args.robot_root, args.register)
     print(json.dumps(result, ensure_ascii=False))
 
 

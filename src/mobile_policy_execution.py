@@ -13,6 +13,7 @@ from arm_commissioning import coordinated_policy_status
 from lerobot_bridge import write_json
 from mobile_policy_contract import bound_action,read_bundle
 from mobile_demonstrations import episode_quality,sample
+from simulation_task_contract import simulation_qualification
 
 
 class MobilePolicyExecution:
@@ -37,6 +38,17 @@ class MobilePolicyExecution:
     def _candidate(self,skill_id):
         jobs=[job for job in self.jobs.status()["jobs"] if job.get("skill_id")==skill_id and
               job.get("state")=="validated_offline" and job.get("validation",{}).get("improves_hold_baseline") is True]
+        # Simulator imports enter only the observed trial path, after bound
+        # independent closed-loop checks. Offline MAE is insufficient here.
+        for path in (self.root/'data/learning-jobs').glob('*/job.json'):
+            try:
+                imported=json.loads(path.read_text())
+                if imported.get('state')=='imported_simulation' and imported.get('skill_id')==skill_id and imported.get('id')==path.parent.name:
+                    bundle,_=read_bundle(path.parent)
+                    if simulation_qualification(path.parent,bundle)['simulation_qualified']:
+                        jobs.append(imported)
+            except (OSError,ValueError,KeyError,TypeError):
+                pass
         if not jobs:raise ValueError("Нет кандидата, проверенного на отдельном показе")
         # Dataset-derived IDs are hashes, not chronological version numbers.
         job=max(jobs,key=lambda item:(float(item.get("finished") or item.get("at") or 0),
@@ -50,6 +62,8 @@ class MobilePolicyExecution:
         try:job,bundle,checkpoint=self._candidate(skill_id)
         except (OSError,ValueError,KeyError) as exc:
             job=None;bundle=None;checkpoint=None;blockers.append(str(exc))
+        if job and job.get('state')=='imported_simulation' and not (self.root/'.venv-learning/bin/python').is_file():
+            blockers.append('Не установлена среда исполнения моделей; используйте bin/install-learning.sh')
         try:
             state=json.loads((self.root/"data/status.json").read_text())
             if not 0<=time.time()-state.get("at",0)<.8:blockers.append("Состояние робота устарело")

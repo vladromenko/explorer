@@ -95,3 +95,7 @@ bin/install-all.sh --assets /путь/к/Explorer-assets
 ### Manual operator UI
 
 Open `http://explorer.local:8080/` for the seven-section desktop interface or `/mobile` for the touch interface. The desktop panel supports keyboard and the Jetson-connected gamepad for both holonomic chassis and six-joint arm control. Diagnostics and allowlisted service logs are available in the Machine status tab. See `docs/operator-guide.ru.md` for the exact controls.
+
+## Ночное обучение на Mac
+
+[Симулятор, ночная очередь задач и перенос на Jetson](docs/SIMULATOR-AND-TRANSFER.ru.md#ночное-обучение-нескольким-задачам). Кнопка «Обучаться ночью» собирает показы, учит ACT, проверяет новые сцены и сохраняет пакеты. Результат симуляции отдельно от приёмки настоящего робота.

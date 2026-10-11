@@ -15,7 +15,9 @@ import queue
 from concurrent.futures import Future
 from pathlib import Path
 import secrets
+import shlex
 import subprocess
+import shutil
 import sys
 import threading
 import time
@@ -28,6 +30,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pydantic import BaseModel, Field, field_validator
+from .curriculum import TASKS, NightQueue, task_spec
 
 DATA_ROOT = Path(os.environ.get('EXPLORER_SIM_VOLUME', '/Volumes/ExplorerSim')).expanduser() / 'ExplorerSim'
 GUIDE_FILE = Path(__file__).resolve().parent.parent / 'docs' / 'SIMULATOR-AND-TRANSFER.ru.md'
@@ -154,6 +157,7 @@ class Control(BaseModel):
 class Reset(BaseModel):
     seed: int = Field(default=1, ge=0, le=2**31 - 1)
     difficulty: str = Field(default='easy', pattern='^(easy|varied)$')
+    task_id: str = 'sock_basket'
 
 
 class StopRecording(BaseModel):
@@ -166,6 +170,14 @@ class JobRequest(BaseModel):
     batch_size: int = Field(default=16, ge=8, le=1024)
     seed: int = Field(default=100, ge=0, le=2**31 - 1)
     episode_ids: list[str] | None = Field(default=None, max_length=1000)
+    task_id: str = 'sock_basket'
+    task_ids: list[str] = Field(default_factory=lambda:['sock_basket'], max_length=4)
+    hours: float = Field(default=8., gt=0, le=24)
+    plan_id: str | None = None
+    model_id: str | None = None
+    rounds: int = Field(default=3, ge=1, le=5)
+    independent_demos_required: bool = False
+    validation_seed: int = Field(default=10000,ge=0,le=2**31-1001)
 
     @field_validator('episode_ids')
     @classmethod
@@ -210,6 +222,7 @@ class Runtime:
         self.logs = []
         self.log_file = (self.data_root / 'logs' / f"session-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}-{secrets.token_hex(3)}.jsonl").open('a', encoding='utf8')
         self.latest_package = None
+        self.night_queue = NightQueue(self.data_root)
         self.latest_job_folder = None
         self.model_info = None
         self.latest_model()
@@ -220,7 +233,7 @@ class Runtime:
         if self.env is not None:
             self.reset(Reset())
 
-    def latest_model(self):
+    def latest_model(self, task_id=None):
         """Restore only a finished job whose checkpoint passes bundle verification."""
         candidates = sorted((self.data_root / 'runs').glob('*/job.json'), key=lambda path: path.stat().st_mtime, reverse=True)
         module = (self.learning or importlib.import_module('simulator.learning')) if candidates else None
@@ -229,9 +242,10 @@ class Runtime:
                 job = json.loads(file.read_text(encoding='utf8'))
                 if isinstance(job, dict) and job.get('state') in {'validated_simulation', 'trained_simulation_unvalidated'} and (file.parent / 'bundle.json').is_file():
                     bundle, _ = module.read_bundle(file.parent)
-                    self.latest_job_folder = file.parent
-                    self.refresh_model_info(bundle)
-                    return file.parent
+                    if task_id is None or bundle.get('skill_id',None)==task_id or bundle.get('skill_id') is None and task_id=='sock_basket':
+                        self.latest_job_folder = file.parent
+                        self.refresh_model_info(bundle)
+                        return file.parent
             except (ValueError, OSError, KeyError, TypeError, AttributeError):
                 pass
         self.latest_job_folder = None
@@ -278,7 +292,9 @@ class Runtime:
         with self.lock:
             if self.record_file:
                 self.stop_recording('unknown')
-            self.observation, self.info = self.env.reset(seed=command.seed, options={'difficulty': command.difficulty})
+            task_spec(command.task_id)
+            self.latest_model(command.task_id)
+            self.observation, self.info = self.env.reset(seed=command.seed, options={'difficulty': command.difficulty, 'task_id':command.task_id})
             self.command = Control()
             self.command_at = 0.
             self.pose_goal = None
@@ -446,6 +462,7 @@ class Runtime:
             (folder / 'frames').mkdir()
             self.record_file = (folder / 'samples.jsonl').open('w', encoding='utf8')
             self.record_meta = {'id': identifier, 'created_at': datetime.now(timezone.utc).isoformat(), 'source': 'simulation', 'folder': str(folder)}
+            self.record_meta['task_id'] = self.cached_state.get('task',{}).get('id','sock_basket')
             self.record_frames = 0
             self.log('Запись демонстрации началась')
             return self.record_meta
@@ -485,20 +502,23 @@ class Runtime:
 
     def snapshot(self):
         with self.lock:
-            return jsonable({'state': self.cached_state, 'reward': self.reward, 'info': self.info, 'done': self.done, 'paused': self.paused, 'error': self.error, 'recording': bool(self.record_file), 'record_frames': self.record_frames, 'jobs': self.jobs[-20:], 'logs': self.logs[-40:], 'model': self.model_info, 'package_available': self.latest_package is not None, 'data_root': self.data_root, 'depth_available': 'depth' in self.images, 'frame_age': round(time.monotonic() - self.frame_at, 2) if self.frame_at else None})
+            return jsonable({'state': self.cached_state, 'reward': self.reward, 'info': self.info, 'done': self.done, 'paused': self.paused, 'error': self.error, 'recording': bool(self.record_file), 'record_frames': self.record_frames, 'jobs': self.jobs[-20:], 'logs': self.logs[-40:], 'model': self.model_info, 'night_batches':self.night_queue.list(), 'package_available': self.latest_package is not None, 'data_root': self.data_root, 'depth_available': 'depth' in self.images, 'frame_age': round(time.monotonic() - self.frame_at, 2) if self.frame_at else None})
 
     def episodes(self):
         output = []
         for file in sorted((self.data_root / 'demonstrations').glob('*/episode.json'), reverse=True):
             try:
                 episode = json.loads(file.read_text(encoding='utf8'))
-                output.append({'id': file.parent.name, 'frames': episode.get('frames', episode.get('samples', 0)), 'physics_verified_success': bool(episode.get('physics_verified_success', episode.get('success', False))), 'operator_annotation': episode.get('operator_annotation', 'unknown')})
+                output.append({'id': file.parent.name, 'task_id':episode.get('task_id','sock_basket'), 'frames': episode.get('frames', episode.get('samples', 0)), 'physics_verified_success': bool(episode.get('physics_verified_success', episode.get('success', False))), 'operator_annotation': episode.get('operator_annotation', 'unknown')})
             except (ValueError, OSError):
                 pass
         return output
 
     def launch_job(self, kind, request):
         with self.lock:
+            task_spec(request.task_id)
+            for identifier in request.task_ids:
+                task_spec(identifier)
             if self.record_file:
                 raise HTTPException(409, 'Сначала закончите запись демонстрации')
             if self.job_thread and self.job_thread.is_alive():
@@ -510,10 +530,28 @@ class Runtime:
             self.job_thread.start()
             return dict(job)
 
-    def run_job(self, job, request):
+    def model_for_request(self, request):
+        if request.model_id is None:
+            folder = self.latest_model(request.task_id)
+        else:
+            if not re.fullmatch('[a-zA-Z0-9_-]{1,100}',request.model_id):
+                raise ValueError('Некорректный идентификатор модели')
+            folder = self.data_root / 'runs' / request.model_id
+        if folder is None:
+            raise ValueError('Сначала обучите политику ACT')
+        bundle, _ = (self.learning or importlib.import_module('simulator.learning')).read_bundle(folder)
+        if bundle.get('skill_id') not in (request.task_id, None):
+            raise ValueError('Модель обучалась другой задаче')
+        if bundle.get('skill_id') is None and request.task_id != 'sock_basket':
+            raise ValueError('У старой модели нет контракта этой задачи')
+        return folder
+
+    def run_job(self, job, request, extra_cancelled=None):
         sleep_guard = None
+        def is_cancelled():
+            return self.stop_event.is_set() or self.cancel_job.is_set() or bool(extra_cancelled and extra_cancelled())
         try:
-            if self.stop_event.is_set() or self.cancel_job.is_set():
+            if is_cancelled():
                 raise InterruptedError('Задание остановлено')
             if sys.platform == 'darwin':
                 try:
@@ -537,7 +575,7 @@ class Runtime:
                         job['message'] = str(message)
                     job.update(jsonable(values))
             def physics_progress(message=None, **values):
-                if self.stop_event.is_set() or self.cancel_job.is_set():
+                if is_cancelled():
                     raise InterruptedError('Задание остановлено')
                 progress(message, **values)
                 with self.lock:
@@ -545,14 +583,44 @@ class Runtime:
                     if time.monotonic() - self.frame_at > .15:
                         self.capture_images()
                         self.frame_at = time.monotonic()
-            if job['kind'] == 'trials':
+            if job['kind'] == 'night':
+                if request.plan_id:
+                    plan = self.night_queue.get(request.plan_id)
+                else:
+                    plan = self.night_queue.create(request.task_ids,request.count,request.steps,request.batch_size,request.hours,request.seed,request.rounds)
+                job['plan_id'] = plan['id']
+                def execute(stage, task, options, cancelled):
+                    child = dict(id=secrets.token_hex(6),kind=stage,status='running',progress=0,message='Запуск…')
+                    with self.lock:
+                        self.jobs.append(child)
+                    values = dict(options, task_id=task['task_id'], independent_demos_required=True)
+                    if stage=='validate':
+                        values.update(count=10,model_id=task['stages']['train']['model_id'])
+                    if stage=='export':
+                        values.update(model_id=task['stages']['train']['model_id'])
+                    self.run_job(child,JobRequest(**values),extra_cancelled=cancelled)
+                    if child['status']=='cancelled':
+                        raise InterruptedError(child['message'])
+                    if child['status']!='complete':
+                        raise ValueError(child['message'])
+                    return child['result']
+                result = self.night_queue.run(plan['id'],execute,is_cancelled,progress)
+                if result['state']=='paused':
+                    raise InterruptedError(result['reason'])
+                from .transfer import export_curriculum
+                result['archive'] = export_curriculum(result,self.data_root/'exports'/f"night-{plan['id']}-{job['id']}.tar.gz")
+                self.latest_package = Path(result['archive']['path'])
+            elif job['kind'] == 'trials':
+                task_spec(request.task_id)
                 summaries = []
                 for index in range(request.count):
-                    if self.stop_event.is_set() or self.cancel_job.is_set():
+                    if is_cancelled():
                         raise InterruptedError('Задание остановлено')
+                    if shutil.disk_usage(self.data_root).free < 8*1024**3:
+                        raise InterruptedError('На диске осталось меньше 8 ГБ; освободите место и продолжите очередь')
                     folder = self.data_root / 'demonstrations' / f"trial-{job['id']}-{index:04d}"
                     progress(f'Попытка {index + 1} из {request.count}', progress=100 * index / request.count)
-                    summary = self.on_owner(lambda folder=folder, index=index: self.physics_task(lambda: self.env.make_episode_trial(folder, request.seed + index, progress=physics_progress)))
+                    summary = self.on_owner(lambda folder=folder, index=index: self.physics_task(lambda: self.env.make_episode_trial(folder, request.seed + index, progress=physics_progress, **({'task_id':request.task_id} if request.task_id!='sock_basket' else {}))))
                     summaries.append(summary)
                     current_state = self.on_owner(self.env.state)
                     with self.lock:
@@ -573,13 +641,15 @@ class Runtime:
                 successful = []
                 for episode in episodes:
                     metadata = json.loads((episode / 'episode.json').read_text(encoding='utf8'))
-                    if metadata.get('physics_verified_success', metadata.get('success', False)):
+                    if metadata.get('task_id','sock_basket')==request.task_id and metadata.get('physics_verified_success', metadata.get('success', False)):
                         successful.append(episode)
                 episodes = successful
                 if not episodes:
                     raise ValueError('Нет демонстраций с подтверждённой физической доставкой. Неудачные попытки сохранены для диагностики; покажите успешную доставку или сгенерируйте новые попытки.')
                 folder = self.data_root / 'runs' / job['id']
-                result = module.train_job(job_folder=folder, episode_folders=episodes, steps=request.steps, batch_size=request.batch_size, seed=request.seed, progress=progress, cancelled=lambda: self.stop_event.is_set() or self.cancel_job.is_set())
+                if request.independent_demos_required and len({json.loads((path/'episode.json').read_text()).get('seed',path.name) for path in episodes})<2:
+                    raise ValueError('Для независимой проверки нужны хотя бы два успешных показа разных сцен')
+                result = module.train_job(job_folder=folder, episode_folders=episodes, steps=request.steps, batch_size=request.batch_size, seed=request.seed, task=task_spec(request.task_id)['title'], skill_id=request.task_id, progress=progress, cancelled=is_cancelled)
                 if result.get('state') == 'cancelled':
                     raise InterruptedError(result.get('error') or 'Задание остановлено')
                 if result.get('state') == 'failed':
@@ -587,27 +657,28 @@ class Runtime:
                 bundle, _ = module.read_bundle(folder)
                 self.latest_job_folder = folder
                 self.refresh_model_info(bundle)
+                result['model_id'] = folder.name
             elif job['kind'] == 'validate':
-                folder = self.latest_model()
+                folder = self.model_for_request(request)
                 if folder is None:
                     raise ValueError('Сначала обучите политику ACT; законченный проверенный файл модели не найден')
                 bundle, _ = module.read_bundle(folder)
                 model_weights_sha256 = bundle['checkpoint_sha256']['model.safetensors']
                 actor = module.load_policy(folder, device=module.choose_device('auto'))
                 provenance = json.loads((folder / 'train' / 'explorer-provenance.json').read_text(encoding='utf8'))
-                seed_plan = heldout_seed_plan(provenance, request.count)
+                seed_plan = heldout_seed_plan(provenance, request.count, start=request.validation_seed)
                 output = self.data_root / 'runs' / f"validation-{job['id']}"
                 def validate_rollouts():
                     output.mkdir(parents=True, exist_ok=True)
                     results = []
                     for index, seed in enumerate(seed_plan['seeds']):
-                        if self.stop_event.is_set() or self.cancel_job.is_set():
+                        if is_cancelled():
                             raise InterruptedError('Проверка остановлена')
                         progress(f'Проверка сцены {index + 1} из {request.count}', progress=100 * index / request.count)
-                        summary = self.env.make_episode_trial(output / f'heldout-{index:04d}', seed=seed, policy=actor, progress=physics_progress)
+                        summary = self.env.make_episode_trial(output / f'heldout-{index:04d}', seed=seed, policy=actor, progress=physics_progress, **({'task_id':request.task_id} if request.task_id!='sock_basket' else {}))
                         results.append({key: summary.get(key) for key in ('id', 'success', 'error', 'outcome')})
                     from simulator.explorer_model import model_metadata
-                    report = {'validation_kind': 'closed_loop_policy', 'episodes': len(results), 'successes': sum(bool(item['success']) for item in results), 'physics_validated': False, 'real_hardware_accepted': False, 'results': results, 'environment_provenance': model_metadata(), **seed_plan}
+                    report = {'validation_kind': 'closed_loop_policy', 'task_id':request.task_id, 'task_spec':task_spec(request.task_id), 'episodes': len(results), 'successes': sum(bool(item['success']) for item in results), 'physics_validated': False, 'real_hardware_accepted': False, 'results': results, 'environment_provenance': model_metadata(), **seed_plan}
                     (output / 'validation.json').write_text(json.dumps(jsonable(report), ensure_ascii=False, indent=2), encoding='utf8')
                     return report
                 result = self.on_owner(lambda: self.physics_task(validate_rollouts))
@@ -615,9 +686,10 @@ class Runtime:
                               model_checkpoint_sha256=bundle['checkpoint_sha256'],validation_kind='closed_loop_policy')
                 report_name = 'preview-validation.json' if request.count==1 else 'physics-validation.json'
                 (folder / report_name).write_text(json.dumps(jsonable(result), ensure_ascii=False, indent=2), encoding='utf8')
+                self.latest_job_folder = folder
                 self.refresh_model_info(bundle)
             elif job['kind'] == 'export':
-                folder = self.latest_model()
+                folder = self.model_for_request(request)
                 if folder is None:
                     raise ValueError('Сначала обучите политику ACT; законченный проверенный файл модели не найден')
                 transfer = importlib.import_module('simulator.transfer')
@@ -626,6 +698,30 @@ class Runtime:
                 if not candidate.is_relative_to(self.data_root) or not candidate.is_file():
                     raise ValueError('Пакет не найден внутри хранилища симулятора')
                 self.latest_package = candidate
+                result['task_id'] = request.task_id
+            elif job['kind'] == 'deploy':
+                if self.latest_package is None:
+                    raise ValueError('Сначала соберите пакет или завершите ночное обучение')
+                archive = self.latest_package
+                remote = '/home/vlad/Explorer/data/simulation-inbox/' + archive.name
+                ssh = ['ssh','-o','BatchMode=yes','-o','ConnectTimeout=8','explorer']
+                def remote_run(command):
+                    completed = subprocess.run([*ssh,command],capture_output=True,text=True,timeout=60)
+                    if completed.returncode:
+                        raise ValueError('Jetson: '+(completed.stderr or completed.stdout)[-1200:])
+                    return completed.stdout
+                progress('Проверка SSH и сохранности текущего кода Jetson')
+                remote_run('cd /home/vlad/Explorer && git diff --quiet && git diff --cached --quiet && mkdir -p data/simulation-inbox')
+                completed = subprocess.run(['scp','-o','BatchMode=yes','-o','ConnectTimeout=8',str(archive),
+                                             'explorer:'+remote],capture_output=True,text=True,timeout=180)
+                if completed.returncode:
+                    raise ValueError('Загрузка: '+completed.stderr[-1200:])
+                progress('Установка актуального кода и регистрация проверенных файлов; без движения')
+                output = remote_run('cd /home/vlad/Explorer && git pull --ff-only origin codex/explorer-onboard-20261010 && '
+                                    'python3 bin/import-simulation-policy.py '+shlex.quote(remote)+' --register')
+                result = dict(imported=True,archive=archive.name,output=output[-5000:],
+                              executed=False,hardware_accepted=False,
+                              note='Для новых маршрутов нужна настоящая карта; первый запуск модели — наблюдаемый тест. Новые API доступны после штатного перезапуска web-сервиса.')
             (self.data_root / 'logs' / f"job-{job['id']}.json").write_text(json.dumps(jsonable(result), ensure_ascii=False, indent=2), encoding='utf8')
             with self.lock:
                 job.update(status='complete', progress=100, message='Готово', result=jsonable(result))
@@ -758,7 +854,7 @@ def create_app(env_factory=None, data_root=DATA_ROOT, learning_module=None, star
 
     @app.post('/api/jobs/{kind}')
     def job(kind: str, command: JobRequest, request: Request):
-        if kind not in {'trials', 'train', 'validate', 'export'}:
+        if kind not in {'trials', 'train', 'validate', 'export', 'night', 'deploy'}:
             raise HTTPException(404, 'Неизвестное задание')
         return request.app.state.runtime.launch_job(kind, command)
 

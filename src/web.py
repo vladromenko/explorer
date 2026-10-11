@@ -405,6 +405,34 @@ def skill_trial_stop():return mobile_policy_execution.stop()
 @app.get("/api/skills/trial/status")
 def skill_trial_status():return mobile_policy_execution.status()
 
+@app.get('/api/simulation-tasks')
+def simulation_tasks():
+    from simulator.curriculum import TASKS,task_spec
+    from mobile_policy_contract import read_bundle
+    from simulation_task_contract import simulation_qualification
+    output=[]
+    for path in (ROOT/'data/learning-jobs').glob('*/job.json'):
+        try:
+            record=json.loads(path.read_text())
+            if record.get('state')=='imported_simulation' and record.get('skill_id') in TASKS:
+                if record.get('id')!=path.parent.name:
+                    raise ValueError('Идентификатор модели не соответствует папке импорта')
+                bundle,_=read_bundle(path.parent)
+                output.append(dict(task=task_spec(record['skill_id']),job_id=record['id'],
+                    qualification=simulation_qualification(path.parent,bundle),
+                    trial=mobile_policy_execution.preflight(record['skill_id'])))
+        except (OSError,ValueError,KeyError,TypeError,AttributeError) as exc:
+            output.append(dict(job_id=path.parent.name,error=str(exc),ready=False))
+    return dict(tasks=output,automatic_execution=False)
+
+@app.post('/api/simulation-tasks/{identifier}/trial')
+def simulation_task_trial(identifier:str,c:SkillTrial):
+    from simulator.curriculum import task_spec
+    map_operation(task_spec,identifier)
+    if gamepad_panel.teleop.status().get('owner'):
+        raise HTTPException(409,'Завершите ручное управление перед проверкой навыка')
+    return map_operation(mobile_policy_execution.start,identifier,c.observing)
+
 @app.post("/api/skills/trial/intervention/outcome")
 def skill_intervention_outcome(c:SkillInterventionOutcome):
     result=map_operation(mobile_policy_execution.label_intervention,c.episode_id,c.outcome)
@@ -535,6 +563,9 @@ def onboard_guide():return Response((ROOT/"docs/EXPLORER-ONBOARD-RELEASE-2026101
 @app.get('/mobile')
 def mobile_interface():return HTMLResponse((ROOT/'src/mobile.html').read_text())
 
+@app.get('/simulation-training')
+def simulation_training_interface():return HTMLResponse((ROOT/'src/simulation-training.html').read_text(),headers={'Cache-Control':'no-store'})
+
 @app.get("/room-guide")
 def room_guide():return Response((ROOT/"docs/ROOM-EXPLORATION.ru.md").read_text(),media_type="text/plain; charset=utf-8")
 
@@ -543,7 +574,7 @@ def mobile_guide():return Response((ROOT/'docs/MOBILE-REMOTE.ru.md').read_text()
 
 @app.middleware('http')
 async def auth(request:Request,call_next):
-    if request.url.path not in ("/","/mobile","/mobile-guide","/guide","/training-guide","/learning-implementation","/delivery-guide","/room-guide","/lab.js","/skill-ui.js","/experiment-ui.js","/mapping-ui.js","/agent","/agent-ui.js","/onboard-guide"):
+    if request.url.path not in ("/","/mobile","/simulation-training","/mobile-guide","/guide","/training-guide","/learning-implementation","/delivery-guide","/room-guide","/lab.js","/skill-ui.js","/experiment-ui.js","/mapping-ui.js","/agent","/agent-ui.js","/onboard-guide"):
         supplied=request.headers.get('authorization','').removeprefix('Bearer ')
         if not secrets.compare_digest(supplied,TOKEN):
             from fastapi.responses import JSONResponse

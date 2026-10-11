@@ -146,8 +146,8 @@ def build_mjcf(mesh_dir=None, *, scene="sock", sock_position=(.33, 0., .015), bi
     scene='empty' excludes cloth/bin; 'sock' includes both; 'navigation' also
     adds obstacles. Intrinsics override must contain width,height,fx,fy,cx,cy.
     """
-    if scene not in ("empty", "sock", "navigation"):
-        raise ValueError("Scene must be empty, sock or navigation")
+    if scene not in ("empty", "sock", "navigation", "cookie", "cube", "cloth"):
+        raise ValueError("Unknown simulator scene")
     import numpy as np
     config = model_config()
     camera = dict(config["camera"])
@@ -229,7 +229,12 @@ def build_mjcf(mesh_dir=None, *, scene="sock", sock_position=(.33, 0., .015), bi
         _add_contact(bodies[name], f"{name}_contact", type="capsule", fromto="0 0 -.003 .03 0 -.003", size=".003", conaffinity="6")
     for name in ("rlink2", "llink2"):
         sign = 1 if name == "rlink2" else -1
-        _add_contact(bodies[name], ("finger_right" if name == "rlink2" else "finger_left"), type="capsule", fromto=f".02 {sign*.006} -.005 .048 {sign*.006} -.005", size=".004", friction="1.2 .01 .0001", conaffinity="6")
+        if scene in ('cookie','cube'):
+            _add_contact(bodies[name], ('finger_right' if name=='rlink2' else 'finger_left'),
+                         type='box',pos=f'.034 {sign*.006} -.005',size='.016 .006 .004',
+                         friction='1.2 .01 .0001',conaffinity='6')
+        else:
+            _add_contact(bodies[name], ("finger_right" if name == "rlink2" else "finger_left"), type="capsule", fromto=f".02 {sign*.006} -.005 .048 {sign*.006} -.005", size=".004", friction="1.2 .01 .0001", conaffinity="6")
     # Explicit opposing-pad contact prevents commanded overclosure from
     # passing through the other finger; servo torque produces finite squeeze.
     ET.SubElement(contact, "pair", name="opposing_finger_contact", geom1="finger_left", geom2="finger_right", condim="3", friction=".4 .4 .005 .0001 .0001", solref="0.008 1")
@@ -268,10 +273,25 @@ def build_mjcf(mesh_dir=None, *, scene="sock", sock_position=(.33, 0., .015), bi
     for name in ("laser0_frame", "laser1_frame", "imu_frame"):
         ET.SubElement(bodies[name], "site", name=name, size=".003", rgba=".1 .8 1 1")
     if scene != "empty":
-        _sock(world, config, sock_position)
+        if scene in ('cookie', 'cube'):
+            size = [.028, .019, .018] if scene == 'cookie' else [.018]*3
+            item = ET.SubElement(world, 'body', name='task_object', pos=_s(sock_position))
+            ET.SubElement(item, 'freejoint', name='task_object_free')
+            ET.SubElement(item, 'inertial', pos='0 0 0', mass='.025', diaginertia='0.000007 0.000007 0.000007')
+            ET.SubElement(item, 'geom', name='task_object_contact', type='box', size=_s(size),
+                          contype='4', conaffinity='7', friction='.8 .005 .0001',
+                          rgba='.85 .65 .22 1' if scene == 'cookie' else '.25 .5 .85 1')
+        else:
+            if scene == 'cloth':
+                config['sock'].update(length_m=.12, width_m=.045, mass_kg=.018)
+            _sock(world, config, sock_position)
         c = config["bin"]
         hx, hy = c["inner_half_size_m"]
+        if scene == 'cookie':
+            hx = hy = .075
         thick, height = c["wall_thickness_m"], c["height_m"]
+        if scene == 'cookie':
+            height = .035  # A supported serving tray, not the laundry basket.
         backing = c.get("floor_collision_backing_m", 0.)
         bin_body = ET.SubElement(world, "body", name="bin", pos=_s(bin_position))
         # Preserve the visible top surface. Numerical backing below the ground
@@ -286,6 +306,19 @@ def build_mjcf(mesh_dir=None, *, scene="sock", sock_position=(.33, 0., .015), bi
     if scene == "navigation":
         for i, (x,y) in enumerate(((1.,-.4), (-.6,.4), (.65,-.7))):
             ET.SubElement(world, "geom", name=f"obstacle_{i}", type="box", pos=f"{x} {y} .16", size=".1 .1 .16", contype="2", conaffinity="5", rgba=".7 .5 .3 1")
+    if scene == 'cookie':
+        # Two small rooms divided by a real collision wall and 70 cm doorway.
+        for side in (-1, 1):
+            ET.SubElement(world, 'geom', name=f'room_wall_{side}', type='box',
+                          pos=f'.65 {side*.925} .25', size='.025 .575 .25',
+                          contype='2', conaffinity='5', rgba='.55 .58 .62 1')
+        for name,pos,size in (
+                ('south',[.55,-.70,.25],[1.,.025,.25]),
+                ('north',[.55,.80,.25],[1.,.025,.25]),
+                ('west',[-.45,.05,.25],[.025,.75,.25]),
+                ('east',[1.55,.05,.25],[.025,.75,.25])):
+            ET.SubElement(world,'geom',name='room_boundary_'+name,type='box',pos=_s(pos),size=_s(size),
+                          contype='2',conaffinity='5',rgba='.55 .58 .62 1')
     return ET.tostring(xml, encoding="unicode")
 
 

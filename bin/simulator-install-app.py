@@ -34,7 +34,7 @@ for name in ("config", "bin", "src", "docs"):
 for name in ("arm_model.json", "explorer.urdf", "explorer.srdf", "handeye-accepted.json",
              "lidar_geometry.json", "arm-motion.json", "controller-calibration.json", "gripper-reference.json"):
     shutil.copy2(root / "config" / name, installed_root / "config" / name)
-for name in ("mobile_policy_contract.py", "learning_environment.py"):
+for name in ("mobile_policy_contract.py", "learning_environment.py", "simulation_task_contract.py"):
     shutil.copy2(root / "src" / name, installed_root / "src" / name)
 (installed_root / "src/__init__.py").write_text("")
 shutil.copy2(root / "docs/SIMULATOR-AND-TRANSFER.ru.md", installed_root / "docs/SIMULATOR-AND-TRANSFER.ru.md")

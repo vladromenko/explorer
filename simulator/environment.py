@@ -54,6 +54,11 @@ class ExplorerEnv(gym.Env):
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
         options = options or {}
+        from .curriculum import task_spec
+        self.task_id = options.get('task_id', getattr(self, 'task_id', 'sock_basket'))
+        spec = task_spec(self.task_id)
+        if self.scene != 'empty' and self.scene != 'navigation':
+            self.scene = spec['scene']
         self._rgb_cache.clear()
         if self.renderer is not None:
             self.renderer.close()
@@ -64,6 +69,9 @@ class ExplorerEnv(gym.Env):
         varied = options.get("difficulty") == "varied"
         sock_default = [self.np_random.uniform(.28, .36), self.np_random.uniform(-.025, .025), .015] if varied else [.31, 0., .015]
         bin_default = [.44, self.np_random.uniform(.20, .26), 0.] if varied else [.44, .24, 0.]
+        if spec['rooms']:
+            sock_default = [self.np_random.uniform(1.02,1.10),self.np_random.uniform(-.025,.025),.025]
+            bin_default = [.35,.25,0.]
         self.sock_position = np.array(options.get("sock_position", sock_default), float)
         self.bin_position = np.array(options.get("bin_position", bin_default), float)
         self.model, self.data = load_model(mesh_dir=self.mesh_dir, scene=self.scene,
@@ -84,7 +92,13 @@ class ExplorerEnv(gym.Env):
         self.wheel_ids = np.array([self.model.actuator(f"wheel{i}").id for i in range(4)])
         self.pad_ids = [self.model.geom(name).id for name in ("finger_left", "finger_right")]
         self.sock_ids = np.array([i for i in range(self.model.nbody)
-            if (mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_BODY, i) or "").startswith("sock_")])
+            if (mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_BODY, i) or "").startswith("sock_")],dtype=int)
+        self.rigid_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, 'task_object')
+        if self.scene!='empty':
+            self.bin_half_size = self.model.geom('bin_bottom').size[:2]-model_config()['bin']['wall_thickness_m']
+            self.bin_height = 2*self.model.geom('bin_left').size[2]
+        if self.rigid_id >= 0:
+            self.sock_ids = np.array([self.rigid_id])
         self.command = np.array([90., 90., 90., 90., 90., 30., 0., 0., 0.])
         self.pending_command = self.command.copy()
         self.arm_velocity = np.zeros(6)
@@ -169,6 +183,10 @@ class ExplorerEnv(gym.Env):
         return {"state": self.command.astype(np.float32).copy(), "wrist": image}
 
     def _sock_points(self):
+        if self.rigid_id >= 0:
+            half = self.model.geom('task_object_contact').size
+            corners = np.array([[x,y,z] for x in (-1,1) for y in (-1,1) for z in (-1,1)])*half
+            return corners @ self.data.xmat[self.rigid_id].reshape(3,3).T + self.data.xpos[self.rigid_id]
         return self.data.xpos[self.sock_ids].copy()
 
     def jaw_center(self, data=None):
@@ -182,7 +200,8 @@ class ExplorerEnv(gym.Env):
         for contact_index, contact in enumerate(self.data.contact[:self.data.ncon]):
             mujoco.mj_contactForce(self.model, self.data, contact_index, force)
             flex = list(contact.flex)
-            if any(i >= 0 for i in flex):
+            rigid_contact = self.rigid_id >= 0 and self.model.geom('task_object_contact').id in contact.geom
+            if any(i >= 0 for i in flex) or rigid_contact:
                 for i, pad in enumerate(self.pad_ids):
                     if pad in contact.geom and contact.dist <= .001 and force[0] > .0001:
                         pads[i] = True
@@ -195,12 +214,17 @@ class ExplorerEnv(gym.Env):
             held = raised and near_jaw and grasped
             self.lift_hold_s = self.lift_hold_s + dt if held else 0.
             self.ever_lifted = self.ever_lifted or self.lift_hold_s >= 1.
-            half = np.array(model_config()["bin"]["inner_half_size_m"])
+            half = self.bin_half_size
             relative = points[:, :2]-self.bin_position[:2]
             inside_fraction = np.mean(np.all(np.abs(relative) < half, axis=1))
-            height = model_config()["bin"]["height_m"]
+            height = self.bin_height
             within_height = np.all((points[:, 2] >= self.bin_position[2]+.003)
                                    & (points[:, 2] < self.bin_position[2]+height+.012))
+            if self.rigid_id>=0:
+                # A rigid package may stand above a serving tray's low wall.
+                # Its lowest corner must settle on the tray bottom, not float.
+                support=self.bin_position[2]+model_config()['bin']['wall_thickness_m']
+                within_height=support-.005<=points[:,2].min()<=support+.012
             sock_speed = np.linalg.norm(self.data.cvel[self.sock_ids, 3:], axis=1)
             settled = np.max(sock_speed) < .12
             self.placement_diagnostics = {"inside_fraction": float(inside_fraction),
@@ -223,7 +247,7 @@ class ExplorerEnv(gym.Env):
             "base_pose": self.base_pose(), "sim_time": float(self.data.time),
             "jaw_center_m": self.jaw_center().tolist(),
             "sock_center_m": points.mean(axis=0).tolist() if len(points) else None,
-            "task": {"phase": self.phase, "grasp_contact": all(self.contacts),
+            "task": {"id": self.task_id, "phase": self.phase, "grasp_contact": all(self.contacts),
                      "finger_contacts": self.contacts, "lifted": self.ever_lifted,
                      "placed": self.task_success, "success": self.task_success,
                      "lift_hold_s": self.lift_hold_s},
@@ -316,7 +340,7 @@ class ExplorerEnv(gym.Env):
             raise ValueError(f"IK: цель недостижима, остаток {error:.3f} м")
         return np.r_[angles, gripper]
 
-    def make_episode_trial(self, output_dir, seed=0, progress=None, policy=None):
+    def make_episode_trial(self, output_dir, seed=0, progress=None, policy=None, task_id='sock_basket'):
         """Attempt real physical pickup/place; failed trials remain failed data.
 
         Teacher may inspect simulated object truth for curriculum generation.
@@ -327,9 +351,14 @@ class ExplorerEnv(gym.Env):
         folder.mkdir(parents=True, exist_ok=False)
         (folder / "frames").mkdir()
         rng = np.random.default_rng(seed)
-        self.reset(seed=seed, options={"sock_position": [rng.uniform(.28, .36), rng.uniform(-.025, .025), .015],
-            "bin_position": [.44, .23, 0.]})
-        manifest = {"id": folder.name, "source": "simulation", "task": "pick sock and place in basket",
+        from .curriculum import task_spec
+        spec = task_spec(task_id)
+        rooms = spec['rooms']
+        source = [rng.uniform(1.02, 1.10) if rooms else rng.uniform(.28, .36), rng.uniform(-.025,.025), .025 if spec['scene']=='cube' else .015]
+        self.reset(seed=seed, options={"task_id": task_id, "sock_position": source,
+            "bin_position": [.35, .25, 0.] if rooms else [.44, .23, 0.]})
+        manifest = {"id": folder.name, "source": "simulation", "task": spec['title'], "task_id": task_id,
+            "task_spec": spec, "teacher_navigation_source": "simulated_pose_only" if rooms else "local_pose_only",
             "action_alignment": "same_row_pre_action", "physics_validated": False,
             "sample_period_s": PERIOD, "fps": round(1/PERIOD), "seed": int(seed), "success": False,
             "sample_contract_sha256": CONTRACT_SHA256, "sample_contract": SAMPLE_CONTRACT,
@@ -371,12 +400,27 @@ class ExplorerEnv(gym.Env):
                 tick(np.r_[start+(goal-start)*blend, 0., 0., 0.])
             for _ in range(12):
                 tick(np.r_[goal, 0., 0., 0.])
+        def drive_to(point, arm, limit=1000, speed=.12):
+            arrived = False
+            for _ in range(limit):
+                pose = np.asarray(self.base_pose())
+                error = np.asarray(point)-pose[:2]
+                c,s = math.cos(pose[2]),math.sin(pose[2])
+                velocity = np.clip(np.array([[c,s],[-s,c]]) @ error*1.5, -speed,speed)
+                tick(np.r_[arm,velocity,np.clip(-pose[2],-.3,.3)])
+                if np.linalg.norm(error)<.012:
+                    arrived = True
+                    break
+            for _ in range(16):
+                tick(np.r_[arm,0.,0.,0.])
+            if not arrived:
+                raise RuntimeError('Путь через дверь не завершён')
         try:
             if policy is not None:
                 policy.reset()
                 self.phase = "policy"
                 # A complete teacher cycle takes roughly 50 simulated seconds.
-                for _ in range(1600):
+                for _ in range(4800 if rooms else 1600):
                     obs = self._observation()
                     action = np.clip(np.asarray(policy(obs["state"], obs["wrist"]), float), LOW, HIGH)
                     tick(action)
@@ -399,6 +443,11 @@ class ExplorerEnv(gym.Env):
                     "phase": "inspect_floor", "before_object_alignment": True,
                     "frame": f"frames/{steps-1:06d}.jpg"}
                 self.phase = "align_base"
+                if rooms:
+                    self.phase = 'navigate_source'
+                    drive_to([.38,0.], inspection)
+                    drive_to([.82,0.], inspection)
+                    self.phase = 'align_base'
                 target_base = np.r_[self._sock_points().mean(axis=0)[:2]-[.20, 0.], 0.]
                 for _ in range(180):
                     pose = np.array(self.base_pose())
@@ -419,16 +468,23 @@ class ExplorerEnv(gym.Env):
                 lowered = self.solve_ik([*center[:2], max(.024, float(center[2])+.018)], approach[:5])
                 arm_to(lowered)
                 self.phase = "close"
-                closed = self.solve_ik([*center[:2], .017], lowered[:5], gripper=170.)
+                grasp_height = max(.006,float(center[2])) if self.rigid_id >= 0 else .017
+                closed = self.solve_ik([*center[:2], grasp_height], lowered[:5], gripper=170.)
                 arm_to(closed, duration=2.)
                 self.phase = "lift"
-                lifted = self.solve_ik([*center[:2], .22], closed[:5], gripper=170., downward=False)
+                lift_goal = [self.base_pose()[0]+.23, self.base_pose()[1], .15] if rooms else [*center[:2], .22]
+                lifted = self.solve_ik(lift_goal, closed[:5], gripper=170., downward=rooms)
                 arm_to(lifted)
                 for _ in range(30):
                     tick(np.r_[lifted, 0., 0., 0.])
                 if not self.ever_lifted:
                     raise RuntimeError("Контактное удержание при подъёме не подтверждено")
                 self.phase = "transport"
+                if rooms:
+                    self.phase = 'navigate_destination'
+                    drive_to([.82,0.], lifted, speed=.04)
+                    drive_to([-.02,0.], lifted, speed=.04)
+                    self.phase = 'transport'
                 # Base carries the held object; the arm never drags cloth at floor height.
                 target_base = self.bin_position[:2]-(self.jaw_center()[:2]-np.array(self.base_pose()[:2]))
                 for _ in range(200):
@@ -436,7 +492,8 @@ class ExplorerEnv(gym.Env):
                     error = target_base-pose[:2]
                     c, s = math.cos(pose[2]), math.sin(pose[2])
                     body = np.array([[c, s], [-s, c]]) @ error
-                    tick(np.r_[lifted, np.clip(body*1.5, -.1, .1), np.clip(-pose[2], -.2, .2)])
+                    carrying_speed = .04 if rooms else .1
+                    tick(np.r_[lifted, np.clip(body*1.5, -carrying_speed, carrying_speed), np.clip(-pose[2], -.2, .2)])
                     if np.linalg.norm(error) < .01:
                         break
                 self.phase = "place"
