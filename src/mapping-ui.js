@@ -158,7 +158,9 @@ async function startRoomTask() {
     try {
         await api("navigation/tasks", spec);
         manual = false; heldKeys.clear();
-        mappingMessage("Задание принято. Бортовая камера готовится к обзору, затем начнётся поездка.");
+        mappingMessage(kind === "recover_object_view" ?
+            "Робот сам осмотрит пол. Если предмет обрезан или пропал, отъедет на 6 см и повторит поиск; захват не запускается." :
+            "Задание принято. Бортовая камера готовится к обзору, затем начнётся поездка.");
     } catch (error) { mappingMessage(error.message, true); }
 }
 
@@ -186,6 +188,17 @@ async function refreshRoomTask() {
             }
             if (task?.state === "failed" && task.result?.saved_partial_map) {
                 summary += " · промежуточная карта сохранена: " + task.result.saved_partial_map.name;
+            }
+            if (task?.spec?.kind === "recover_object_view") {
+                const events = task.events || [];
+                const retreats = events.filter(event => event.phase === "view_retreat").length;
+                if (task.state === "running") {
+                    summary = "Осматриваю пол и ищу предмет · отъездов: " + retreats;
+                } else if (task.state === "succeeded") {
+                    summary = task.result?.found ? "Предмет найден на новом кадре; захват не запускался" :
+                        "Предмет не найден целиком после осмотра; робот остановлен";
+                    summary += " · отъездов: " + retreats;
+                }
             }
             $("roomTaskState").textContent = summary;
             $("roomCameraState").textContent = "Бортовая камера: " + state.camera.phase +

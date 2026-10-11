@@ -10,7 +10,7 @@ import uuid
 import numpy as np
 from lerobot_bridge import write_json
 from stored_records import records
-from target_view_recovery import recover_view
+from target_view_recovery import recover_view, visible_target
 
 CATALOG=[
  {"id":"map_room","name":"Медленно построить карту","description":"Исследовать доступные границы, вернуться к старту и сохранить карту. Бортовая камера смотрит вперёд при поездке и осматривается на остановках.","parameters":["map_name"]},
@@ -152,12 +152,8 @@ class NavigationTasks:
             objects = (result.get("result") or {}).get("objects", [])
             with np.load(self.root / "data/object-searches" / request["id"] / "rgbd.npz", allow_pickle=False) as sample:
                 height, width = sample["rgb"].shape[:2]
-            usable = [item for item in objects if item.get("position") and item.get("confidence", 0) >= .35
-                      and len(item.get("bbox", [])) == 4 and item["bbox"][0] >= 3 and item["bbox"][1] >= 3
-                      and item["bbox"][2] <= width-3 and item["bbox"][3] <= height-3]
-            return {"found": len(usable) == 1 and len(objects) == 1, "search_id": request["id"],
-                    "objects": objects, "image_stamp": (result.get("result") or {}).get("image_stamp"),
-                    "reason": None if len(usable) == 1 and len(objects) == 1 else "missing_clipped_or_ambiguous_target"}
+            return dict(visible_target(objects, width, height), search_id=request["id"],
+                        objects=objects, image_stamp=(result.get("result") or {}).get("image_stamp"))
 
         def retreat(distance):
             self.view.move("forward", lambda: self.permit(identifier))

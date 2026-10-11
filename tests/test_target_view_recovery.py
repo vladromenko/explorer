@@ -1,8 +1,26 @@
 import unittest
-from target_view_recovery import FLOOR_VIEWS, recover_view
+from target_view_recovery import FLOOR_VIEWS, recover_view, visible_target
 
 
 class RecoveryTests(unittest.TestCase):
+    def test_observed_nested_toe_does_not_force_another_retreat(self):
+        rows = [dict(label="black sock", bbox=[25.,183.75,488.4375,303.28125], confidence=.4728, position={"z":.32}),
+                dict(label="black sock", bbox=[24.84375,183.515625,220.46875,302.578125], confidence=.4281, position={"z":.324})]
+        result = visible_target(rows, 640, 480)
+        self.assertTrue(result["found"])
+        self.assertIs(result["target"], rows[0])
+        self.assertFalse(result["physical_object_count_verified"])
+        self.assertFalse(result["identity_verified"])
+        self.assertEqual(len(rows), 2)
+
+    def test_separate_or_clipped_or_unmeasured_targets_require_more_inspection(self):
+        main = dict(label="sock", bbox=[30,100,400,300], confidence=.8, position={"z":.3})
+        separate = dict(label="sock", bbox=[410,100,600,300], confidence=.9, position={"z":.3})
+        nested = dict(main, bbox=[40,100,200,300])
+        for rows in ([main,separate], [main,dict(nested,label="shoe")],
+                     [dict(main,bbox=[0,100,400,300]),nested], [dict(main,position=None),nested]):
+            self.assertFalse(visible_target(rows,640,480)["found"])
+
     def run_policy(self, observations, **kwargs):
         calls = []
         source = iter(observations)

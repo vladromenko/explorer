@@ -1,7 +1,37 @@
 """Finite active inspection; no stale coordinates or contact permission."""
+from detection_candidates import unique_candidates
 
 FLOOR_VIEWS = ("down", "down_near", "down_left", "down_right",
                "down_near_left", "down_near_right")
+
+
+def visible_target(objects, width, height):
+    """Accept one enclosing depth hypothesis for inspection, never item count.
+
+    Grounding may label both a sock and its toe. Require all same-label boxes
+    to be almost entirely inside the largest box, which must itself have
+    resolved foreground depth and be fully visible. Adjacent objects and a
+    clipped enclosing box remain ambiguous. Raw hypotheses are preserved.
+    """
+    unique_candidates(objects)  # Validate all boxes, including rejected ones.
+    if not objects:
+        return {"found": False, "reason": "target_missing"}
+    def area(item):
+        box = item["bbox"]
+        return (box[2]-box[0])*(box[3]-box[1])
+    target = max(objects, key=area)
+    a = target["bbox"]
+    contained = True
+    for item in objects:
+        b = item["bbox"]
+        overlap = max(0, min(a[2],b[2])-max(a[0],b[0]))*max(0, min(a[3],b[3])-max(a[1],b[1]))
+        if item.get("label") != target.get("label") or overlap/area(item) < .97:
+            contained = False
+    visible = a[0] >= 3 and a[1] >= 3 and a[2] <= width-3 and a[3] <= height-3
+    found = contained and visible and bool(target.get("position")) and target["confidence"] >= .35
+    return {"found": found, "reason": None if found else "missing_clipped_or_ambiguous_target",
+            "target": target if found else None, "nested_detection_group": len(objects)>1 and contained,
+            "physical_object_count_verified": False, "identity_verified": False}
 
 
 def recover_view(observe, move_view, retreat, permit, record, max_retreats=2):
