@@ -38,6 +38,10 @@ class VisionTests(unittest.TestCase):
         self.assertEqual(result['object_id'],track.object_id)
         self.assertGreater(result['association_fraction'],.85)
         self.assertAlmostEqual(result['point_camera'][2],.98)
+        pixel = np.rint(result["grasp_pixel"]).astype(int)
+        self.assertAlmostEqual(self.sample(1.1,2)["depth"][pixel[1],pixel[0]], .98)
+        projected = np.array([pixel[0]-80, pixel[1]-60, 200.])*.98/200.
+        np.testing.assert_allclose(result["grasp_point_camera"], projected, atol=.005)
         with self.assertRaises(ValueError):track.update(self.sample(2,2))
         with self.assertRaises(ValueError):track.update(self.sample(2.1,2))
     def test_occlusion_never_inherits_old_identity(self):
@@ -117,6 +121,20 @@ class VisionTests(unittest.TestCase):
         self.assertEqual(updated,[1.02,1.04]);self.assertEqual([f['at'] for f in vision.frames],[1.02,1.04])
         self.assertEqual(queried,[1.02,1.02,1.02,1.04])
         self.assertIsNone(vision.waiting_for_joints);self.assertIsNone(vision.error)
+
+    def test_grasp_surface_has_its_own_transformed_coordinate_not_the_centroid(self):
+        vision, updated = self.measured_vision()
+        vision.track.update = lambda sample: dict(object_id="object", point_camera=[.2,0,.04],
+            grasp_point_camera=[.23,.02,.045], grasp_pixel=[50,60],
+            grasp_selection="observed_associated_foreground_feature", association_fraction=1.)
+        transform = np.eye(4)
+        transform[:3,3] = [.1,-.2,.3]
+        vision.geometry = lambda *args: (transform, np.zeros(3), [90,90,90,90,90,30])
+        self.assertEqual(vision.process_snapshot(dict(stamp=1.02), now=0.), 1)
+        frame = vision.frames[-1]
+        np.testing.assert_allclose(frame["object_xyz"], [.3,-.2,.34])
+        np.testing.assert_allclose(frame["grasp_xyz"], [.33,-.18,.345])
+        self.assertFalse(frame["grasp_contact_verified"])
 
     def test_pending_joint_bracket_deadline_is_bounded_and_latches_failure(self):
         vision,updated=self.measured_vision()

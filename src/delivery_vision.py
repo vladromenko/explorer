@@ -152,6 +152,10 @@ class FeatureObject:
         uv=uv[valid];z=z[valid]
         rays=cv2.undistortPoints(uv.astype(float).reshape(-1,1,2),sample['k'],sample['d'])[:,0]
         xyz=np.column_stack([rays*z[:,None],z]);center=np.median(xyz,axis=0)
+        # Keep the centroid for identity/motion estimates, but never send a
+        # concave object's empty centroid to the gripper. Use observed depth
+        # at a currently associated foreground feature for the contact target.
+        grasp_index = int(np.argmin(np.linalg.norm(xyz-center, axis=1)))
         if np.percentile(np.linalg.norm(xyz-center,axis=1),90)>.15:
             self.ended=True;raise ValueError('Tracked depth no longer forms a small object')
         # Robust visual geometry is part of the evidence contract.  It is not a
@@ -164,7 +168,9 @@ class FeatureObject:
         spread=np.ptp(points[:,0],axis=0);scale=float(math.sqrt(max(1.,spread[0]*spread[1]))/self.initial_scale)
         self.gray,self.points,self.stamp=gray,points,stamp
         return dict(object_id=self.object_id,point_camera=center,association_fraction=fraction,object_scale=scale,
-                    object_extent_camera_m=extent,object_position_uncertainty_m=uncertainty)
+                    object_extent_camera_m=extent,object_position_uncertainty_m=uncertainty,
+                    grasp_point_camera=xyz[grasp_index].tolist(),grasp_pixel=uv[grasp_index].tolist(),
+                    grasp_selection="observed_associated_foreground_feature")
 
 
 class MeasuredVision:
@@ -301,6 +307,11 @@ class MeasuredVision:
                         gripper_open_estimated=gripper_open if command_mode else None,
                         gripper_aperture_measured_deg=float(angles[5]) if not command_mode else None,
                         gripper_aperture_command_deg=float(angles[5]) if command_mode else None)
+                    if "grasp_point_camera" in observation:
+                        grasp = (transform@np.r_[observation["grasp_point_camera"], 1])[:3]
+                        value.update(grasp_xyz=grasp.tolist(),grasp_pixel=observation.get("grasp_pixel"),
+                            grasp_selection=observation.get("grasp_selection"),
+                            grasp_contact_verified=False)
                     self.frames.append(value);self.last_stamp=float(queued['stamp']);self.pending.popleft()
                     self.waiting_for_joints=None;processed+=1
             except JointSamplePending as exc:

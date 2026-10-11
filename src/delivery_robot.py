@@ -373,7 +373,8 @@ class DeliveryRobot:
     def approach(self, target):
         # The accepted bounded release searches saved base poses with a reachable
         # foreground object. It never drives blind using optical-frame coordinates.
-        self.hold();observation=self.vision.latest();point=np.asarray(observation['object_xyz'])
+        self.hold();observation=self.vision.latest()
+        point=np.asarray(observation.get("grasp_xyz", observation["object_xyz"]), dtype=float).copy()
         grasp_point = point.copy()
         grasp_point[2] += self.settings["grasp_tcp_offset_m"]
         alignment = reachable_correction(grasp_point, lambda candidate: self.grasp_path(candidate)["reachable"],
@@ -412,7 +413,7 @@ class DeliveryRobot:
         corrections=[]
         for _ in range(3):
             self.permit(self.mid);current=self.vision.latest()
-            point=np.asarray(current['object_xyz'],dtype=float)
+            point=np.asarray(current.get("grasp_xyz", current["object_xyz"]),dtype=float).copy()
             point[2]+=self.settings['grasp_tcp_offset_m']
             error=float(np.linalg.norm(point-np.asarray(self.grasp_xyz)))
             if error<=.008:return dict(aligned=True,corrections=corrections,error_m=error)
@@ -420,7 +421,8 @@ class DeliveryRobot:
             self.grasp_xyz=point.tolist()
             above=(point+[0,0,self.settings['approach_height_m']]).tolist()
             corrections.append(dict(error_m=error,command=self._xyz(above,self.settings['open_deg'])))
-        current=np.asarray(self.vision.latest()['object_xyz'],dtype=float)
+        observation = self.vision.latest()
+        current=np.asarray(observation.get("grasp_xyz", observation["object_xyz"]),dtype=float).copy()
         current[2]+=self.settings["grasp_tcp_offset_m"]
         residual=float(np.linalg.norm(current-np.asarray(self.grasp_xyz)))
         if residual>.008:raise ValueError('Визуальное выравнивание не сошлось')

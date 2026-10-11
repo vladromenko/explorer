@@ -23,7 +23,8 @@ class DeliveryRobotTests(unittest.TestCase):
         calls = []
         missions = SimpleNamespace(maps=SimpleNamespace(pose=lambda: {"x": 1., "y": 2., "yaw": 0.}),
             go=lambda *args, **kwargs: calls.append(("go", args, kwargs)))
-        vision = SimpleNamespace(latest=lambda: {"object_xyz": [.33, -.07, .035]},
+        vision = SimpleNamespace(latest=lambda: {"object_xyz": [.24, 0., .035],
+            "grasp_xyz": [.33, -.07, .035]},
             stop=lambda: calls.append(("vision_stop",)))
         robot = DeliveryRobot(".", missions, None, None, None, vision, None)
         robot.settings = {"grasp_tcp_offset_m": 0., "transport_deg": [90] * 6, "search_deg": [80] * 6}
@@ -38,6 +39,7 @@ class DeliveryRobotTests(unittest.TestCase):
         self.assertEqual(calls[2][1], robot.settings["transport_deg"])
         self.assertEqual(calls[5][1], robot.settings["search_deg"])
         self.assertFalse(robot.tracking)
+        self.assertAlmostEqual(result["alignment"]["object_distance_m"], math.hypot(.33,-.07))
 
     def adapter(self, phase='reached', measured=None):
         initial=[90.]*6;goal=[91.]*6

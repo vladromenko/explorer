@@ -6,6 +6,28 @@ and a connected depth component is not a verified semantic object or grasp.
 import cv2
 import numpy as np
 
+def interior_surface_point(xyz, mask):
+    """Choose an observed pixel inside the component, rather than its centroid.
+
+    A coordinate-wise 3D median can lie outside a concave folded object.
+    Pixel clearance is an image-space diagnostic, not measured finger clearance.
+    """
+    mask = np.asarray(mask, dtype=bool)
+    xyz = np.asarray(xyz, dtype=float)
+    if xyz.shape != (*mask.shape, 3) or mask.ndim != 2 or not mask.any():
+        raise ValueError("No foreground surface for grasp selection")
+    valid = mask & np.isfinite(xyz).all(axis=2) & (xyz[:, :, 2] > 0)
+    if not valid.any():
+        raise ValueError("No valid foreground depth for grasp selection")
+    clearance = cv2.distanceTransform(np.pad(valid.astype(np.uint8), 1), cv2.DIST_L2, 5)[1:-1, 1:-1]
+    pixels = np.argwhere(clearance >= clearance.max() - .5)
+    centre = np.median(np.argwhere(valid), axis=0)
+    selected = pixels[np.argmin(np.sum((pixels - centre) ** 2, axis=1))]
+    y, x = (int(value) for value in selected)
+    return {"point_camera": xyz[y, x].tolist(), "pixel": [x, y],
+        "clearance_px": float(clearance[y, x]), "selection": "observed_foreground_interior",
+        "finger_clearance_measured": False, "identity_verified": False}
+
 def locate(sample,box):
     def unknown(reason):return dict(outcome='unknown',reason=reason,position=None)
     b=np.asarray(box,dtype=float);depth=np.asarray(sample['depth']);h,w=depth.shape
@@ -53,9 +75,11 @@ def locate(sample,box):
     if len(sizes)>1 and sizes[1][0]>.5*sizes[0][0]:
         return dict(unknown('AMBIGUOUS_COMPONENTS'),evidence=evidence)
     selected=labels==sizes[0][1];points=xyz[selected];position=np.median(points,axis=0)
+    grasp = interior_surface_point(xyz, selected)
+    grasp["pixel"] = [grasp["pixel"][0] + xa, grasp["pixel"][1] + ya]
     evidence.update(pixels=int(selected.sum()),median_surface_height_m=float(np.median(height[selected])),
                     image_centroid_px=[float(np.median(u[selected])),float(np.median(v[selected]))])
-    return dict(outcome='candidate',evidence=evidence,position=dict(
+    return dict(outcome='candidate',evidence=evidence,grasp_surface=grasp,position=dict(
         x=float(position[0]),y=float(position[1]),z=float(position[2]),frame=str(sample['frame']),
         depth_spread_m=float(np.percentile(points[:,2],90)-np.percentile(points[:,2],10)),
         depth_is_object_verified=False,foreground_separated=True))

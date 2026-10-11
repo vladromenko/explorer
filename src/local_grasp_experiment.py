@@ -127,7 +127,8 @@ class LocalGraspExperiment:
         raise ValueError("tracking_lost: " + str(last_error or "no fresh tracked target"))
 
     def candidates(self,observation,settings,trial_number):
-        point=np.asarray(observation['object_xyz'],dtype=float);point[2]+=settings['grasp_tcp_offset_m']
+        point=np.asarray(observation.get("grasp_xyz", observation["object_xyz"]),dtype=float).copy()
+        point[2]+=settings['grasp_tcp_offset_m']
         uncertainty=float(observation.get('object_position_uncertainty_m',1))
         if uncertainty>.012:raise ValueError('geometry_unknown: object position uncertainty is too high')
         rows=[];seed=self.arm.reference()['servo_deg'][:5]
