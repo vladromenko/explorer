@@ -96,6 +96,16 @@ class LocalGraspSafetyTests(unittest.TestCase):
             experiment.motion_permit()
         experiment.permit.assert_called_once()
 
+    def test_stationary_only_target_blocks_before_planning_or_publication(self):
+        experiment = self.experiment()
+        experiment.vision.tracking_status.side_effect = ValueError("Stationary inspection only")
+        with self.assertRaisesRegex(ValueError, "Stationary inspection"):
+            experiment.move([.24, 0, .08], 90, {"gripper_linkage_rad": -.8,
+                "grasp_quaternion_xyzw": [0, 0, 0, 1]})
+        experiment.vision.tracking_status.assert_called_once_with(require_motion=True)
+        experiment.trajectory.plan.assert_not_called()
+        experiment.trajectory.start_local.assert_not_called()
+
     def test_reachable_but_unobservable_contact_is_rejected_before_motion(self):
         experiment = self.experiment()
         experiment.vision.preview_visibility.side_effect = [

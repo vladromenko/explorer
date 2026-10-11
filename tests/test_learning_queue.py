@@ -24,7 +24,53 @@ class LearningQueueTests(unittest.TestCase):
         record={"id":identifier,"name":"Носок","skill_id":"a"*32,"state":"complete",
                 "outcome":"success","label_source":"operator","quality":{"usable":True}}
         (folder/"episode.json").write_text(json.dumps(record))
-        (folder/"samples.jsonl").write_text(json.dumps({"image_stamp":1,"command":[90]*6+[0]*3}))
+        (folder/"samples.jsonl").write_text(json.dumps({"image_stamp":1,"command":[90]*6+[0]*3,"image":"queue-frame.jpg"}))
+        (folder/"queue-frame.jpg").write_bytes(b"frame")
+
+    def test_queue_fingerprint_includes_frames_and_rejects_missing_or_external_images(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);jobs=self.setup(root);self.episode(root,"b"*32)
+            folder=root/"data/mobile-demonstrations"/("b"*32)
+            rows=folder/"samples.jsonl"
+            rows.write_text(json.dumps({"image_stamp":1,"command":[90]*6+[0]*3}))
+            with self.assertRaisesRegex(ValueError,"Нет имени кадра"):
+                jobs.start_mobile(1000,"Носок",skill_id="a"*32)
+            rows.write_text(json.dumps({"image_stamp":1,"command":[90]*6+[0]*3,"image":"000000.jpg"}))
+            with self.assertRaisesRegex(ValueError,"Кадр показа отсутствует"):
+                jobs.start_mobile(1000,"Носок",skill_id="a"*32)
+            image=folder/"000000.jpg";image.write_bytes(b"original-frame")
+            first=jobs.start_mobile(1000,"Носок",skill_id="a"*32)
+            self.assertIn("000000.jpg",first["input_sha256"]["b"*32])
+            image.write_bytes(b"changed-frame")
+            second=jobs.start_mobile(1000,"Носок",skill_id="a"*32)
+            self.assertNotEqual(first["dataset_fingerprint"],second["dataset_fingerprint"])
+            rows.write_text(json.dumps({"image_stamp":1,"command":[90]*6+[0]*3,"image":"../outside.jpg"}))
+            (folder.parent/"outside.jpg").write_bytes(b"outside")
+            with self.assertRaisesRegex(ValueError,"вне эпизода"):
+                jobs.start_mobile(1000,"Носок",skill_id="a"*32)
+
+    def test_invalid_power_defers_queue_without_service_start_and_recovers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);jobs=self.setup(root);self.episode(root,"b"*32)
+            job=jobs.start_mobile(1000,"Носок",skill_id="a"*32)
+            now=time.time()
+            (root/"data/status.json").write_text(json.dumps({"at":now,"stop_latched":True}))
+            (root/"data/arm-state.json").write_text(json.dumps({"phase":"command_elapsed_observation_required"}))
+            with patch("lerobot_bridge.subprocess.run",return_value=Mock(stdout="inactive")) as service:
+                for voltage in (None,float("nan"),float("inf"),11.0):
+                    (root/"data/power.json").write_text(json.dumps(
+                        {"at":now,"state":"IDLE","battery_voltage_v":voltage}))
+                    result=jobs.dispatch()
+                    self.assertEqual(result["state"],"deferred")
+                    self.assertIn("подтверждённое питание",result["deferred_reason"])
+                self.assertFalse((root/"data/learning-request.json").exists())
+                self.assertTrue(all("start" not in call.args[0] for call in service.call_args_list))
+                (root/"data/power.json").write_text(json.dumps(
+                    {"at":now,"state":"IDLE","battery_voltage_v":12.0}))
+                admitted=jobs.dispatch()
+                self.assertEqual(admitted["id"],job["id"])
+                self.assertEqual(admitted["state"],"queued")
+                self.assertIn("start",service.call_args.args[0])
 
     def test_waiting_queue_survives_restart_budget_and_coalesces_new_data(self):
         with tempfile.TemporaryDirectory() as directory:

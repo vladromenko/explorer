@@ -1948,7 +1948,7 @@ additional_agent_ports=[
 ]
 from visual_navigation_adapter import VisualNavigationAdapter
 visual_navigation_adapter=VisualNavigationAdapter(ROOT,onboard_vision,maps,missions,camera_views,agent_ports)
-onboard_agent=OnboardAgent(ROOT,agent_ports.catalog()+additional_agent_ports+visual_navigation_adapter.skill_ports())
+onboard_agent=OnboardAgent(ROOT,agent_ports.catalog()+additional_agent_ports+visual_navigation_adapter.skill_ports(),world=semantic_world)
 install_agent_api(app,ROOT,onboard_agent,TOKEN,missions.places,stop_all,model=agent_model_plan)
 
 @app.on_event("shutdown")

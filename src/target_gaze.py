@@ -79,6 +79,7 @@ class TargetGaze:
             self.cancelled.clear()
             end = time.monotonic()+args.get("duration_s", 10.)
             centred = 0
+            last_image_stamp = None
             self.state = {"phase":"tracking", "target_id":args["target_id"], "owner":context.id}
             def permit():
                 context.permit()
@@ -88,7 +89,7 @@ class TargetGaze:
             while time.monotonic() < end:
                 permit()
                 observation = self.vision.tick()
-                if observation.get("target_id") != args["target_id"] or observation.get("phase") != "tracking":
+                if observation.get("target_id") != args["target_id"] or observation.get("phase") not in ("selected", "tracking"):
                     raise ValueError("Selected visual target lost; gaze stopped")
                 if not 0 <= time.time()-observation["image_stamp"] < .3:
                     raise ValueError("Gaze frame expired")
@@ -105,7 +106,9 @@ class TargetGaze:
                     owner="gaze_tracking", coordinated=coordinated)
                 self.state.update(image_stamp=observation["image_stamp"], requested_deg_s=rates,
                     joint_state_source="command_estimate", physical_centering_measured_by_pixels=True)
-                centred = centred+1 if not any(rates) else 0
+                if observation["image_stamp"] != last_image_stamp:
+                    centred = centred+1 if not any(rates) else 0
+                    last_image_stamp = observation["image_stamp"]
                 if centred >= 5:
                     break
                 self.cancelled.wait(.08)

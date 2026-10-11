@@ -5,6 +5,31 @@ import numpy as np
 from mobile_demonstrations import MobileDemonstrations,sample
 
 class MobileTests(unittest.TestCase):
+    def test_damaged_samples_finish_episode_without_stuck_recorder(self):
+        with tempfile.TemporaryDirectory() as path,patch("mobile_demonstrations.threading.Thread"):
+            root=Path(path);self.setup_files(root)
+            recorder=MobileDemonstrations(root);recorder.start("grasp sock",True)
+            (recorder.folder/recorder.active["id"]/"samples.jsonl").write_text("{broken")
+            status=recorder.finish("unknown")
+            self.assertIsNone(status["active"])
+            self.assertFalse(status["last"]["quality"]["usable"])
+            self.assertIn("Повреждена запись",status["last"]["quality"]["reason"])
+            recorder.start("new grasp sock",True)
+            self.assertIsNotNone(recorder.active)
+
+    def test_nonfinite_corrupt_times_do_not_prevent_episode_finalization(self):
+        with tempfile.TemporaryDirectory() as path,patch("mobile_demonstrations.threading.Thread"):
+            root=Path(path);self.setup_files(root)
+            recorder=MobileDemonstrations(root);recorder.start("grasp sock",True)
+            rows=[{"image_stamp":stamp,"command":[90]*6+[0]*3}
+                  for stamp in (1,float("nan"))]
+            (recorder.folder/recorder.active["id"]/"samples.jsonl").write_text(
+                "\n".join(json.dumps(row) for row in rows))
+            status=recorder.finish("unknown")
+            self.assertIsNone(status["active"])
+            self.assertFalse(status["last"]["quality"]["usable"])
+            json.dumps(status["last"],allow_nan=False)
+
     def test_recognition_metadata_requires_the_recorded_camera_exposure(self):
         with tempfile.TemporaryDirectory() as path:
             root=Path(path);state,now=self.setup_files(root)

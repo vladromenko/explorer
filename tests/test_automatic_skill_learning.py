@@ -4,6 +4,7 @@ from pathlib import Path
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 from mobile_demonstrations import episode_quality
 from mobile_policy_contract import bound_action,read_bundle,ACTION_ORDER,UNITS
@@ -26,6 +27,20 @@ class FakeJobs:
 
 
 class AutomaticLearningTests(unittest.TestCase):
+    def test_policy_selects_newest_validated_model_independent_of_hash_order(self):
+        executor=MobilePolicyExecution.__new__(MobilePolicyExecution)
+        executor.root=Path("/unused")
+        jobs=FakeJobs();executor.jobs=jobs
+        jobs.records=[{"id":"a"*32,"skill_id":"skill","state":"validated_offline", "finished":200,
+                       "validation":{"improves_hold_baseline":True}},
+                      {"id":"z"*32,"skill_id":"skill","state":"validated_offline", "finished":100,
+                       "validation":{"improves_hold_baseline":True}},
+                      {"id":"newer_failed","skill_id":"skill","state":"failed","finished":300}]
+        with patch("mobile_policy_execution.read_bundle",return_value=({"skill_id":"skill"},Path("/model"))) as load:
+            candidate,_,_=executor._candidate("skill")
+        self.assertEqual(candidate["id"],"a"*32)
+        self.assertEqual(load.call_args.args[0].name,"a"*32)
+
     def test_record_quality_distinguishes_stationary_video_from_commands(self):
         with tempfile.TemporaryDirectory() as directory:
             folder=Path(directory)

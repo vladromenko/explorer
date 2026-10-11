@@ -8,6 +8,11 @@ def frame(t,obj,tcp,clearance):
                 object_extent_xyz_m=[.04,.03,.06],object_position_uncertainty_m=.002)
 
 class OutcomeTests(unittest.TestCase):
+    def test_fixed_view_continuity_cannot_be_relabelled_as_held(self):
+        before = [frame(t, .03, .07, 0) for t in (0, .5, 1)]
+        after = [frame(t, .09, .13, .06) for t in (3, 3.5, 4)]
+        after[0]["stationary_only"] = True
+        self.assertEqual(verify_lift(before, after, True)["outcome"], "unknown")
     def test_physically_validated_command_pose_is_accepted_without_claiming_measurement(self):
         before=[frame(t,.03,.07,0) for t in (0,.5,1)]
         after=[frame(t,.09,.13,.06) for t in (3,3.5,4)]
@@ -35,6 +40,10 @@ class OutcomeTests(unittest.TestCase):
 
 
 class PlaceTests(unittest.TestCase):
+    def test_fixed_view_continuity_cannot_verify_release(self):
+        before, after, zone, verify_place = self.placement()
+        before[0]["stationary_only"] = True
+        self.assertEqual(verify_place(before, after, zone, True)["outcome"], "unknown")
     def placement(self,command_mode=False):
         from grasp_verification import verify_place
         before=[frame(t,.03,.05,.03) for t in (0,.5,1)]

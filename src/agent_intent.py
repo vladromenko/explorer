@@ -8,6 +8,15 @@ def single(name, args=None):
     return {"steps": [{"skill": name, "args": args or {}}]}
 
 
+def object_label(text):
+    """Explicit grammatical aliases for the normal offline commands."""
+    label = text.strip()
+    return {"носка": "носок", "носков": "носки", "бутылки": "бутылка",
+        "рюкзака": "рюкзак", "чашки": "чашка", "кружки": "кружка",
+        "мяча": "мяч", "игрушки": "игрушка", "пульта": "пульт",
+        "книги": "книга", "чёрного носка": "black sock", "черного носка": "black sock"}.get(label, label)
+
+
 def prepare_intent(text, runtime, places=(), model=None):
     if not isinstance(text, str) or not 1 <= len(text.strip()) <= 1500:
         raise ValueError("Введите команду длиной 1..1500 символов")
@@ -24,6 +33,8 @@ def prepare_intent(text, runtime, places=(), model=None):
         plan = single("list_places")
     elif query in {"отчёт", "покажи отчёт", "покажи отчет", "отчёт по осмотрам", "инвентаризация"}:
         plan = single("inventory_report")
+    elif query in {"история задач", "последние действия", "что ты делал", "покажи историю задач"}:
+        plan = single("query_task_memory")
     elif re.fullmatch(r"(?:посмотри|поверни камеру|смотри) (?:налево|влево)", query):
         plan = single("look_direction", {"view": "left"})
     elif re.fullmatch(r"(?:посмотри|поверни камеру|смотри) (?:направо|вправо)", query):
@@ -34,6 +45,15 @@ def prepare_intent(text, runtime, places=(), model=None):
         plan = single("look_direction", {"view": "down"})
     elif query in {"исследуй комнату", "исследуй помещение", "осмотри комнату", "исследуй квартиру"}:
         plan = single("explore_area", {"max_goals": 5})
+    elif query in {"исследуй комнату и покажи отчёт", "исследуй комнату и покажи отчет", "исследуй и покажи отчёт", "исследуй и покажи отчет"}:
+        plan = {"steps": [{"skill": "explore_area", "args": {"max_goals": 5}}, {"skill": "inventory_report", "args": {}}]}
+    elif query in {"обойди сохранённые места и покажи отчёт", "обойди сохраненные места и покажи отчет", "обойди все места и покажи отчёт", "обойди все места и покажи отчет"}:
+        names = [place["name"] for place in places if place.get("compatible_map")]
+        if not names:
+            return {"clarification": "В текущей карте нет сохранённых мест. Сохраните их в разделе карты.", "plan": None}
+        if len(names) > 12:
+            return {"clarification": "Выберите до 12 мест маршрута в каталоге навыков.", "choices": names, "plan": None}
+        plan = {"steps": [{"skill": "follow_route", "args": {"places": names}}, {"skill": "inventory_report", "args": {}}]}
     elif query in {"открой захват", "открой гриппер", "раскрой пальцы"}:
         plan = single("open_gripper")
     elif query in {"закрой захват", "закрой гриппер", "сомкни пальцы"}:
@@ -41,15 +61,29 @@ def prepare_intent(text, runtime, places=(), model=None):
     else:
         match = re.fullmatch(r"(?:найди|поищи) (.+?)(?: и (?:остановись|остановися))?", query)
         memory = re.fullmatch(r"где (?:ты )?(?:последний раз )?видел (.+)", query)
-        navigate = re.fullmatch(r"(?:поезжай|езжай|отправляйся) (?:к|в) (.+)", query)
+        navigate = re.fullmatch(r"(?:поезжай|езжай|отправляйся) (?:к|в) (?:месту )?(.+?)(?: и (вернись|возвращайся)(?: обратно)?)?", query)
+        recover = re.fullmatch(r"(?:восстанови обзор|осмотри пол и найди) (.+)", query)
+        deliver = re.fullmatch(r"(?:возьми|подбери|забери) (.+?) и (?:положи|отнеси|отвези) (?:в|к) (?:место )?(.+)", query)
         if match and " и " not in match[1]:
             plan = single("find_object", {"label": match[1].strip(), "places": [place["name"] for place in places if place.get("compatible_map")][:12]})
         elif memory:
-            plan = single("query_memory", {"label": memory[1].strip()})
+            plan = single("query_memory", {"label": object_label(memory[1])})
+        elif recover and " и " not in recover[1]:
+            plan = single("recover_object_view", {"label": object_label(recover[1])})
+        elif deliver:
+            label = object_label(deliver[1])
+            if label not in {"носок", "носки", "sock", "socks"}:
+                return {"clarification": "Текущий исполнитель доставки поддерживает носок. Для другого предмета нужен принятый навык захвата.", "plan": None}
+            selected = deliver[2].strip().strip("\"«»")
+            names = [place["name"] for place in places if place.get("compatible_map") and place["name"].casefold() == selected]
+            if len(names) != 1:
+                return {"clarification": "В какое точное сохранённое место доставить носок?", "choices": [place["name"] for place in places if place.get("compatible_map")], "plan": None}
+            plan = single("deliver_object", {"label": label, "destination": names[0]})
         elif navigate:
-            names = [place["name"] for place in places if place.get("compatible_map") and place["name"].casefold() == navigate[1].strip()]
+            selected = navigate[1].strip().strip("\"«»")
+            names = [place["name"] for place in places if place.get("compatible_map") and place["name"].casefold() == selected]
             if len(names) == 1:
-                plan = single("navigate_to", {"place": names[0]})
+                plan = single("visit_and_return" if navigate[2] else "navigate_to", {"place": names[0]})
             else:
                 return {"clarification": "Какое сохранённое место выбрать?", "choices": [place["name"] for place in places if place.get("compatible_map")], "plan": None}
     source = "deterministic_template"

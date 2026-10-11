@@ -34,6 +34,36 @@ class SemanticWorldTests(unittest.TestCase):
             operations=[r[0] for r in db.execute('SELECT operation FROM entity_events ORDER BY id')]
         self.assertEqual(operations,['appeared','moved'])
 
+    def test_same_label_entities_are_assigned_once_per_frame(self):
+        def frame(stamp, positions):
+            return {"image_stamp": stamp, "objects": [{"label": "sock", "confidence": .9,
+                "map_position": {"x": x, "y": 2., "z": .1}, "map_position_validated": True} for x in positions]}
+        self.world.ingest(frame(10., (1., 1.3)), self.pose, "map-a")
+        original = {round(row["position"]["x"], 2): row["id"] for row in self.world.query("sock")["entities"]}
+        self.assertEqual(len(original), 2)
+        self.world.ingest(frame(11., (1.04, 1.34)), self.pose, "map-a")
+        changed = {round(row["position"]["x"], 2): row["id"] for row in self.world.query("sock")["entities"]}
+        self.assertEqual(changed, {1.04: original[1.], 1.34: original[1.3]})
+        self.assertFalse(self.world.query("sock")["identity_verified"])
+
+    def test_map_change_and_heading_change_preserve_new_observation(self):
+        frame = {"image_stamp": 10., "objects": [{"label": "chair", "confidence": .9}]}
+        self.world.ingest(frame, self.pose, "map-a")
+        other_map = self.world.ingest(dict(frame, image_stamp=11.), self.pose, "map-b")
+        self.assertTrue(other_map["added"])
+        rotated = self.world.ingest(dict(frame, image_stamp=12.), dict(self.pose, yaw=.5), "map-b")
+        self.assertTrue(rotated["added"])
+        self.assertEqual(self.world.query("chair")["last_seen"]["map_epoch"], "map-b")
+
+    def test_place_heading_average_wraps_around_pi(self):
+        frame = {"image_stamp": 10., "objects": [{"label": "chair", "confidence": .9}]}
+        first = self.world.ingest(frame, dict(self.pose, yaw=3.1), "map-a")["place"]
+        second = self.world.ingest(dict(frame, image_stamp=50.), dict(self.pose, yaw=-3.1), "map-a")["place"]
+        self.assertEqual(first, second)
+        with self.world.db() as db:
+            yaw = db.execute("SELECT yaw FROM places WHERE id=?", (first,)).fetchone()[0]
+        self.assertGreater(abs(yaw), 3.)
+
     def test_place_recognition_reuses_nearby_semantic_signature(self):
         p=dict(image_stamp=10.,objects=[dict(label='chair',confidence=.9)])
         first=self.world.ingest(p,self.pose,'map-a')['place']

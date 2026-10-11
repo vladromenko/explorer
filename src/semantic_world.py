@@ -90,9 +90,11 @@ class SemanticWorld:
             weight=min(visits,20)
             merged=dict(json.loads(row['signature']))
             for key,value in signature.items():merged[key]=max(value,merged.get(key,0))
+            heading_delta = math.atan2(math.sin(pose["yaw"] - row["yaw"]), math.cos(pose["yaw"] - row["yaw"]))
+            heading = math.atan2(math.sin(row["yaw"] + heading_delta / weight), math.cos(row["yaw"] + heading_delta / weight))
             db.execute('UPDATE places SET x=?,y=?,yaw=?,signature=?,last_seen=?,visits=? WHERE id=?',
                 ((row['x']*(weight-1)+pose['x'])/weight,(row['y']*(weight-1)+pose['y'])/weight,
-                 (row['yaw']*(weight-1)+pose['yaw'])/weight,json.dumps(merged),now,visits,row['id']))
+                 heading,json.dumps(merged),now,visits,row['id']))
             return row['id']
         if not signature:return None
         ident=uuid.uuid4().hex
@@ -106,16 +108,17 @@ class SemanticWorld:
         xyz=[value.get(k) for k in ('x','y','z')]
         return xyz if finite(xyz) and max(abs(v) for v in xyz)<100 else None
 
-    def _entity(self,db,obj,epoch,now):
+    def _entity(self,db,obj,epoch,now,assigned=()):
         point=self._validated_point(obj)
         if point is None:return None
         label=str(obj.get('label','')).casefold();confidence=float(obj.get('confidence',0))
         rows=db.execute("SELECT * FROM entities WHERE label=? AND map_epoch=? AND state!='removed'",(label,epoch)).fetchall()
         near=[]
         for row in rows:
-            previous=json.loads(row['position'])
-            distance=math.dist(point,[previous[k] for k in ('x','y','z')])
-            if distance<=.45:near.append((distance,row))
+            if row["id"] not in assigned:
+                previous=json.loads(row['position'])
+                distance=math.dist(point,[previous[k] for k in ('x','y','z')])
+                if distance<=.45:near.append((distance,row))
         operation='appeared'
         if near:
             distance,row=min(near,key=lambda item:item[0]);ident=row['id']
@@ -145,18 +148,27 @@ class SemanticWorld:
                           camera_position=o.get('position'),map_position=o.get('map_position'),
                           map_position_validated=o.get('map_position_validated') is True) for o in objects]
             with self.db() as db:
-                previous=db.execute('SELECT seen,pose,signature FROM episodes ORDER BY seen DESC LIMIT 1').fetchone()
+                previous=db.execute('SELECT seen,pose,signature,map_epoch FROM episodes ORDER BY seen DESC LIMIT 1').fetchone()
                 has_validated_point=any(self._validated_point(obj) is not None for obj in objects)
-                if (previous and not has_validated_point and perception.get('visibility_volume_validated') is not True
+                if (previous and previous["map_epoch"] == map_epoch and not has_validated_point and perception.get('visibility_volume_validated') is not True
                         and stamp-previous['seen']<30 and signature==json.loads(previous['signature'])):
                     old_pose=json.loads(previous['pose'])
                     pose_still=(safe_pose is None and old_pose is None or safe_pose is not None and old_pose is not None and
-                                math.hypot(safe_pose['x']-old_pose['x'],safe_pose['y']-old_pose['y'])<.15)
+                                math.hypot(safe_pose['x']-old_pose['x'],safe_pose['y']-old_pose['y'])<.15 and
+                                abs(math.atan2(math.sin(safe_pose["yaw"] - old_pose["yaw"]), math.cos(safe_pose["yaw"] - old_pose["yaw"]))) < .15 and
+                                safe_pose.get("provisional") == old_pose.get("provisional") and
+                                safe_pose.get("validated") == old_pose.get("validated"))
                     if pose_still:return dict(added=False,reason='unchanged_view')
                 place=self._place(db,map_epoch,safe_pose,signature,now)
                 db.execute('INSERT INTO episodes VALUES(?,?,?,?,?,?,?)',
                     (ident,stamp,map_epoch,json.dumps(safe_pose),json.dumps(signature),json.dumps(content),source))
-                entities=[self._entity(db,o,map_epoch,now) for o in objects]
+                entities = []
+                assigned = set()
+                for obj in objects:
+                    entity = self._entity(db, obj, map_epoch, now, assigned)
+                    entities.append(entity)
+                    if entity is not None:
+                        assigned.add(entity)
                 observed={v for v in entities if v is not None}
                 operations={row[0] for row in db.execute('SELECT operation FROM entity_events WHERE at=?',(now,))}
                 changed=bool(operations & {'appeared','moved'})
@@ -194,8 +206,21 @@ class SemanticWorld:
                     if len(episodes)>=limit:break
         for entity in entities:entity['position']=json.loads(entity['position'])
         return dict(query=label,entities=entities,episodes=episodes,
-                    last_seen=episodes[0] if episodes else None,
+                    last_seen=episodes[0] if episodes else None, identity_verified=False,
                     coordinate_contract='entity.position is map-frame only; episode.observer_pose is where the robot saw it')
+
+    def latest_episode(self):
+        """Observation reference for action journals; never implies a fresh frame."""
+        with self.db() as db:
+            row = db.execute("SELECT id,seen,map_epoch FROM episodes ORDER BY seen DESC LIMIT 1").fetchone()
+        return dict(row) if row else None
+
+    def action_history(self, limit=20):
+        if type(limit) is not int or not 1 <= limit <= 50:
+            raise ValueError("Action history limit must be 1..50")
+        with self.db() as db:
+            return [dict(row, result=json.loads(row["result"])) for row in db.execute(
+                "SELECT * FROM actions ORDER BY id DESC LIMIT ?", (limit,))]
 
     def record_action(self,task,skill,state,result=None,before_episode=None,after_episode=None):
         if state not in ('started','succeeded','failed','intervention','cancelled','unknown'):

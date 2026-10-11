@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 import numpy as np
 from grasp_verification import verify_lift, verify_place
-from delivery_vision import FeatureObject, reacquire_candidate
+from delivery_vision import reacquire_candidate
 from mobile_alignment import reachable_correction
 from target_view_recovery import recover_view, visible_target
 from camera_views import VIEWS
@@ -269,7 +269,7 @@ class DeliveryRobot:
             self.arm.reference(expected_boot=self.boot)
         if self.tracking:
             if getattr(self.arm,"factory_timed",False) and self.trajectory.status().get("busy"):
-                self.vision.tracking_status()
+                self.vision.tracking_status(require_motion=True)
             else:self.vision.latest()
 
     def hold(self):
@@ -295,6 +295,8 @@ class DeliveryRobot:
                 raise ValueError('Рука ещё исполняет или отменяет предыдущую команду')
             estimated=getattr(self.arm,'profile',{}).get('manual_reference_version')==1
             return dict(attained=not estimated,measured=not estimated,command_completed=True,already_at_command_goal=estimated)
+        if self.tracking:
+            self.vision.tracking_status(require_motion=True)
         plan=self.trajectory.plan(goal if factory else [float(v) for v in goal]);mid=self.mid
         started=self.trajectory.start_local(plan['plan_id'],lambda:self.permit(mid))
         session=started['session'];end=time.monotonic()+70
@@ -364,7 +366,7 @@ class DeliveryRobot:
                     raise ValueError('Камера сместилась во время распознавания')
                 fresh=self.vision.snapshot()
                 candidate=reacquire_candidate(initial,fresh,objects[0]['bbox'])
-                tracker=FeatureObject(fresh,candidate['bbox'])
+                tracker=self.vision.make_tracker(fresh,candidate["bbox"])
                 self.vision.start_tracker(tracker,self.settings)
                 end=time.monotonic()+2
                 while not self.vision.frames and time.monotonic()<end:

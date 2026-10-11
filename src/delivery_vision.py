@@ -92,21 +92,111 @@ def reacquire_candidate(reference, current, bbox):
         raise ValueError('Semantic observation too old or camera frame changed')
     if not np.array_equal(reference['k'],current['k']) or not np.array_equal(reference['d'],current['d']):
         raise ValueError('Camera calibration changed during recognition')
-    old,new=locate(reference,bbox),locate(current,bbox)
+    old,new=locate(reference,bbox,include_mask=True),locate(current,bbox,include_mask=True)
     if old['outcome']!='candidate' or new['outcome']!='candidate':
         raise ValueError('No fresh separated object at the candidate location')
     points=[np.array([v['position'][k] for k in ('x','y','z')]) for v in (old,new)]
     if np.linalg.norm(points[1]-points[0])>.01:raise ValueError('Candidate moved during recognition')
-    x1,y1,x2,y2=np.rint(bbox).astype(int)
-    a=cv2.cvtColor(reference['rgb'],cv2.COLOR_BGR2GRAY)[y1:y2,x1:x2].astype(float).ravel()
-    b=cv2.cvtColor(current['rgb'],cv2.COLOR_BGR2GRAY)[y1:y2,x1:x2].astype(float).ravel()
-    if len(a)!=len(b) or min(np.std(a),np.std(b))<8:raise ValueError('Appearance cannot be associated')
-    correlation=float(np.corrcoef(a,b)[0,1])
-    if not math.isfinite(correlation) or correlation<.92:raise ValueError('Candidate appearance changed during recognition')
-    return dict(bbox=list(bbox),image_stamp=float(current['stamp']),
-                previous_image_stamp=float(reference['stamp']),appearance_correlation=correlation,
+    appearance = static_appearance(reference, current, old, new)
+    return dict(bbox=list(bbox),image_stamp=float(current["stamp"]),
+                previous_image_stamp=float(reference["stamp"]),
                 position_camera=new["position"],depth_evidence=new["evidence"],
-                semantic_identity_verified=False,continuous_from_previous_image=False)
+                semantic_identity_verified=False,continuous_from_previous_image=False,**appearance)
+
+
+def static_appearance(reference, current, old, new):
+    """Fixed-view depth silhouette + appearance, without invented optical flow."""
+    a, b = old["foreground_mask"], new["foreground_mask"]
+    if a.shape != b.shape or reference["rgb"].shape != current["rgb"].shape:
+        raise ValueError("Static observation image geometry changed")
+    union = a | b
+    overlap = a & b
+    fraction = float(overlap.sum() / max(1, union.sum()))
+    if fraction < .90 or overlap.sum() < 20:
+        raise ValueError("Static foreground silhouette changed")
+    pixels_old = reference["rgb"][overlap].astype(float)
+    pixels_new = current["rgb"][overlap].astype(float)
+    color_delta = np.abs(pixels_new - pixels_old)
+    if float(np.percentile(color_delta, 90)) > 18 or float(np.mean(color_delta)) > 8:
+        raise ValueError("Static foreground appearance changed")
+    # A nearby object replacing uniform cloth can be visually indistinguishable.
+    # This evidence supports only fixed-view continuity, never semantic identity,
+    # physical contact, or attachment to the gripper.
+    correlation = None
+    if min(float(pixels_old.std()), float(pixels_new.std())) >= 8:
+        correlation = float(np.corrcoef(pixels_old.ravel(), pixels_new.ravel())[0, 1])
+        if not math.isfinite(correlation) or correlation < .92:
+            raise ValueError("Static foreground texture changed")
+    return {"appearance_correlation": correlation, "appearance_mean_delta": float(color_delta.mean()),
+        "foreground_iou": fraction, "association_kind": "stationary_depth_and_appearance"}
+
+
+class StationaryDepthObject:
+    """Texture-poor object continuity valid only in one stationary RGB-D view."""
+    stationary_only = True
+    association_kind = "stationary_depth_and_appearance"
+
+    def __init__(self, sample, bbox, stationary_context):
+        self.context = stationary_context
+        context = stationary_context(sample)
+        self.anchor = {"epoch": tuple(context["epoch"]), "servo_deg": list(context["servo_deg"]),
+            "odom_xyyaw": list(context["odom_xyyaw"])}
+        self.bbox = list(bbox)
+        self.reference = sample
+        self.geometry = locate(sample, bbox, include_mask=True)
+        if self.geometry["outcome"] != "candidate":
+            raise ValueError("No resolved stationary foreground")
+        self.object_id = uuid.uuid4().hex
+        self.stamp = float(sample["stamp"])
+        self.frame = str(sample["frame"])
+        self.ended = False
+
+    def update(self, sample):
+        try:
+            if self.ended:
+                raise ValueError("Static object association already lost")
+            stamp = float(sample["stamp"])
+            if not self.stamp < stamp <= self.stamp + .4 or str(sample["frame"]) != self.frame:
+                raise ValueError("Static object frame gap or camera change")
+            if not np.array_equal(sample["k"], self.reference["k"]) or not np.array_equal(sample["d"], self.reference["d"]):
+                raise ValueError("Static camera calibration changed")
+            context = self.context(sample)
+            if context["epoch"] != self.anchor["epoch"]:
+                raise ValueError("Static object reference epoch changed")
+            if np.max(np.abs(np.asarray(context["servo_deg"])-self.anchor["servo_deg"])) > .15:
+                raise ValueError("Static object camera arm moved")
+            pose = np.asarray(context["odom_xyyaw"])
+            origin = np.asarray(self.anchor["odom_xyyaw"])
+            yaw = abs(math.atan2(math.sin(pose[2]-origin[2]), math.cos(pose[2]-origin[2])))
+            if np.linalg.norm(pose[:2]-origin[:2]) > .002 or yaw > .005:
+                raise ValueError("Static object camera base moved")
+            geometry = locate(sample, self.bbox, include_mask=True)
+            if geometry["outcome"] != "candidate":
+                raise ValueError("Static foreground depth lost")
+            evidence = static_appearance(self.reference, sample, self.geometry, geometry)
+            centre = np.asarray([geometry["position"][key] for key in ("x", "y", "z")])
+            anchor = np.asarray([self.geometry["position"][key] for key in ("x", "y", "z")])
+            if np.linalg.norm(centre-anchor) > .008:
+                raise ValueError("Static foreground depth position changed")
+            mask = geometry["foreground_mask"]
+            pixels = np.argwhere(mask)
+            depth = sample["depth"][mask]
+            rays = cv2.undistortPoints(pixels[:, ::-1].astype(float).reshape(-1, 1, 2), sample["k"], sample["d"])[:, 0]
+            xyz = np.column_stack([rays*depth[:, None], depth])
+            low, high = np.percentile(xyz, [5, 95], axis=0)
+            self.stamp = stamp
+            return {"object_id": self.object_id, "point_camera": centre,
+                "association_fraction": evidence["foreground_iou"], "association_kind": self.association_kind,
+                "object_extent_camera_m": np.maximum(high-low, .001),
+                "object_position_uncertainty_m": max(.002, geometry["position"]["depth_spread_m"]/2),
+                "object_scale": float(math.sqrt(mask.sum()/self.geometry["foreground_mask"].sum())),
+                "grasp_point_camera": geometry["grasp_surface"]["point_camera"],
+                "grasp_pixel": geometry["grasp_surface"]["pixel"],
+                "grasp_selection": "observed_stationary_foreground_interior", "association_evidence": evidence,
+                "semantic_identity_verified": False, "contact_verified": False, "held_verified": False}
+        except (ValueError, KeyError, TypeError, cv2.error):
+            self.ended = True
+            raise
 
 
 class FeatureObject:
@@ -129,11 +219,17 @@ class FeatureObject:
         self.initial_scale=float(max(1.,math.sqrt(max(1.,spread[0]*spread[1]))))
         self.initial=len(self.points);self.stamp=float(sample['stamp']);self.object_id=uuid.uuid4().hex
         self.frame=str(sample['frame']);self.ended=False
+        self.intrinsic = np.asarray(sample["k"]).copy()
+        self.distortion = np.asarray(sample["d"]).copy()
     def update(self, sample):
         if self.ended:raise ValueError('Object association already lost')
         stamp=float(sample['stamp'])
         if not self.stamp<stamp<=self.stamp+.4 or str(sample['frame'])!=self.frame:
             self.ended=True;raise ValueError('Object tracking frame gap or frame change')
+        if (sample["rgb"].shape[:2] != self.gray.shape or not np.array_equal(sample["k"], self.intrinsic)
+                or not np.array_equal(sample["d"], self.distortion)):
+            self.ended = True
+            raise ValueError("Object tracker camera calibration or image geometry changed")
         gray=cv2.cvtColor(sample['rgb'],cv2.COLOR_BGR2GRAY)
         nxt,ok,_=cv2.calcOpticalFlowPyrLK(self.gray,gray,self.points,None)
         if nxt is None:self.ended=True;raise ValueError('Object occluded')
@@ -192,6 +288,12 @@ class MeasuredVision:
     def snapshot(self):
         with np.load(self.root/'data/rgbd-snapshot.npz',allow_pickle=False) as raw:sample=dict(raw)
         if not 0<=time.time()-float(sample['stamp'])<.4:raise ValueError('RGB-D frame is stale')
+        stamp = float(sample["stamp"])
+        depth_stamp = float(sample.get("depth_stamp", float("nan")))
+        if not math.isfinite(depth_stamp) or abs(stamp-depth_stamp) > .04:
+            raise ValueError("RGB-D color/depth exposures are not synchronized")
+        if sample["depth"].shape != sample["rgb"].shape[:2]:
+            raise ValueError("RGB-D color/depth image geometry is not registered")
         return sample
     def geometry(self, sample, settings):
         if getattr(self,'factory_mode',False):
@@ -234,11 +336,42 @@ class MeasuredVision:
             "within_tracking_depth_policy": bool(depth_trackable), "tracking_depth_policy_m": [.15, 2.],
             "source": "nominal_ik_camera_projection", "measured": False, "executed": False}
     def start(self, sample, bbox, settings):
+        tracker = self.make_tracker(sample, bbox)
         with self.lock:
-            self.generation+=1;self.settings=settings;self.track=FeatureObject(sample,bbox)
+            self.generation+=1;self.settings=settings;self.track=tracker
             self.frames.clear();self.error=None;self.last_stamp=float(sample['stamp'])
             self.pending.clear();self.enqueued_stamp=self.last_stamp;self.waiting_for_joints=None
         return self.track.object_id
+    def stationary_context(self, sample):
+        from factory_arm_observation import settled_reference
+        stamp = float(sample["stamp"])
+        if not 0 <= time.time()-stamp < .4:
+            raise ValueError("Stationary tracker requires a fresh RGB-D exposure")
+        arm = settled_reference(self.root, self.arm.boot, stamp)
+        state = json.loads((self.root/"data/status.json").read_text())
+        if state.get("boot_id") != self.arm.boot or not 0 <= time.time()-state.get("at", 0) < .5:
+            raise ValueError("Stationary tracker requires fresh matching controller state")
+        if not 0 <= state.get("sensor_age", {}).get("odom", math.inf) < .25:
+            raise ValueError("Stationary tracker requires fresh measured base odometry")
+        for key in ("velocity", "odom_velocity"):
+            velocity = np.asarray(state.get(key), dtype=float)
+            if velocity.shape != (3,) or not np.isfinite(velocity).all() or np.max(np.abs(velocity)) > .002:
+                raise ValueError("Stationary tracker requires stopped base")
+        pose = state.get("raw_pose", {})
+        values = [pose.get(key) for key in ("x", "y", "yaw")]
+        if not all(type(value) in (int, float) and math.isfinite(value) for value in values):
+            raise ValueError("Stationary tracker base pose unavailable")
+        return {"epoch": (self.arm.boot, arm["at"], arm.get("trajectory_sha256")),
+            "servo_deg": arm["servo_deg"], "odom_xyyaw": values}
+
+    def make_tracker(self, sample, bbox):
+        """Prefer moving optical correspondence; cloth fallback is static only."""
+        try:
+            return FeatureObject(sample, bbox)
+        except ValueError as exc:
+            if str(exc) != "Object has insufficient visible tracking texture" or not self.factory_mode:
+                raise
+            return StationaryDepthObject(sample, bbox, self.stationary_context)
     def start_tracker(self, tracker, settings):
         with self.lock:
             self.generation+=1;self.settings=settings;self.track=tracker
@@ -291,7 +424,11 @@ class MeasuredVision:
                     command_mode=getattr(self,'command_mode',False)
                     gripper_open=abs(angles[5]-settings['open_deg'])<.5
                     value=dict(at=float(queued['stamp']),object_id=observation['object_id'],confidence=observation['association_fraction'],
-                        confidence_kind='feature_retention_not_semantic_probability',
+                        confidence_kind=("stationary_foreground_overlap_not_semantic_probability"
+                            if observation.get("association_kind") == "stationary_depth_and_appearance"
+                            else "feature_retention_not_semantic_probability"),
+                        association_kind=observation.get("association_kind", "reciprocal_feature_flow"),
+                        stationary_only=bool(getattr(track, "stationary_only", False)),
                         association_fraction=observation['association_fraction'],identity_association_verified=True,
                         depth_validated=True,camera_pose_measured=not getattr(self,'command_mode',False),
                         camera_pose_validated_for_execution=bool(settings.get('handeye_execution_authorized')),
@@ -312,6 +449,8 @@ class MeasuredVision:
                         value.update(grasp_xyz=grasp.tolist(),grasp_pixel=observation.get("grasp_pixel"),
                             grasp_selection=observation.get("grasp_selection"),
                             grasp_contact_verified=False)
+                    if "association_evidence" in observation:
+                        value["association_evidence"] = observation["association_evidence"]
                     self.frames.append(value);self.last_stamp=float(queued['stamp']);self.pending.popleft()
                     self.waiting_for_joints=None;processed+=1
             except JointSamplePending as exc:
@@ -345,13 +484,17 @@ class MeasuredVision:
             if not self.frames or not 0<=time.time()-self.frames[-1]['at']<.5:
                 raise ValueError('Нет свежего положения отслеживаемого предмета')
             return dict(self.frames[-1])
-    def tracking_status(self):
+    def tracking_status(self, require_motion=False):
         with self.lock:
             if self.error:raise ValueError("Object association lost: "+self.error)
             if self.track is None or self.track.ended or not 0<=time.time()-self.track.stamp<.4:
                 raise ValueError("No fresh image-space object association")
+            if require_motion and getattr(self.track, "stationary_only", False):
+                raise ValueError("Texture-poor target supports stationary inspection only; moving correspondence unavailable")
             return dict(object_id=self.track.object_id,image_stamp=self.track.stamp,
                 identity_association_verified=True,metric_pose_pending=self.waiting_for_joints is not None,
+                stationary_only=bool(getattr(self.track, "stationary_only", False)),
+                motion_tracking_available=not bool(getattr(self.track, "stationary_only", False)),
                 measured_joint_positions=False)
     def observe(self, permit, duration=1.2):
         started=time.time();end=time.monotonic()+duration+2

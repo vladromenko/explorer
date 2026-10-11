@@ -181,7 +181,16 @@ class OnboardVision:
             if frame is None or not 0 <= time.time()-frame["stamp"] < .5:
                 raise ValueError("Displayed frame expired; select on a fresh frame")
             self.target = OpticalTarget(frame["rgb"], bbox, frame["stamp"])
-            self.state = {"phase": "selected", "target_id": self.target.identifier, "image_stamp": frame["stamp"], "bbox": list(bbox)}
+            self.target.camera_context = {key: frame["metadata"].get(key)
+                for key in ("camera_id", "frame", "camera_info_version")}
+            self.state = {"phase": "selected", "target_id": self.target.identifier,
+                "image_stamp": frame["stamp"], "bbox": list(bbox),
+                "center_px": ((self.target.box[:2]+self.target.box[2:])/2).tolist(),
+                "image_size": [frame["rgb"].shape[1], frame["rgb"].shape[0]],
+                "camera_info_version": frame["metadata"].get("camera_info_version"),
+                "intrinsic_k": frame["metadata"].get("intrinsic_k"),
+                "distortion_d": frame["metadata"].get("distortion_d"),
+                "identity_kind": "operator_selected_2d_roi", "depth_required": False}
             return dict(self.state)
 
     def tick(self):
@@ -189,6 +198,10 @@ class OnboardVision:
             if self.target is not None and self.target.phase == "tracking":
                 try:
                     rgb, _, metadata = self.frame()
+                    current_context = {key: metadata.get(key) for key in self.target.camera_context}
+                    if current_context != self.target.camera_context:
+                        self.target.phase = "lost"
+                        raise ValueError("Selected target camera or calibration changed")
                     if metadata["image_stamp"] > self.target.stamp:
                         self.state = self.target.update(rgb, metadata["image_stamp"])
                         self.state.update(camera_info_version=metadata.get("camera_info_version"),

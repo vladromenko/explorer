@@ -28,7 +28,7 @@ def interior_surface_point(xyz, mask):
         "clearance_px": float(clearance[y, x]), "selection": "observed_foreground_interior",
         "finger_clearance_measured": False, "identity_verified": False}
 
-def locate(sample,box):
+def locate(sample,box,include_mask=False):
     def unknown(reason):return dict(outcome='unknown',reason=reason,position=None)
     b=np.asarray(box,dtype=float);depth=np.asarray(sample['depth']);h,w=depth.shape
     if b.shape!=(4,) or not np.isfinite(b).all():return unknown('INVALID_BOX')
@@ -79,7 +79,12 @@ def locate(sample,box):
     grasp["pixel"] = [int(grasp["pixel"][0] + xa), int(grasp["pixel"][1] + ya)]
     evidence.update(pixels=int(selected.sum()),median_surface_height_m=float(np.median(height[selected])),
                     image_centroid_px=[float(np.median(u[selected])),float(np.median(v[selected]))])
-    return dict(outcome='candidate',evidence=evidence,grasp_surface=grasp,position=dict(
+    result = dict(outcome="candidate",evidence=evidence,grasp_surface=grasp,position=dict(
         x=float(position[0]),y=float(position[1]),z=float(position[2]),frame=str(sample['frame']),
         depth_spread_m=float(np.percentile(points[:,2],90)-np.percentile(points[:,2],10)),
         depth_is_object_verified=False,foreground_separated=True))
+    if include_mask:
+        mask = np.zeros((h, w), dtype=bool)
+        mask[ya:yb, xa:xb] = selected
+        result["foreground_mask"] = mask
+    return result

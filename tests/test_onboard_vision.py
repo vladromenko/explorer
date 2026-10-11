@@ -73,3 +73,21 @@ def test_cloud_requires_synchronized_depth_not_only_fresh_rgb():
         np.savez(path, **sample)
         with pytest.raises(ValueError, match="not synchronized"):
             OnboardVision(folder).cloud(80)
+
+
+def test_selected_frame_can_supply_gaze_and_calibration_change_cancels_association():
+    vision = OnboardVision("/unused")
+    stamp = time.time()
+    rng = np.random.default_rng(5)
+    rgb = rng.integers(0,255,(120,160,3),dtype=np.uint8)
+    metadata = {"camera_id":"onboard","frame":"optical","camera_info_version":"v1",
+        "intrinsic_k":[200.,0,80,0,200.,60,0,0,1.],"distortion_d":[0]*5,"image_stamp":stamp}
+    vision.frames.append({"id":"displayed","rgb":rgb,"stamp":stamp,"metadata":metadata})
+    selected = vision.select("displayed",[40,30,100,90])
+    assert selected["center_px"] == [70,60]
+    assert selected["image_size"] == [160,120]
+    assert selected["camera_info_version"] == "v1"
+    vision.frame = lambda: (rgb,b"unused",dict(metadata,image_stamp=stamp+.05,camera_info_version="v2"))
+    state = vision.tick()
+    assert state["phase"] == "lost"
+    assert "calibration changed" in state["reason"]

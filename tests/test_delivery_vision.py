@@ -201,3 +201,111 @@ class VisionTests(unittest.TestCase):
         with self.assertRaises(JointSamplePending):vision.geometry(dict(stamp=11.05),settings)
         transform,tcp,angles=vision.geometry(dict(stamp=11.2),settings)
         np.testing.assert_allclose(transform,np.eye(4));self.assertEqual(angles,[90]*6)
+
+
+def cloth_sample(stamp=1., color=25, dx=0):
+    rgb = np.full((120,160,3), 140, np.uint8)
+    rgb[40:80,60+dx:100+dx] = color
+    depth = np.ones((120,160))
+    depth[40:80,60+dx:100+dx] = .98
+    return {"rgb":rgb,"depth":depth,"k":np.array([[200.,0,80],[0,200,60],[0,0,1.]]),
+        "d":np.zeros(5),"stamp":stamp,"frame":"camera"}
+
+
+def test_stationary_cloth_has_real_depth_without_invented_feature_tracking():
+    from delivery_vision import StationaryDepthObject, reacquire_candidate
+    context = lambda sample: {"epoch":("boot",.5,"path"),"servo_deg":[90]*6,"odom_xyyaw":[0,0,0]}
+    old, fresh = cloth_sample(), cloth_sample(1.1)
+    candidate = reacquire_candidate(old, fresh, [59,39,101,81])
+    assert candidate["appearance_correlation"] is None
+    assert candidate["continuous_from_previous_image"] is False
+    tracker = StationaryDepthObject(old,[59,39,101,81],context)
+    observation = tracker.update(fresh)
+    assert observation["association_kind"] == "stationary_depth_and_appearance"
+    assert observation["point_camera"][2] == .98
+    assert not observation["contact_verified"] and not observation["held_verified"]
+    assert StationaryDepthObject(fresh,[59,39,101,81],context).object_id != tracker.object_id
+
+
+def test_static_cloth_change_or_motion_loses_identity_permanently():
+    import pytest
+    from delivery_vision import StationaryDepthObject
+    base = {"epoch":("boot",.5,"path"),"servo_deg":[90]*6,"odom_xyyaw":[0,0,0]}
+    for field, value in (("epoch",("boot",.6,"newpath")),("servo_deg",[91]*6),
+                         ("odom_xyyaw",[.004,0,0]),("odom_xyyaw",[0,0,.01])):
+        current = dict(base)
+        tracker = StationaryDepthObject(cloth_sample(),[59,39,101,81],lambda sample:current)
+        current[field] = value
+        with pytest.raises(ValueError):tracker.update(cloth_sample(1.1))
+        current[field] = base[field]
+        with pytest.raises(ValueError,match="already lost"):tracker.update(cloth_sample(1.2))
+    for changed in (cloth_sample(1.1,90),cloth_sample(1.1,dx=8)):
+        tracker = StationaryDepthObject(cloth_sample(),[59,39,101,81],lambda sample:base)
+        with pytest.raises(ValueError):tracker.update(changed)
+
+
+def test_measured_vision_cloth_fallback_requires_explicit_stationary_context():
+    import pytest
+    vision = MeasuredVision.__new__(MeasuredVision)
+    vision.factory_mode = False
+    with pytest.raises(ValueError,match="texture"):
+        vision.make_tracker(cloth_sample(),[59,39,101,81])
+    vision.factory_mode = True
+    def moving(sample):raise ValueError("Base is moving")
+    vision.stationary_context = moving
+    with pytest.raises(ValueError,match="moving"):
+        vision.make_tracker(cloth_sample(),[59,39,101,81])
+    vision.stationary_context = lambda sample: {"epoch":("boot",.5,"path"),
+        "servo_deg":[90]*6,"odom_xyyaw":[0,0,0]}
+    assert vision.make_tracker(cloth_sample(),[59,39,101,81]).stationary_only
+
+
+def test_feature_tracking_does_not_reuse_camera_geometry_after_calibration_change():
+    import pytest
+    first = VisionTests().sample()
+    tracker = FeatureObject(first,[59,39,101,81])
+    second = VisionTests().sample(1.1)
+    second["k"] = second["k"].copy()
+    second["k"][0,0] += 1
+    with pytest.raises(ValueError,match="calibration"):
+        tracker.update(second)
+    assert tracker.ended
+
+
+def test_static_observation_explicitly_blocks_motion_before_caller_can_publish():
+    import pytest
+    import time
+    from delivery_vision import StationaryDepthObject
+    vision = MeasuredVision.__new__(MeasuredVision)
+    vision.lock = threading.RLock()
+    vision.error = None
+    vision.waiting_for_joints = None
+    context = lambda sample:{"epoch":("boot",1,"path"),"servo_deg":[90]*6,"odom_xyyaw":[0,0,0]}
+    vision.track = StationaryDepthObject(cloth_sample(time.time()),[59,39,101,81],context)
+    assert vision.tracking_status()["stationary_only"] is True
+    assert vision.tracking_status()["motion_tracking_available"] is False
+    with pytest.raises(ValueError,match="stationary inspection only"):
+        vision.tracking_status(require_motion=True)
+
+
+def test_delivery_snapshot_checks_depth_exposure_and_registered_geometry(tmp_path):
+    import time
+    import pytest
+    (tmp_path/"data").mkdir()
+    vision = MeasuredVision.__new__(MeasuredVision)
+    vision.root = tmp_path
+    sample = cloth_sample(time.time())
+    sample["depth_stamp"] = sample["stamp"]-.1
+    path = tmp_path/"data/rgbd-snapshot.npz"
+    np.savez(path,**sample)
+    with pytest.raises(ValueError,match="synchronized"):
+        vision.snapshot()
+    sample["depth_stamp"] = sample["stamp"]
+    sample["depth"] = sample["depth"][:60]
+    np.savez(path,**sample)
+    with pytest.raises(ValueError,match="registered"):
+        vision.snapshot()
+    sample = cloth_sample(time.time())
+    sample["depth_stamp"] = sample["stamp"]
+    np.savez(path,**sample)
+    assert float(vision.snapshot()["depth_stamp"]) == sample["stamp"]

@@ -4,7 +4,7 @@ from pathlib import Path
 import threading
 import time
 import numpy as np
-from delivery_vision import FeatureObject,reacquire_candidate
+from delivery_vision import reacquire_candidate
 from grasp_verification import verify_lift,verify_place
 from learning_stack import CandidateScorer
 from semantic_world import guarded_closure
@@ -109,7 +109,7 @@ class LocalGraspExperiment:
         if fresh is None:
             raise ValueError("No fresh RGB-D frame after detection; no arm motion started")
         candidate=reacquire_candidate(initial,fresh,objects[0]['bbox'])
-        tracker=FeatureObject(fresh,candidate['bbox'])
+        tracker=self.vision.make_tracker(fresh,candidate["bbox"])
         transform,_,_=self.vision.geometry(fresh,settings)
         plane=np.asarray(objects[0]['depth_evidence']['evidence']['plane_camera'],dtype=float)
         plane_base=np.linalg.inv(transform).T@plane;plane_base/=np.linalg.norm(plane_base[:3])
@@ -214,7 +214,7 @@ class LocalGraspExperiment:
         permit a missing image or lost target to pass unnoticed.
         """
         self.permit()
-        self.vision.tracking_status()
+        self.vision.tracking_status(require_motion=True)
 
     def close_guarded(self,point,settings):
         angle=float(settings['open_deg']);commands=[]

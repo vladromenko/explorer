@@ -38,7 +38,9 @@ class MobilePolicyExecution:
         jobs=[job for job in self.jobs.status()["jobs"] if job.get("skill_id")==skill_id and
               job.get("state")=="validated_offline" and job.get("validation",{}).get("improves_hold_baseline") is True]
         if not jobs:raise ValueError("Нет кандидата, проверенного на отдельном показе")
-        job=jobs[-1]
+        # Dataset-derived IDs are hashes, not chronological version numbers.
+        job=max(jobs,key=lambda item:(float(item.get("finished") or item.get("at") or 0),
+                                      float(item.get("created") or 0),item["id"]))
         bundle,checkpoint=read_bundle(self.root/"data/learning-jobs"/job["id"])
         if bundle.get("skill_id")!=skill_id:raise ValueError("Модель относится к другому навыку")
         return job,bundle,checkpoint

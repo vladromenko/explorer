@@ -16,6 +16,8 @@ def verify_lift(before, after, calibration_validated=False):
     if not calibration_validated:return unknown('RGB-D, floor and hand-eye calibration unvalidated')
     if len(before)<3 or len(after)<3:return unknown('Three observations required on both sides')
     frames=before+after
+    if any(frame.get("stationary_only") is True for frame in frames):
+        return unknown("Stationary view association cannot verify a moving grasp")
     try:
         ids={f['object_id'] for f in frames}
         numeric=np.array([[f['at'],f['confidence'],f['floor_clearance_m'],
@@ -64,6 +66,8 @@ def verify_place(before, after, zone, calibration_validated=False):
         return unknown('Calibrated geometry and three observations on both sides required')
     try:
         frames=before+after
+        if any(frame.get("stationary_only") is True for frame in frames):
+            return unknown("Stationary view association cannot verify tool/object separation")
         if any(f.get('identity_association_verified') is not True or not validated_camera_pose(f) or
                f.get('depth_validated') is not True or f.get('frame')!='base_footprint' for f in frames):
             return unknown('Unverified tracking or camera geometry')

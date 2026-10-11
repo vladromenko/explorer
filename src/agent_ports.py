@@ -106,6 +106,11 @@ class ExplorerPorts:
         context.permit()
         return self.outcome({"places": self.missions.places()})
 
+    def task_memory(self, args, context):
+        context.permit()
+        return self.outcome({"actions": self.world.action_history(args.get("limit", 20)),
+            "claim": "Recorded executor outcomes; unknown is not a verified physical success"})
+
     def save_place(self, args, context):
         context.permit()
         return self.outcome(self.missions.save_place(args["name"]))
@@ -191,6 +196,33 @@ class ExplorerPorts:
 
     def route(self, args, context):
         return self.navigation_skill({"kind": "patrol", "places": args["places"]}, context)
+
+    def visit_and_return(self, args, context):
+        context.permit()
+        epoch = self.missions.maps.epoch()
+        place = next((row for row in self.missions.places() if row["name"] == args["place"]), None)
+        if not place or not place.get("compatible_map"):
+            raise ValueError("Saved place unavailable in the current map")
+        origin = copy.deepcopy(self.missions.maps.pose())
+        if self.missions.maps.epoch() != epoch:
+            raise ValueError("Map frame changed while recording return origin")
+        context.event("return_origin", {"pose": origin, "map_epoch": epoch,
+            "physical_accuracy_measured": False})
+        outbound = self.navigate(args, context)
+        context.permit()
+        if outbound["state"] != "succeeded":
+            return self.outcome({"outbound": outbound, "returned_to_start": False}, outbound["state"])
+        if self.missions.maps.epoch() != epoch:
+            raise ValueError("Map frame changed; old return coordinates are invalid")
+        context.event("return_started", {"pose": origin, "map_epoch": epoch})
+        inbound = self.navigation_skill({"kind": "navigate_current",
+            "x": origin["x"], "y": origin["y"], "yaw": origin["yaw"]}, context)
+        context.permit()
+        if self.missions.maps.epoch() != epoch:
+            raise ValueError("Map frame changed during return")
+        return self.outcome({"outbound": outbound, "return": inbound, "origin": origin,
+            "map_epoch": epoch, "returned_to_start": inbound["state"] == "succeeded",
+            "physical_accuracy_measured": False}, inbound["state"])
 
     def explore(self, args, context):
         spec = {"kind": "map_room" if args.get("map_name") else "survey_room", "max_goals": args.get("max_goals", 5)}
@@ -298,6 +330,7 @@ class ExplorerPorts:
             port("observe_scene", "Свежие структурированные наблюдения текущей камеры", object_schema(), self.observe, ("camera",)),
             port("detect_objects", "Поиск названного предмета в текущем RGB-D кадре без поездки", object_schema({"label": TEXT}, ("label",)), self.detect, ("vision_inference",)),
             port("query_memory", "Где и когда предмет видели; прошлое наблюдение не доказывает наличие сейчас", object_schema({"label": TEXT}, ("label",)), self.memory),
+            port("query_task_memory", "Последние реальные навыки и исходы; UNKNOWN не считается физическим успехом", object_schema({"limit": {"type": "integer", "minimum": 1, "maximum": 50}}), self.task_memory),
             port("list_places", "Сохранённые места и совместимость с текущей картой", object_schema(), self.places),
             port("save_place", "Сохранить текущую остановленную позу как именованное место", object_schema({"name": TEXT}, ("name",)), self.save_place, ("map",)),
             port("inventory_report", "Отчёт по реальным сохранённым осмотрам без выдуманного подсчёта", object_schema(), self.report),
@@ -307,6 +340,7 @@ class ExplorerPorts:
             port("open_gripper", "Плавно раскрыть пальцы по принятому профилю без сброса других суставов", object_schema(), lambda args, context: self.gripper(args, context, True), ("arm",), True, "servo degrees", "J6", ("accepted_gripper_profile",)),
             port("close_gripper", "Сомкнуть по профилю; это не подтверждение контакта или захвата", object_schema(), lambda args, context: self.gripper(args, context, False), ("arm",), True, "servo degrees", "J6", ("accepted_gripper_profile",)),
             port("navigate_to", "Доехать к сохранённому месту текущей карты", object_schema({"place": TEXT}, ("place",)), self.navigate, ("base", "arm", "camera", "navigation"), True, "metres and radians", "map", ("live_navigation_readiness", "current_map_place")),
+            port("visit_and_return", "Доехать к именованному месту и вернуться к позе начала в той же карте", object_schema({"place": TEXT}, ("place",)), self.visit_and_return, ("base", "arm", "camera", "navigation"), True, "metres and radians", "map", ("live_navigation_readiness", "current_map_place", "unchanged_map_epoch")),
             port("follow_route", "Осмотреть явную последовательность сохранённых мест", object_schema({"places": PLACES}, ("places",)), self.route, ("base", "arm", "camera", "navigation"), True, "metres and radians", "map", ("live_navigation_readiness",)),
             port("explore_area", "Достижимые frontier, осмотры, возврат; необязательно сохранить новую карту", object_schema({"max_goals": {"type": "integer", "minimum": 1, "maximum": 20}, "map_name": {"type": "string", "pattern": r"[a-zA-Z0-9_-]{1,48}", "maxLength": 48}}), self.explore, ("base", "arm", "camera", "navigation"), True, "metres and radians", "map", ("mapping_readiness",)),
             port("find_object", "Проверить виды камеры и выбранные места; остановиться при находке, не хватать", object_schema({"label": TEXT, "places": {**PLACES, "minItems": 0}}, ("label",)), self.find, ("base", "arm", "camera", "vision_inference", "navigation"), True, "metres", "map", ("mapping_readiness", "fresh_RGBD")),

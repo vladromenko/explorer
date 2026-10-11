@@ -98,7 +98,7 @@ class TaskContext:
 
 
 class OnboardAgent:
-    def __init__(self, root, ports, autostart=True):
+    def __init__(self, root, ports, autostart=True, world=None):
         self.root = Path(root)
         self.path = self.root / "data/onboard-agent.sqlite3"
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -112,6 +112,7 @@ class OnboardAgent:
         self.wake = threading.Event()
         self.closed = threading.Event()
         self.executing = None
+        self.world = world
         with self.db() as db:
             db.execute("PRAGMA journal_mode=WAL")
             db.executescript("""
@@ -140,6 +141,9 @@ class OnboardAgent:
             for name, plan in seeds.items():
                 if all(step["skill"] in self.ports for step in plan["steps"]):
                     self.save_template(name, plan)
+        recovery_name = "Восстановить обзор носка"
+        if "recover_object_view" in self.ports and not any(template["name"] == recovery_name for template in self.templates()):
+            self.save_template(recovery_name, {"steps": [{"skill": "recover_object_view", "args": {"label": "sock"}}]})
         if autostart:
             self.thread.start()
 
@@ -248,6 +252,29 @@ class OnboardAgent:
         with self.db() as db:
             self._event(db, identifier, phase, details)
 
+    def memory_episode(self, identifier):
+        if self.world is None:
+            return None
+        try:
+            return self.world.latest_episode()
+        except Exception as exc:
+            self.event(identifier, "memory_error", {"reason": str(exc), "world_updated": False})
+            return None
+
+    def record_memory(self, identifier, skill, state, result, before=None, started=None):
+        if self.world is None:
+            return
+        try:
+            after = self.world.latest_episode()
+            fresh_after = after is not None and started is not None and after["seen"] >= started and (
+                before is None or after["id"] != before["id"])
+            self.world.record_action(identifier, skill, state, result,
+                before_episode=before["id"] if before else None,
+                after_episode=after["id"] if fresh_after else None)
+        except Exception as exc:
+            # A failed memory write cannot erase an already observed physical outcome.
+            self.event(identifier, "memory_error", {"reason": str(exc), "world_updated": False})
+
     def finish(self, task, state, result):
         with self.db() as db:
             updated = db.execute("UPDATE agent_tasks SET state=?,updated=?,result=? WHERE id=? AND generation=? AND state=?",
@@ -267,6 +294,7 @@ class OnboardAgent:
             execution = self.executing
         if execution and execution[0] == identifier:
             port = self.ports[execution[1]]
+            self.record_memory(identifier, port.name, "cancelled", {"reason": reason, "physical_stop_confirmed": False})
             if port.cancel:
                 try:
                     port.cancel(identifier)
@@ -321,6 +349,9 @@ class OnboardAgent:
                 return
         results = []
         state = "succeeded"
+        active_skill = None
+        before_episode = None
+        skill_started = None
         try:
             for index, step in enumerate(task["plan"]["steps"]):
                 port = self.ports[step["skill"]]
@@ -341,6 +372,10 @@ class OnboardAgent:
                     with self.db() as db:
                         db.execute("UPDATE agent_tasks SET current_step=?,updated=? WHERE id=?", (index, time.time(), task["id"]))
                     context.event("skill_started", {"skill": port.name, "args": step["args"], "resources": list(port.resources)})
+                    active_skill = port.name
+                    before_episode = self.memory_episode(task["id"])
+                    skill_started = time.time()
+                    self.record_memory(task["id"], port.name, "started", {"args": step["args"], "step": index}, before_episode)
                     result = None
                     for attempt in range(step["attempts"]):
                         context.permit()
@@ -356,6 +391,9 @@ class OnboardAgent:
                         raise ValueError("Executor did not return an evidence-bearing outcome")
                     encoded(result)
                     context.event("skill_finished", {"skill": port.name, **result})
+                    memory_state = "unknown" if result["state"] == "waiting" else result["state"]
+                    self.record_memory(task["id"], port.name, memory_state, result, before_episode, skill_started)
+                    active_skill = None
                 results.append(result)
                 if result["state"] not in {"succeeded", "skipped"}:
                     state = result["state"]
@@ -365,11 +403,17 @@ class OnboardAgent:
             pass
         except TimeoutError as exc:
             self.cancel_owned(task["id"])
+            if active_skill:
+                self.record_memory(task["id"], active_skill, "failed", {"reason": str(exc)}, before_episode, skill_started)
             self.finish(task, "failed", {"reason": str(exc), "steps": results})
         except ValueError as exc:
+            if active_skill:
+                self.record_memory(task["id"], active_skill, "unknown", {"state": "waiting", "reason": str(exc)}, before_episode, skill_started)
             self.finish(task, "waiting", {"reason": str(exc), "steps": results, "automatic_retry": False})
         except Exception as exc:
             self.cancel_owned(task["id"])
+            if active_skill:
+                self.record_memory(task["id"], active_skill, "failed", {"reason": str(exc)}, before_episode, skill_started)
             self.finish(task, "failed", {"reason": str(exc), "steps": results})
         finally:
             with self.lock:

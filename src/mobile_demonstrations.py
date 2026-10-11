@@ -26,20 +26,28 @@ def episode_quality(folder,full_task=False):
     path=Path(folder)/"samples.jsonl"
     if not path.exists():
         return {"usable":False,"reason":"Нет синхронизированных кадров и команд","samples":0}
-    rows=[json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    try:
+        rows=[json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+        if any(not isinstance(row,dict) for row in rows):
+            raise ValueError("Кадр должен содержать объект с командой и временем")
+        stamps=[float(row["image_stamp"]) for row in rows]
+        commands=[tuple(float(value) for value in row["command"]) for row in rows]
+    except (OSError,ValueError,KeyError,TypeError) as exc:
+        return {"usable":False,"reason":"Повреждена запись кадров: "+str(exc),"samples":0}
     if len(rows)<2:
         return {"usable":False,"reason":"Слишком короткая запись","samples":len(rows)}
-    stamps=[float(row["image_stamp"]) for row in rows]
     gaps=[b-a for a,b in zip(stamps,stamps[1:])]
-    commands=[tuple(float(value) for value in row["command"]) for row in rows]
     duration=stamps[-1]-stamps[0]
+    if not np.isfinite(stamps+gaps+[duration]).all():
+        return {"usable":False,"reason":"В записи есть нечисловое время кадра","samples":len(rows)}
+    if any(not np.isfinite(command).all() for command in commands):
+        return {"usable":False,"reason":"В командах есть нечисловые значения","samples":len(rows)}
     rate=(len(rows)-1)/duration if duration>0 else 0.0
     base_changes=sum(any(abs(value)>0.025 for value in command[6:]) for command in commands)
     arm_changes=len({command[:6] for command in commands})
     reasons=[]
-    if any(not np.isfinite(stamp) for stamp in stamps) or any(gap<=0 for gap in gaps):
+    if any(gap<=0 for gap in gaps):
         reasons.append("Времена кадров не возрастают")
-    if any(not np.isfinite(command).all() for command in commands):reasons.append("В командах есть нечисловые значения")
     if any(row.get("sample_contract_sha256") not in (None,CONTRACT_SHA256) for row in rows):
         reasons.append("Несовместимая семантика команд")
     if any(row.get("executed_action_source") not in (None,"operator_manual_control") for row in rows):
@@ -149,7 +157,7 @@ class MobileDemonstrations:
         skills={name:sum(e.get('name')==name for e in eligible) for name in {e.get('name') for e in episodes if e.get('name')}}
         with self.lock:return dict(active=self.active,last=self.last or (episodes[0] if episodes else None),
             record_errors=self.record_errors,recent=episodes[:10],storage_root=str(self.folder),automatic_replay=False,
-            format='explorer_mobile_episode_v2',trainable=True,successful=len(eligible),skills=skills,
+            format="explorer_mobile_episode_v3",trainable=True,successful=len(eligible),skills=skills,
             training_required_successful_demonstrations=1,recommended_demonstrations='5–100; больше разнообразия обычно лучше',
             observations=['wrist_rgb','arm_command_estimate','body_velocity_command','odometry','dual_lidar_summary','stage'],
             policy='LeRobot ACT 9-DoF candidate; offline validation before supervised execution')

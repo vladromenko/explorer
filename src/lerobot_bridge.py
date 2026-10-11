@@ -1,6 +1,7 @@
 """Local LeRobot jobs. This module has no robot publishers or motor interfaces."""
 import json
 import hashlib
+import math
 import os
 from pathlib import Path
 import subprocess
@@ -33,8 +34,10 @@ def save_job(path,record,terminal=False):
 def training_budget(root=ROOT):
     p=json.loads((root/'data/power.json').read_text())
     if not 0<=time.time()-p['at']<4:raise ValueError('Нет свежих данных питания')
-    if p['state'] not in ('NORMAL','IDLE') or p['battery_voltage_v']<11.5:
-        raise ValueError('Обучение отложено: зарядите выключенного робота; нужно не менее 11,5 В')
+    voltage=p.get("battery_voltage_v")
+    if (p["state"] not in ("NORMAL","IDLE") or type(voltage) not in (int,float)
+            or not math.isfinite(voltage) or voltage<11.5):
+        raise ValueError("Обучение отложено: нужно подтверждённое питание не менее 11,5 В")
     s=json.loads((root/'data/status.json').read_text())
     if not 0<=time.time()-s['at']<2 or s.get('stop_latched') is not True:
         raise ValueError('Для обучения включите стоп шасси')
@@ -101,8 +104,21 @@ class LearningJobs:
             if (same_skill and episode.get("state")=="complete" and episode.get("outcome")=="success" and
                     episode.get("label_source")=="operator" and quality.get("usable") is True):episodes.append(episode)
         if not episodes:raise ValueError('Нужен хотя бы один успешный полный показ для ACT; фиксированного минимума нет')
-        inputs={e["id"]:{name:hashlib.sha256((source/e["id"]/name).read_bytes()).hexdigest()
-            for name in ("episode.json","samples.jsonl")} for e in episodes}
+        inputs={}
+        for episode in episodes:
+            folder=source/episode["id"]
+            rows=[json.loads(line) for line in (folder/"samples.jsonl").read_text().splitlines() if line.strip()]
+            names={"episode.json","samples.jsonl"}
+            for row in rows:
+                if not isinstance(row,dict) or not isinstance(row.get("image"),str) or not row["image"]:
+                    raise ValueError("Нет имени кадра в записи показа")
+                image=Path(row["image"])
+                resolved=(folder/image).resolve()
+                if image.is_absolute() or not resolved.is_relative_to(folder.resolve()) or not resolved.is_file():
+                    raise ValueError("Кадр показа отсутствует или находится вне эпизода")
+                names.add(str(image))
+            inputs[episode["id"]]={name:hashlib.sha256((folder/name).read_bytes()).hexdigest()
+                for name in sorted(names)}
         fingerprint=hashlib.sha256(json.dumps(inputs,sort_keys=True).encode()).hexdigest()
         rows,_=stored_records(self.folder.glob("*/job.json"),("id","state"))
         for path,existing in rows:
