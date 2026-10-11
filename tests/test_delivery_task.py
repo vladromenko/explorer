@@ -68,6 +68,32 @@ class DeliveryTaskTests(unittest.TestCase):
         self.assertIn('unknown',self.task.last['reason'])
         self.assertFalse(self.task.status()['busy'])
 
+    def test_base_correction_reobserves_each_arrival_before_arm_approach(self):
+        targets = iter(({"target": "fresh_second"}, {"target": "fresh_third"}))
+        def refind():
+            self.robot.calls.append(("find_aligned",))
+            return next(targets)
+        self.robot.find_aligned = refind
+        seen = []
+        def approach(target):
+            seen.append(target["target"])
+            return {"reobserve_required": len(seen) < 3}
+        self.robot.approach = approach
+        _, run = self.queued()
+        run()
+        self.assertEqual(seen, ["measured object", "fresh_second", "fresh_third"])
+        self.assertTrue(self.task.last["delivered"])
+
+    def test_nonconverging_base_never_starts_arm_or_unbounded_navigation(self):
+        self.robot.find_aligned = lambda: {"target": "fresh"}
+        self.robot.approach = Mock(return_value={"reobserve_required": True})
+        _, run = self.queued()
+        run()
+        self.assertEqual(self.robot.approach.call_count, 4)
+        self.assertNotIn("grasp", [call[0] for call in self.robot.calls])
+        self.assertFalse(self.task.last["delivered"])
+        self.assertIn("трёх", self.task.last["reason"])
+
     def test_visual_failure_gets_one_regrasp_before_transport(self):
         outcomes=iter(({'outcome':'failure'},{'outcome':'success'}))
         self.robot.verify_hold=lambda before:(self.robot.calls.append(('verify_hold',)) or next(outcomes))

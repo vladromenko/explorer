@@ -151,10 +151,13 @@ class DeliveryTask:
             stage = lambda name, fn:self.stage(mid,generation,name,fn)
             target = stage('find', self.robot.find)
             approach=stage('approach', lambda:self.robot.approach(target))
-            if approach.get('reobserve_required'):
-                target=stage('refind_after_base_alignment',self.robot.find_aligned)
-                approach=stage('approach_after_base_alignment',lambda:self.robot.approach(target))
-                if approach.get('reobserve_required'):raise ValueError('Коррекция базы не сошлась после повторного измерения')
+            for correction_index in range(3):
+                if approach.get("reobserve_required"):
+                    suffix = "" if correction_index == 0 else "_" + str(correction_index + 1)
+                    target = stage("refind_after_base_alignment" + suffix, self.robot.find_aligned)
+                    approach = stage("approach_after_base_alignment" + suffix, lambda: self.robot.approach(target))
+            if approach.get("reobserve_required"):
+                raise ValueError("Коррекция базы не сошлась после трёх свежих измерений")
             stage('hold_base', self.robot.hold)
             stage('inspect', self.robot.inspect)
             target = stage('reobserve', lambda:self.robot.reobserve(target))
