@@ -111,6 +111,13 @@ class ExplorerPorts:
         return self.outcome({"actions": self.world.action_history(args.get("limit", 20)),
             "claim": "Recorded executor outcomes; unknown is not a verified physical success"})
 
+    def instructions(self, args, context):
+        from instruction_knowledge import InstructionKnowledge
+        context.permit()
+        result = InstructionKnowledge(self.root).query(args["query"], args.get("limit", 3))
+        context.permit()
+        return self.outcome(result)
+
     def save_place(self, args, context):
         context.permit()
         return self.outcome(self.missions.save_place(args["name"]))
@@ -331,6 +338,7 @@ class ExplorerPorts:
             port("detect_objects", "Поиск названного предмета в текущем RGB-D кадре без поездки", object_schema({"label": TEXT}, ("label",)), self.detect, ("vision_inference",)),
             port("query_memory", "Где и когда предмет видели; прошлое наблюдение не доказывает наличие сейчас", object_schema({"label": TEXT}, ("label",)), self.memory),
             port("query_task_memory", "Последние реальные навыки и исходы; UNKNOWN не считается физическим успехом", object_schema({"limit": {"type": "integer", "minimum": 1, "maximum": 50}}), self.task_memory),
+            port("query_instructions", "Как пользоваться Explorer: выдержки из действующих инструкций с источниками, без движения и LLM", object_schema({"query": {"type": "string", "minLength": 1, "maxLength": 300}, "limit": {"type": "integer", "minimum": 1, "maximum": 5}}, ("query",)), self.instructions),
             port("list_places", "Сохранённые места и совместимость с текущей картой", object_schema(), self.places),
             port("save_place", "Сохранить текущую остановленную позу как именованное место", object_schema({"name": TEXT}, ("name",)), self.save_place, ("map",)),
             port("inventory_report", "Отчёт по реальным сохранённым осмотрам без выдуманного подсчёта", object_schema(), self.report),

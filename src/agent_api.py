@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 from agent_intent import prepare_intent
+from instruction_knowledge import InstructionKnowledge
 
 
 class AgentPlanRequest(BaseModel):
@@ -70,11 +71,16 @@ def install_agent_api(app, root, runtime, token, places, stop, model=None):
     def status():
         return runtime.status()
 
+    @router.get("/instructions/{document_id}")
+    def instructions(document_id: str):
+        text, digest = operation(InstructionKnowledge(root).read, document_id)
+        return Response(text, media_type="text/plain; charset=utf-8",
+            headers={"Cache-Control": "private, no-store", "X-Instruction-SHA256": digest})
+
     @router.post("/plan")
     def plan(request: AgentPlanRequest):
         result = operation(prepare_intent, request.text, runtime, places(), model)
         if result.get("stop_requested"):
-            runtime.cancel_all("Voice/text STOP")
             result["result"] = stop()
         return result
 

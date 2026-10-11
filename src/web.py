@@ -192,26 +192,31 @@ def base_step_status():return observed_base.status()
 def base_step(c:BaseStep):return map_operation(observed_base.start,c.direction,c.duration,c.observing,c.compact)
 
 def stop_all():
-    active_agent=globals().get("onboard_agent")
-    if active_agent:active_agent.cancel_all("Operator STOP")
-    gaze=globals().get("target_gaze")
-    if gaze:gaze.cancel()
-    room_task=globals().get("navigation_tasks")
-    if room_task and room_task.status()["busy"]:room_task.cancel()
-    experiments.cancel()
-    supervisor=globals().get('autonomy_supervisor')
-    if supervisor:supervisor.cancel(reason='Manual takeover or STOP')
-    delivery=globals().get('delivery_task')
-    if delivery:delivery.cancel()
-    controller=globals().get('manual_arm')
-    if controller:controller.stop()
-    player=globals().get('policy_execution')
-    if player and player.lock.locked():player.stop()
-    mobile_player=globals().get("mobile_policy_execution")
-    if mobile_player and mobile_player.lock.locked():mobile_player.stop()
-    trajectory=globals().get('trajectory_execution')
-    if trajectory:trajectory.stop()
-    return emit('stop')
+    # Publish the base latch before cancellation can wait on a worker or DB.
+    # Independent owner failures must not prevent the remaining stop requests.
+    result=emit("stop")
+    errors=[]
+    actions=(
+        # Invalidate both arm publishers and policy generations before any
+        # task cancellation can perform slower journal or memory operations.
+        ("trajectory_execution",lambda owner:owner.stop()),
+        ("manual_arm",lambda owner:owner.stop()),
+        ("policy_execution",lambda owner:owner.stop() if owner.lock.locked() else None),
+        ("mobile_policy_execution",lambda owner:owner.stop() if owner.lock.locked() else None),
+        ("navigation_tasks",lambda owner:owner.cancel() if owner.status()["busy"] else None),
+        ("target_gaze",lambda owner:owner.cancel()),
+        ("onboard_agent",lambda owner:owner.cancel_all("Operator STOP")),
+        ("experiments",lambda owner:owner.cancel()),
+        ("autonomy_supervisor",lambda owner:owner.cancel(reason="Manual takeover or STOP")),
+        ("delivery_task",lambda owner:owner.cancel()),
+    )
+    for name,cancel in actions:
+        owner=globals().get(name)
+        if owner is not None:
+            try:cancel(owner)
+            except Exception as exc:
+                errors.append({"owner":name,"reason":str(exc),"physical_stop_confirmed":False})
+    return dict(result,cancellation_errors=errors) if errors else result
 def manual_takeover():
     from manual_teleop import ARM_ACTIONS
     arm_actions=set(ARM_ACTIONS)|{"grip_open","grip_close"}

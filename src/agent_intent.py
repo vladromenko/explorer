@@ -35,6 +35,8 @@ def prepare_intent(text, runtime, places=(), model=None):
         plan = single("inventory_report")
     elif query in {"история задач", "последние действия", "что ты делал", "покажи историю задач"}:
         plan = single("query_task_memory")
+    elif query in {"справка", "инструкция", "инструкции", "покажи инструкции"}:
+        plan = single("query_instructions", {"query": "управление обучение карта"})
     elif re.fullmatch(r"(?:посмотри|поверни камеру|смотри) (?:налево|влево)", query):
         plan = single("look_direction", {"view": "left"})
     elif re.fullmatch(r"(?:посмотри|поверни камеру|смотри) (?:направо|вправо)", query):
@@ -64,6 +66,7 @@ def prepare_intent(text, runtime, places=(), model=None):
         navigate = re.fullmatch(r"(?:поезжай|езжай|отправляйся) (?:к|в) (?:месту )?(.+?)(?: и (вернись|возвращайся)(?: обратно)?)?", query)
         recover = re.fullmatch(r"(?:восстанови обзор|осмотри пол и найди) (.+)", query)
         deliver = re.fullmatch(r"(?:возьми|подбери|забери) (.+?) и (?:положи|отнеси|отвези) (?:в|к) (?:место )?(.+)", query)
+        instruction = re.fullmatch(r"(?:как |инструкци[яю] (?:по )?|покажи инструкцию (?:по )?|объясни )(.+)", query)
         if match and " и " not in match[1]:
             plan = single("find_object", {"label": match[1].strip(), "places": [place["name"] for place in places if place.get("compatible_map")][:12]})
         elif memory:
@@ -86,6 +89,10 @@ def prepare_intent(text, runtime, places=(), model=None):
                 plan = single("visit_and_return" if navigate[2] else "navigate_to", {"place": names[0]})
             else:
                 return {"clarification": "Какое сохранённое место выбрать?", "choices": [place["name"] for place in places if place.get("compatible_map")], "plan": None}
+        elif instruction:
+            if len(original) > 300:
+                return {"clarification": "Для поиска инструкции сократите вопрос до 300 символов.", "plan": None}
+            plan = single("query_instructions", {"query": original})
     source = "deterministic_template"
     if plan is None:
         if model is None:

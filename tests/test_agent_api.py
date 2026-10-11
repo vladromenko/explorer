@@ -40,6 +40,38 @@ class AgentApiTests(unittest.TestCase):
         self.assertIn("/api/skill-agent/tasks", result["paths"])
         self.assertIn("AgentTaskRequest", result["components"]["schemas"])
 
+    def test_instruction_source_is_authenticated_and_fixed_allowlist_only(self):
+        import hashlib
+        docs = Path(self.temp.name) / "docs"
+        docs.mkdir()
+        content = "# Обучение\n\nНажмите «Записать показ».\n"
+        (docs / "TRAINING-GUIDE.ru.md").write_text(content)
+        endpoint = "/api/skill-agent/instructions/training"
+        self.assertEqual(self.client.get(endpoint).status_code, 401)
+        response = self.client.get(endpoint, headers=self.headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.text, content)
+        self.assertEqual(response.headers["X-Instruction-SHA256"], hashlib.sha256(content.encode()).hexdigest())
+        self.assertIn("text/plain", response.headers["Content-Type"])
+        denied = self.client.get("/api/skill-agent/instructions/access_token", headers=self.headers)
+        self.assertEqual(denied.status_code, 409)
+        self.assertEqual(self.runtime.status()["tasks"], [])
+
+    def test_text_stop_delegates_once_to_common_latch_without_prior_cancel(self):
+        calls=[]
+        self.runtime.cancel_all=lambda reason:calls.append("cancel_before_stop")
+        app=FastAPI()
+        def stop():
+            calls.append("common_stop")
+            return {"queued":True,"id":"stop-request"}
+        install_agent_api(app,self.temp.name,self.runtime,"test-secret",lambda:[],stop)
+        client=TestClient(app)
+        response=client.post("/api/skill-agent/plan",headers=self.headers,json={"text":"Стоп"})
+        self.assertEqual(response.status_code,200)
+        self.assertTrue(response.json()["stop_requested"])
+        self.assertEqual(response.json()["result"],{"queued":True,"id":"stop-request"})
+        self.assertEqual(calls,["common_stop"])
+
     def test_rpc_reuses_durable_registry(self):
         self.assertEqual(self.rpc("initialize")["result"]["protocolVersion"], "2025-03-26")
         tools = self.rpc("tools/list")["result"]["tools"]

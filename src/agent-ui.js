@@ -32,9 +32,30 @@ async function renderEvidence(task) {
   const evidence = (task.result?.steps || []).map((step) => step.evidence).filter(Boolean);
   const endpoints = evidence.map((entry) => entry.image_endpoint).filter((path) => typeof path === "string" && path.startsWith("/api/skill-agent/tasks/" + task.id + "/images/"));
   const exports=evidence.flatMap((entry) => entry.exports || []);
-  const key = task.id + JSON.stringify([endpoints,exports]);
+  const sources=evidence.flatMap((entry) => entry.sources || []);
+  const key = task.id + JSON.stringify([endpoints,exports,sources]);
   if (key === evidenceKey) return;
   evidenceKey = key; evidenceUrls.forEach((url) => URL.revokeObjectURL(url)); evidenceUrls = []; el("evidenceImages").replaceChildren();
+  for (const source of sources) {
+    const endpoint=source.source_url;
+    if (typeof endpoint === "string" && /^\/api\/skill-agent\/instructions\/[a-z_]{1,32}$/.test(endpoint)) {
+      const section=document.createElement("section"),title=document.createElement("strong"),snippet=document.createElement("pre");
+      title.textContent=source.title+" · "+source.section;
+      snippet.textContent=source.snippet || "";
+      const citation=document.createElement("small");citation.textContent=source.source_path+":"+source.line;
+      const button=document.createElement("button");button.textContent="Открыть полный источник";
+      button.addEventListener("click",async () => {
+        button.disabled=true;
+        try { const response=await request(endpoint),full=document.createElement("pre");full.textContent=await response.text();
+          if (response.headers.get("X-Instruction-SHA256") !== source.source_sha256) {
+            const notice=document.createElement("p");notice.textContent="Источник обновился после этой задачи. Ниже его текущая версия.";section.append(notice);
+          }
+          section.append(full);button.remove();
+        } catch (error) { button.disabled=false;message(error.message); }
+      });
+      section.append(title,snippet,citation,document.createElement("br"),button);el("evidenceImages").append(section);
+    }
+  }
   for (const report of exports) for (const kind of ["json","csv"]) {
     const endpoint=report.artifacts?.[kind];
     if (typeof endpoint==="string" && /^\/api\/scene-reports\/[a-f0-9]{32}\/report\.(json|csv)$/.test(endpoint)) {
