@@ -3,6 +3,10 @@ set -e
 source /home/vlad/Explorer/bin/env.sh
 cd "$EXPLORER_ROOT"
 case "$1" in
+ camera|perception) # Avoid UDP fragment loss for local RGB-D image messages.
+   export FASTRTPS_DEFAULT_PROFILES_FILE="$EXPLORER_ROOT/config/fastdds-rgbd.xml";;
+esac
+case "$1" in
  mcu) # Native controller leases use its monotonic clock and must reconnect
       # even before NTP. Only the legacy micro-ROS epoch startup needs this wait.
       if [ ! -f "$EXPLORER_ROOT/config/controller-profile.json" ]; then
