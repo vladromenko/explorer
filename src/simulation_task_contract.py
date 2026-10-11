@@ -39,6 +39,13 @@ def simulation_qualification(folder, bundle):
         reasons.append('Итоговый счётчик не подтверждён отдельными результатами')
     if bundle.get('skill_id') and report.get('task_id') != bundle['skill_id']:
         reasons.append('Проверка относится к другой задаче')
+    if bundle.get('scene_profile') == 'sock_variants_v1':
+        from simulator.domain_randomization import scene_coverage
+        coverage = scene_coverage(results) if results_valid else {}
+        if (not coverage.get('all_height_categories_present') or coverage.get('episodes') != episodes
+            or coverage.get('distinct_seeds',0) < episodes
+            or coverage.get('user_basket_25cm_diameter_30cm_rim_episodes',0) < 1):
+            reasons.append('Независимая проверка не покрывает все высоты корзины нового профиля')
     return dict(simulation_qualified=not reasons, blocked_by=reasons,
                 successes=successes, episodes=episodes, physical_accepted=False,
                 observed_transfer_validation_required=True,

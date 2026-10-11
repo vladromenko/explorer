@@ -134,13 +134,18 @@ def _sock(world, config, position):
             faces.extend([a, b, d, b, e, d])
     for j in range(n):
         faces.extend([toe, (j+1)%n, j])
+    yaw = c.get('yaw_rad', 0.)
+    for offset in range(0, len(points), 3):
+        x, y = points[offset:offset+2]
+        points[offset:offset+2] = [x*math.cos(yaw)-y*math.sin(yaw),
+                                  x*math.sin(yaw)+y*math.cos(yaw)]
     cloth = ET.SubElement(world, "flexcomp", name="sock", type="direct", dim="2", point=_s(points), element=" ".join(str(i) for i in faces), pos=_s(position), mass=str(c["mass_kg"]), radius=str(c["contact_radius_m"]), rgba="0.82 0.27 0.23 1")
     ET.SubElement(cloth, "edge", equality="true", damping="0.001", solref="0.01 1")
     ET.SubElement(cloth, "contact", contype="4", conaffinity="7", selfcollide="auto", internal="true", condim="3", friction=f'{c["friction"]} 0.005 0.0001', solref="0.008 1")
     ET.SubElement(cloth, "elasticity", young=str(c["young_pa"]), poisson="0.3", thickness=str(c["thickness_m"]), elastic2d="bend", damping="0.001")
 
 
-def build_mjcf(mesh_dir=None, *, scene="sock", sock_position=(.33, 0., .015), bin_position=(.60, .25, 0.), camera_intrinsics=None, verify_assets=True):
+def build_mjcf(mesh_dir=None, *, scene="sock", sock_position=(.33, 0., .015), bin_position=(.60, .25, 0.), camera_intrinsics=None, verify_assets=True, scene_parameters=None):
     """Return self-contained MJCF XML with absolute, checksum-verified STL paths.
 
     scene='empty' excludes cloth/bin; 'sock' includes both; 'navigation' also
@@ -150,6 +155,33 @@ def build_mjcf(mesh_dir=None, *, scene="sock", sock_position=(.33, 0., .015), bi
         raise ValueError("Unknown simulator scene")
     import numpy as np
     config = model_config()
+    if scene_parameters:
+        from .domain_randomization import RANGES
+        if set(scene_parameters) != {'sock', 'bin'} or scene not in ('sock', 'cloth'):
+            raise ValueError('Scene parameters require a sock/cloth curriculum')
+        allowed = {'sock': {'length_m', 'width_m', 'mass_kg', 'friction', 'young_pa',
+                            'yaw_rad', 'initial_thickness_m'},
+                   'bin': {'height_m', 'inner_half_size_m', 'shape'}}
+        for group, values in scene_parameters.items():
+            if set(values) != allowed[group]:
+                raise ValueError('Incomplete or unknown curriculum parameters')
+            flattened = [n for key,v in values.items() if key != 'shape'
+                         for n in (v if isinstance(v, list) else [v])]
+            if not all(math.isfinite(n) for n in flattened):
+                raise ValueError('Curriculum parameters must be finite')
+            config[group].update(values)
+        for key in ('length_m', 'width_m', 'mass_kg', 'friction', 'young_pa'):
+            if not RANGES[key][0] <= config['sock'][key] <= RANGES[key][1]:
+                raise ValueError('Sock parameter outside curriculum: '+key)
+        if (config['bin']['height_m'] not in RANGES['basket_heights_m'] or
+            len(config['bin']['inner_half_size_m']) != 2 or
+            not .10 <= config['bin']['inner_half_size_m'][0] <= .225 or
+            not .085 <= config['bin']['inner_half_size_m'][1] <= .20 or
+            config['bin']['shape'] not in ('round', 'rectangular') or
+            (config['bin']['shape'] == 'round' and config['bin']['inner_half_size_m'][0] != config['bin']['inner_half_size_m'][1]) or
+            not .006 <= config['sock']['initial_thickness_m'] <= .012 or
+            abs(config['sock']['yaw_rad']) > math.radians(20)):
+            raise ValueError('Scene outside the validated curriculum bounds')
     camera = dict(config["camera"])
     if camera_intrinsics:
         camera.update(camera_intrinsics)
@@ -282,7 +314,7 @@ def build_mjcf(mesh_dir=None, *, scene="sock", sock_position=(.33, 0., .015), bi
                           contype='4', conaffinity='7', friction='.8 .005 .0001',
                           rgba='.85 .65 .22 1' if scene == 'cookie' else '.25 .5 .85 1')
         else:
-            if scene == 'cloth':
+            if scene == 'cloth' and not scene_parameters:
                 config['sock'].update(length_m=.12, width_m=.045, mass_kg=.018)
             _sock(world, config, sock_position)
         c = config["bin"]
@@ -301,8 +333,21 @@ def build_mjcf(mesh_dir=None, *, scene="sock", sock_position=(.33, 0., .015), bi
                  ("right", [0,-hy-thick/2,height/2], [hx+thick,thick/2,height/2]),
                  ("front", [hx+thick/2,0,height/2], [thick/2,hy,height/2]),
                  ("back", [-hx-thick/2,0,height/2], [thick/2,hy,height/2])]
-        for name, pos, size in specs:
-            ET.SubElement(bin_body, "geom", name=f"bin_{name}", type="box", pos=_s(pos), size=_s(size), contype="2", conaffinity="5", rgba=".15 .5 .55 1")
+        if c.get('shape') == 'round' and scene in ('sock', 'cloth'):
+            ET.SubElement(bin_body, 'geom', name='bin_bottom', type='cylinder',
+                pos=_s([0,0,(thick-backing)/2]), size=_s([hx+thick,(thick+backing)/2]),
+                contype='2', conaffinity='5', rgba='.15 .5 .55 1')
+            for segment in range(24):
+                angle = math.pi/2+segment*2*math.pi/24
+                radius = hx+thick/2
+                name = 'bin_left' if segment == 0 else f'bin_wall_{segment}'
+                ET.SubElement(bin_body, 'geom', name=name, type='box',
+                    pos=_s([radius*math.cos(angle), radius*math.sin(angle), height/2]),
+                    size=_s([thick/2, (hx+thick)*math.tan(math.pi/24), height/2]),
+                    quat=_s(_rpy_quat([0,0,angle])), contype='2', conaffinity='5', rgba='.15 .5 .55 1')
+        else:
+            for name, pos, size in specs:
+                ET.SubElement(bin_body, "geom", name=f"bin_{name}", type="box", pos=_s(pos), size=_s(size), contype="2", conaffinity="5", rgba=".15 .5 .55 1")
     if scene == "navigation":
         for i, (x,y) in enumerate(((1.,-.4), (-.6,.4), (.65,-.7))):
             ET.SubElement(world, "geom", name=f"obstacle_{i}", type="box", pos=f"{x} {y} .16", size=".1 .1 .16", contype="2", conaffinity="5", rgba=".7 .5 .3 1")

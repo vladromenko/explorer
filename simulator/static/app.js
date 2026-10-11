@@ -5,7 +5,7 @@ let token = '', session = null, latest = null, selectedJoint = 0, arm = Array(6)
 const jointNames = ['Поворот основания', 'Подъём плеча', 'Локоть', 'Наклон кисти', 'Поворот кисти', 'Захват'];
 const jobNames = {trials: 'Попытки', train: 'Обучение ACT', validate: 'Проверка', export: 'Пакет переноса', night: 'Ночная очередь', deploy: 'Загрузка на Jetson', assistant: 'Ваша учебная задача'};
 const statusNames = {running: 'в работе', complete: 'готово', failed: 'ошибка', exporting: 'подготовка данных', training: 'обучение', validating: 'проверка', validated_simulation: 'проверено по записям', trained_simulation_unvalidated: 'обучено; успешность задачи не подтверждена', cancelled: 'остановлено', queued: 'ожидает', paused: 'приостановлено', interrupted: 'прервано; можно продолжить', corrupt: 'файл повреждён'};
-const phases = {approach: 'Подведите захват к предмету', reach: 'Подведите захват к предмету', grasp: 'Замкните захват', lift: 'Поднимите предмет', transport: 'Перенесите к корзине', place: 'Отпустите в корзину', success: 'Объект доставлен', navigate_source: 'Едет в соседнюю комнату', navigate_destination: 'Перевозит предмет через дверь', idle: 'Готов к вашему показу', align_base: 'Подъезжает к объекту', lower: 'Опускает захват', close: 'Замыкает захват', policy: 'Обученная политика пробует выполнить задачу'};
+const phases = {approach: 'Подведите захват к предмету', reach: 'Подведите захват к предмету', grasp: 'Замкните захват', lift: 'Поднимите предмет', transport: 'Перенесите к корзине', place: 'Отпустите в корзину', release_retreat: 'Отводит раскрытый захват', release_unhook: 'Поворачивает кисть, чтобы освободить ткань', inspect_floor: 'Осматривает пол', success: 'Объект доставлен', navigate_source: 'Едет в соседнюю комнату', navigate_destination: 'Перевозит предмет через дверь', idle: 'Готов к вашему показу', align_base: 'Подъезжает к объекту', lower: 'Опускает захват', close: 'Замыкает захват', policy: 'Обученная политика пробует выполнить задачу'};
 function notify(text, error = false) { $('notice').textContent = text; $('notice').classList.toggle('error', error); $('notice').classList.remove('hidden'); clearTimeout(notify.timer); notify.timer = setTimeout(() => $('notice').classList.add('hidden'), 4500); }
 async function api(path, body) {
   const options = body === undefined ? {} : {method: 'POST', headers: {'Content-Type': 'application/json', 'X-Explorer-Sim-Token': token}, body: JSON.stringify(body)};
@@ -61,6 +61,7 @@ function showResult(result) {
   if (typeof result.validation_mae === 'number') pieces.push(`Ошибка по записям: ${result.validation_mae.toFixed(3)}`);
   if (result.state || result.status) pieces.push(statusNames[result.state || result.status] || result.state || result.status);
   if (result.physics_validated === false) pieces.push('Динамика настоящего робота ещё не идентифицирована');
+  if (result.scene_coverage) pieces.push(`Высоты корзин: ${result.scene_coverage.basket_heights_m.map(h=>Math.round(h*100)+' см').join(', ') || 'нет данных'}`);
   if (result.message) pieces.push(result.message);
   return pieces.join(' · ');
 }
@@ -85,6 +86,7 @@ function renderNight(plans) {
   const plan=plans[0]; $('night-resume').classList.toggle('hidden', !plan || !['paused','interrupted'].includes(plan.state));
   if (!plan) return;
   const heading=document.createElement('p'); heading.textContent=`Очередь ${plan.id}: ${statusNames[plan.state] || plan.state} · ${plan.reason || ''}`; root.append(heading);
+  if(plan.options?.scene_profile==='sock_variants_v1'){const details=document.createElement('p');details.textContent=`Разные носки и корзины, включая круглую 25 × 30 см · ${plan.options.count} начальных попыток · ${plan.options.steps} шагов обучения · до ${plan.hours} ч`;root.append(details);}
   plan.tasks.forEach(task=>{const row=document.createElement('p'); const report=task.stages.validate; const stateLabel=task.state==='complete'?(task.simulation_qualified?'проверено в симуляции':'расчёт завершён; навык ещё не прошёл проверку'):(statusNames[task.state] || task.state); row.textContent=`${({sock_basket:'Носок → корзина',cookie_delivery:'Печенье → поднос',toy_box:'Кубик → коробка',cloth_basket:'Ткань → бельё'})[task.task_id] || task.task_id}: ${stateLabel} · ${report ? 'Доставок '+report.successes+'/'+report.episodes : task.error || 'Ожидает проверки'}`; root.append(row);});
 }
 let currentGoal = null, goalSignature = '', selectedGoalId = null, goalHistorySignature = '';
@@ -123,7 +125,7 @@ function renderGoals(goals) {
   $('request-deploy').classList.toggle('hidden',!downloadable);$('request-download').classList.toggle('hidden',!downloadable);
   $('request-download').href='/api/goals/'+encodeURIComponent(goal.id)+'/package';
 }
-async function languageRequest(autoTrain,reply=false){zeroControls();const text=$('learning-request').value.trim();if(!text)throw new Error('Напишите, чему научить робота');const parent=reply?currentGoal.id:null;await api('/api/jobs/assistant',{request_text:text,goal_id:parent,auto_train:autoTrain,count:Number($('request-attempts').value),steps:Number($('request-steps').value),hours:Number($('request-hours').value),batch_size:16,seed:Math.floor(Math.random()*1000000)});selectedGoalId=null;goalSignature='';notify('Помощник разбирает просьбу на этом Mac');await poll();}
+async function languageRequest(autoTrain,reply=false){zeroControls();const text=$('learning-request').value.trim();if(!text)throw new Error('Напишите, чему научить робота');const parent=reply?currentGoal.id:null;await api('/api/jobs/assistant',{request_text:text,goal_id:parent,auto_train:autoTrain,scene_profile:'sock_variants_v1',count:Number($('request-attempts').value),steps:Number($('request-steps').value),hours:Number($('request-hours').value),batch_size:16,seed:Math.floor(Math.random()*1000000)});selectedGoalId=null;goalSignature='';notify('Помощник разбирает просьбу на этом Mac');await poll();}
 $('request-history').addEventListener('change',()=>{selectedGoalId=$('request-history').value;goalSignature='';renderGoals(latest?.learning_goals || []);if(currentGoal?.plan)$('learning-request').value=currentGoal.plan.request;});
 button('request-learn',()=>languageRequest(true));button('request-plan',()=>languageRequest(false));
 button('request-reply',()=>languageRequest(true,true));
@@ -132,7 +134,9 @@ button('request-partial',async()=>{if(!currentGoal)throw new Error('Сначал
 button('request-resume',async()=>{await api('/api/jobs/assistant',{goal_id:currentGoal.id,allow_partial:!currentGoal.plan.fully_supported});await poll();});
 button('request-deploy',async()=>{await api('/api/jobs/deploy',{goal_id:currentGoal.id});notify('Передача моделей этой просьбы началась; робот не двигается');await poll();});
 document.querySelectorAll('[data-request]').forEach(button=>button.addEventListener('click',()=>{$('learning-request').value=button.dataset.request;$('learning-request').focus();}));
-button('night-start',async()=>{zeroControls();const tasks=[...document.querySelectorAll('.night-tasks input:checked')].map(input=>input.value);await api('/api/jobs/night',{task_ids:tasks,count:Number($('night-attempts').value),steps:Number($('night-steps').value),hours:Number($('night-hours').value),batch_size:16,seed:Math.floor(Math.random()*1000000)});notify('Ночная очередь запущена');await poll();});
+async function checkNight(){const result=await api('/api/night-readiness');$('night-ready').textContent=result.ready?`Готов: ${result.device}, свободно ${result.free_gib} ГБ, модели установлены`:'Не готов: '+result.blocked_by.join('; ');if(!result.ready)throw new Error(result.blocked_by.join('; '));return result;}
+button('night-check',checkNight);
+button('night-start',async()=>{zeroControls();await checkNight();const tasks=[...document.querySelectorAll('.night-tasks input:checked')].map(input=>input.value);await api('/api/jobs/night',{task_ids:tasks,scene_profile:$('night-varied').checked?'sock_variants_v1':'baseline',count:Number($('night-attempts').value),steps:Number($('night-steps').value),hours:Number($('night-hours').value),batch_size:16,seed:Math.floor(Math.random()*1000000)});notify('Ночная очередь запущена');await poll();});
 button('night-resume',async()=>{const plan=(latest.night_batches || [])[0];await api('/api/jobs/night',{plan_id:plan.id});await poll();});
 button('deploy',async()=>{await api('/api/jobs/deploy',{});notify('Загрузка началась; движений не будет');await poll();});
 $('task-select').addEventListener('change',async()=>{zeroControls();await api('/api/reset',{seed:100,difficulty:$('difficulty').value,task_id:$('task-select').value});episodeSignature='';await poll();await updateEpisodes();});

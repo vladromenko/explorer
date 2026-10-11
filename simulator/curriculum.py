@@ -41,6 +41,18 @@ def save_json(path, value):
     temporary.replace(path)
 
 
+def report_passes(report):
+    passed = (report.get('heldout_independent') is True and report.get('episodes', 0) >= 10
+              and report.get('successes') == report.get('episodes'))
+    if report.get('scene_profile') == 'sock_variants_v1':
+        from .domain_randomization import scene_coverage
+        coverage = scene_coverage(report.get('results', []))
+        passed = (passed and coverage['all_height_categories_present']
+                  and coverage['distinct_seeds'] == report['episodes']
+                  and coverage['user_basket_25cm_diameter_30cm_rim_episodes'] > 0)
+    return passed
+
+
 class NightQueue:
     """A single persisted batch; completed stages are immutable on resume.
 
@@ -76,7 +88,9 @@ class NightQueue:
                 output.append(dict(id=path.stem,created=path.stat().st_mtime,state='corrupt',tasks=[],reason='Повреждён файл очереди; данные сохранены: '+str(path)))
         return sorted(output,key=lambda item:item['created'],reverse=True)
 
-    def create(self, tasks, count, steps, batch_size, hours, seed, rounds=3):
+    def create(self, tasks, count, steps, batch_size, hours, seed, rounds=3, scene_profile='baseline'):
+        if scene_profile not in ('baseline', 'sock_variants_v1'):
+            raise ValueError('Неизвестный профиль сцен')
         if not tasks or len(tasks) != len(set(tasks)):
             raise ValueError('Выберите разные задачи для обучения')
         for task in tasks:
@@ -84,7 +98,7 @@ class NightQueue:
         if not 2 <= count <= 1000 or not 1 <= steps <= 200000 or not 8 <= batch_size <= 32 or not 0 < hours <= 24 or not 1<=rounds<=5:
             raise ValueError('Параметры ночного задания вне диапазона')
         value = dict(id=secrets.token_hex(6), created=time.time(), state='queued', hours=hours,
-                     options=dict(count=count, steps=steps, batch_size=batch_size, seed=seed, rounds=rounds),
+                     options=dict(count=count, steps=steps, batch_size=batch_size, seed=seed, rounds=rounds, scene_profile=scene_profile),
                      tasks=[dict(task_id=task, stages={}, history=[], round=1, state='queued') for task in tasks],
                      automatic_hardware_execution=False)
         save_json(self.folder / (value['id']+'.json'), value)
@@ -127,7 +141,7 @@ class NightQueue:
                                     break
                         if task['state'] != 'failed':
                             report=task['stages']['validate']
-                            passed=report.get('heldout_independent') is True and report.get('episodes',0)>=10 and report.get('successes')==report.get('episodes')
+                            passed=report_passes(report)
                             task.setdefault('history',[]).append(copy.deepcopy(task['stages']))
                             if passed or task['round']==value['options'].get('rounds',1):
                                 task.update(training_complete=True,simulation_qualified=passed)
@@ -157,7 +171,7 @@ class NightQueue:
                                         break
                         if task['state']!='failed':
                             report=task['stages']['validate']
-                            task.update(state='complete',simulation_qualified=report.get('heldout_independent') is True and report.get('episodes',0)>=10 and report.get('successes')==report.get('episodes'))
+                            task.update(state='complete',simulation_qualified=report_passes(report))
                             save()
             value.update(state='complete', failed_tasks=sum(t['state']=='failed' for t in value['tasks']))
         except InterruptedError as exc:

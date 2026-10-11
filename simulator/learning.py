@@ -255,7 +255,7 @@ def training_config(folder, steps, device, batch_size=16, seed=1000):
             normalization_mapping={"VISUAL": "MEAN_STD", "STATE": "MEAN_STD", "ACTION": "MEAN_STD", "ENV": "IDENTITY"},
             output_features={"action": {"type": "ACTION", "shape": [9]}}),
         output_dir=str(folder / "model"), batch_size=batch_size, num_workers=2, steps=steps,
-        save_freq=min(100, steps), log_freq=min(10, steps), env_eval_freq=0,
+        save_freq=min(steps, max(100, steps//10)), log_freq=min(10, steps), env_eval_freq=0,
         wandb=dict(enable=False), seed=seed)
 
 
@@ -340,6 +340,7 @@ def create_bundle(folder, state):
         training_goal=state.get("training_goal", "successful_simulation_imitation"),
         training_profile=state.get("training_profile", "compact_act_v1"),
         warm_start=state.get("warm_start"),
+        scene_profile=state.get('scene_profile','baseline'), scene_coverage=state.get('scene_coverage'),
         physics_acceptance=False, physical_success_verified=False, autonomous_motion_on_registration=False)
     write_json(folder / "bundle.json", bundle)
     read_bundle(folder)
@@ -458,6 +459,13 @@ def train_job(job_folder, episode_folders, steps=3000, python_executable=None, d
         if state["runtime_versions"]["lerobot"] != "0.6.1":
             raise ValueError("Use the Explorer simulator's pinned LeRobot 0.6.1 environment")
         provenance = [inspect_episode(item) for item in folders]
+        profiles = {item[0].get('scene_profile', 'baseline') for item in provenance}
+        if len(profiles) != 1:
+            raise ValueError('Do not mix legacy and randomized scene profiles in one model')
+        state['scene_profile'] = next(iter(profiles))
+        if state['scene_profile'] == 'sock_variants_v1':
+            from .domain_randomization import scene_coverage
+            state['scene_coverage'] = scene_coverage([item[0] for item in provenance])
         if not diagnostic_only and any(item[0].get("physics_verified_success", item[0].get("success")) is not True for item in provenance):
             raise ValueError("ACT task training requires successful simulator demonstrations; failed attempts remain diagnostic data")
         state["dataset_fingerprint"] = hashlib.sha256(json.dumps([item[3] for item in provenance], sort_keys=True).encode()).hexdigest()

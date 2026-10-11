@@ -67,15 +67,23 @@ class ExplorerEnv(gym.Env):
             self.overview_renderer.close()
             self.overview_renderer = None
         varied = options.get("difficulty") == "varied"
+        from .domain_randomization import PROFILE, sample_sock_scene
+        profile = options.get('scene_profile', 'baseline')
+        if profile not in ('baseline', PROFILE):
+            raise ValueError('Unknown scene profile')
+        sampled = sample_sock_scene(int(seed or 0)) if profile == PROFILE and self.scene in ('sock', 'cloth') else None
         sock_default = [self.np_random.uniform(.28, .36), self.np_random.uniform(-.025, .025), .015] if varied else [.31, 0., .015]
         bin_default = [.44, self.np_random.uniform(.20, .26), 0.] if varied else [.44, .24, 0.]
         if spec['rooms']:
             sock_default = [self.np_random.uniform(1.02,1.10),self.np_random.uniform(-.025,.025),.025]
             bin_default = [.35,.25,0.]
+        if sampled:
+            sock_default, bin_default = sampled['sock_position'], sampled['bin_position']
         self.sock_position = np.array(options.get("sock_position", sock_default), float)
         self.bin_position = np.array(options.get("bin_position", bin_default), float)
         self.model, self.data = load_model(mesh_dir=self.mesh_dir, scene=self.scene,
-            sock_position=self.sock_position, bin_position=self.bin_position)
+            sock_position=self.sock_position, bin_position=self.bin_position,
+            scene_parameters=sampled['parameters'] if sampled else None)
         self.domain_variation = {"enabled": varied, "kind": "appearance_and_placement"}
         if varied:
             # Visual variation does not pretend to identify real contact physics.
@@ -85,6 +93,14 @@ class ExplorerEnv(gym.Env):
             self.model.light_diffuse[:] *= self.np_random.uniform(.65, 1.15)
             self.model.geom("floor").rgba[:3] = self.np_random.uniform(.12, .38, 3)
             self.domain_variation["sock_rgb"] = color.tolist()
+        if sampled:
+            self.domain_variation = dict(sampled, enabled=True, kind='bounded_geometry_material_appearance_placement')
+            self.model.flex_rgba[:, :3] = sampled['sock_rgb']
+            self.model.light_diffuse[:] *= sampled['lighting_scale']
+            self.model.geom('floor').rgba[:3] = sampled['floor_rgb']
+            for index in range(self.model.ngeom):
+                if self.model.geom(index).name.startswith('bin_'):
+                    self.model.geom(index).rgba[:3] = sampled['basket_rgb']
         self.model.vis.global_.offwidth = 800
         self.model.vis.global_.offheight = 600
         self.joint_q = np.array([self.model.joint(n).qposadr[0] for n in ARM_JOINTS])
@@ -95,8 +111,9 @@ class ExplorerEnv(gym.Env):
             if (mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_BODY, i) or "").startswith("sock_")],dtype=int)
         self.rigid_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, 'task_object')
         if self.scene!='empty':
-            self.bin_half_size = self.model.geom('bin_bottom').size[:2]-model_config()['bin']['wall_thickness_m']
+            self.bin_half_size = np.array(sampled['parameters']['bin']['inner_half_size_m']) if sampled else self.model.geom('bin_bottom').size[:2]-model_config()['bin']['wall_thickness_m']
             self.bin_height = 2*self.model.geom('bin_left').size[2]
+            self.bin_shape = sampled['parameters']['bin']['shape'] if sampled else 'rectangular'
         if self.rigid_id >= 0:
             self.sock_ids = np.array([self.rigid_id])
         self.command = np.array([90., 90., 90., 90., 90., 30., 0., 0., 0.])
@@ -216,7 +233,7 @@ class ExplorerEnv(gym.Env):
             self.ever_lifted = self.ever_lifted or self.lift_hold_s >= 1.
             half = self.bin_half_size
             relative = points[:, :2]-self.bin_position[:2]
-            inside_fraction = np.mean(np.all(np.abs(relative) < half, axis=1))
+            inside_fraction = np.mean(np.linalg.norm(relative, axis=1) < half[0]) if self.bin_shape == 'round' else np.mean(np.all(np.abs(relative) < half, axis=1))
             height = self.bin_height
             within_height = np.all((points[:, 2] >= self.bin_position[2]+.003)
                                    & (points[:, 2] < self.bin_position[2]+height+.012))
@@ -340,7 +357,7 @@ class ExplorerEnv(gym.Env):
             raise ValueError(f"IK: цель недостижима, остаток {error:.3f} м")
         return np.r_[angles, gripper]
 
-    def make_episode_trial(self, output_dir, seed=0, progress=None, policy=None, task_id='sock_basket'):
+    def make_episode_trial(self, output_dir, seed=0, progress=None, policy=None, task_id='sock_basket', scene_profile='baseline'):
         """Attempt real physical pickup/place; failed trials remain failed data.
 
         Teacher may inspect simulated object truth for curriculum generation.
@@ -355,8 +372,10 @@ class ExplorerEnv(gym.Env):
         spec = task_spec(task_id)
         rooms = spec['rooms']
         source = [rng.uniform(1.02, 1.10) if rooms else rng.uniform(.28, .36), rng.uniform(-.025,.025), .025 if spec['scene']=='cube' else .015]
-        self.reset(seed=seed, options={"task_id": task_id, "sock_position": source,
-            "bin_position": [.35, .25, 0.] if rooms else [.44, .23, 0.]})
+        options = dict(task_id=task_id, scene_profile=scene_profile)
+        if scene_profile == 'baseline' or spec['scene'] not in ('sock', 'cloth'):
+            options.update(sock_position=source, bin_position=[.35, .25, 0.] if rooms else [.44, .23, 0.])
+        self.reset(seed=seed, options=options)
         manifest = {"id": folder.name, "source": "simulation", "task": spec['title'], "task_id": task_id,
             "task_spec": spec, "teacher_navigation_source": "simulated_pose_only" if rooms else "local_pose_only",
             "action_alignment": "same_row_pre_action", "physics_validated": False,
@@ -364,6 +383,8 @@ class ExplorerEnv(gym.Env):
             "sample_contract_sha256": CONTRACT_SHA256, "sample_contract": SAMPLE_CONTRACT,
             "generator": "policy" if policy is not None else "ground_truth_teacher",
             "model_provenance": model_metadata(), "started_at": time.time()}
+        manifest['scene_profile'] = scene_profile if spec['scene'] in ('sock', 'cloth') else 'baseline'
+        manifest['domain_variation'] = self.domain_variation
         steps = 0
         handle = (folder / "samples.jsonl").open("w")
         def tick(action):
@@ -472,7 +493,11 @@ class ExplorerEnv(gym.Env):
                 closed = self.solve_ik([*center[:2], grasp_height], lowered[:5], gripper=170.)
                 arm_to(closed, duration=2.)
                 self.phase = "lift"
-                lift_goal = [self.base_pose()[0]+.23, self.base_pose()[1], .15] if rooms else [*center[:2], .22]
+                diversified = manifest['scene_profile'] == 'sock_variants_v1'
+                # A common carry height clears every rim in this curriculum;
+                # the actor need not infer a distant basket before pickup.
+                lift_height = self.bin_position[2]+.42 if diversified else .22
+                lift_goal = [self.base_pose()[0]+.23, self.base_pose()[1], .15] if rooms else [*center[:2], lift_height]
                 lifted = self.solve_ik(lift_goal, closed[:5], gripper=170., downward=rooms)
                 arm_to(lifted)
                 for _ in range(30):
@@ -487,6 +512,12 @@ class ExplorerEnv(gym.Env):
                     self.phase = 'transport'
                 # Base carries the held object; the arm never drags cloth at floor height.
                 target_base = self.bin_position[:2]-(self.jaw_center()[:2]-np.array(self.base_pose()[:2]))
+                if diversified:
+                    # Leave the chassis hull outside the front wall. The wrist
+                    # can pitch for an elevated rim instead of insisting on an
+                    # unreachable vertical-down pose. IK tolerance is unchanged.
+                    stand_off = self.bin_half_size[0]+.008+.106+.020
+                    target_base = self.bin_position[:2]-[stand_off, 0.]
                 for _ in range(200):
                     pose = np.array(self.base_pose())
                     error = target_base-pose[:2]
@@ -497,9 +528,15 @@ class ExplorerEnv(gym.Env):
                     if np.linalg.norm(error) < .01:
                         break
                 self.phase = "place"
-                placement = self.solve_ik([*self.bin_position[:2], .14], lifted[:5], gripper=170., downward=True)
+                release_height = max(.14, self.bin_position[2]+self.bin_height+.035) if diversified else .14
+                # For a wide laundry basket, drop inside the near edge instead
+                # of demanding that this short arm reach its distant centre.
+                drop_xy = self.bin_position[:2].copy()
+                if diversified:
+                    drop_xy[0] -= max(0., self.bin_half_size[0]-.09)
+                placement = self.solve_ik([*drop_xy, release_height], lifted[:5], gripper=170., downward=not diversified)
                 arm_to(placement)
-                opened = self.solve_ik([*self.bin_position[:2], .14], placement[:5], gripper=30., downward=True)
+                opened = self.solve_ik([*drop_xy, release_height], placement[:5], gripper=30., downward=not diversified)
                 arm_to(opened, 2.)
                 for _ in range(60):
                     tick(np.r_[opened, 0., 0., 0.])
@@ -513,6 +550,20 @@ class ExplorerEnv(gym.Env):
                 opened = retreat
                 for _ in range(160):
                     tick(np.r_[opened, 0., 0., 0.])
+                if diversified and not self.task_success:
+                    # A fabric loop may drape over one rounded fingertip after
+                    # opening. Try a bounded wrist roll; success still requires
+                    # real release and settling, with every command recorded.
+                    self.phase = 'release_unhook'
+                    reference = opened.copy()
+                    for roll in (15., -15., 0.):
+                        unhook = reference.copy()
+                        unhook[4] = np.clip(reference[4]+roll, LOW[4], HIGH[4])
+                        arm_to(unhook, 1.)
+                        for _ in range(40):
+                            tick(np.r_[unhook, 0., 0., 0.])
+                        if self.task_success:
+                            break
             manifest["success"] = self.task_success
             manifest["outcome"] = self.state()["task"]
             manifest["physics_outcome_diagnostics"] = getattr(self, "placement_diagnostics", {})

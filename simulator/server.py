@@ -183,6 +183,7 @@ class JobRequest(BaseModel):
     goal_id: str | None = Field(default=None, pattern='^[0-9a-f]{12}$')
     auto_train: bool = True
     allow_partial: bool = False
+    scene_profile: str = Field(default='baseline', pattern='^(baseline|sock_variants_v1)$')
 
     @field_validator('episode_ids')
     @classmethod
@@ -269,8 +270,8 @@ class Runtime:
                    report.get('model_weights_sha256') == bundle['checkpoint_sha256']['model.safetensors'] and
                    report.get('model_checkpoint_sha256',bundle['checkpoint_sha256']) == bundle['checkpoint_sha256'])
         checked = report if matches else {}
-        passed = (checked.get('heldout_independent') is True and checked.get('episodes', 0) >= 10 and
-                  checked.get('successes', 0) == checked.get('episodes'))
+        from .curriculum import report_passes
+        passed = report_passes(checked)
         self.model_info = {'id': self.latest_job_folder.name, 'task_validated_simulation': passed,
                            'episodes': checked.get('episodes', 0), 'successes': checked.get('successes', 0),
                            'hardware_accepted': False}
@@ -609,7 +610,7 @@ class Runtime:
                     plan = grounded_plan(text, parsed, provenance)
                     goal = self.learning_goals.create(plan,dict(count=request.count,
                         steps=request.steps,batch_size=min(32,request.batch_size),hours=request.hours,
-                        seed=request.seed,rounds=request.rounds))
+                        seed=request.seed,rounds=request.rounds,scene_profile=request.scene_profile))
                     if previous:
                         goal['parent_id'] = previous['id']
                         self.learning_goals.save(goal)
@@ -640,7 +641,7 @@ class Runtime:
                 if request.plan_id:
                     plan = self.night_queue.get(request.plan_id)
                 else:
-                    plan = self.night_queue.create(request.task_ids,request.count,request.steps,request.batch_size,request.hours,request.seed,request.rounds)
+                    plan = self.night_queue.create(request.task_ids,request.count,request.steps,request.batch_size,request.hours,request.seed,request.rounds,request.scene_profile)
                 job['plan_id'] = plan['id']
                 if request.goal_id:
                     goal = self.learning_goals.get(request.goal_id)
@@ -679,7 +680,7 @@ class Runtime:
                         raise InterruptedError('На диске осталось меньше 8 ГБ; освободите место и продолжите очередь')
                     folder = self.data_root / 'demonstrations' / f"trial-{job['id']}-{index:04d}"
                     progress(f'Попытка {index + 1} из {request.count}', progress=100 * index / request.count)
-                    summary = self.on_owner(lambda folder=folder, index=index: self.physics_task(lambda: self.env.make_episode_trial(folder, request.seed + index, progress=physics_progress, **({'task_id':request.task_id} if request.task_id!='sock_basket' else {}))))
+                    summary = self.on_owner(lambda folder=folder, index=index: self.physics_task(lambda: self.env.make_episode_trial(folder, request.seed + index, progress=physics_progress, scene_profile=request.scene_profile, **({'task_id':request.task_id} if request.task_id!='sock_basket' else {}))))
                     summaries.append(summary)
                     current_state = self.on_owner(self.env.state)
                     with self.lock:
@@ -688,6 +689,9 @@ class Runtime:
                         self.command = Control()
                         self.command_at = 0.
                 result = {'episodes': len(summaries), 'physics_verified_successes': sum(bool(item.get('physics_verified_success', item.get('success', False))) for item in summaries), 'summaries': [{key: item.get(key) for key in ('id', 'success', 'physics_verified_success', 'frames', 'error', 'outcome')} for item in summaries]}
+                if request.scene_profile == 'sock_variants_v1' and request.task_id in ('sock_basket', 'cloth_basket'):
+                    from .domain_randomization import scene_coverage
+                    result['scene_coverage'] = scene_coverage(summaries)
             elif job['kind'] == 'train':
                 episodes = sorted(path.parent for path in (self.data_root / 'demonstrations').glob('*/episode.json'))
                 if request.episode_ids is not None:
@@ -700,7 +704,8 @@ class Runtime:
                 successful = []
                 for episode in episodes:
                     metadata = json.loads((episode / 'episode.json').read_text(encoding='utf8'))
-                    if metadata.get('task_id','sock_basket')==request.task_id and metadata.get('physics_verified_success', metadata.get('success', False)):
+                    profile_matches = request.task_id not in ('sock_basket', 'cloth_basket') or metadata.get('scene_profile','baseline') == request.scene_profile
+                    if metadata.get('task_id','sock_basket')==request.task_id and profile_matches and metadata.get('physics_verified_success', metadata.get('success', False)):
                         successful.append(episode)
                 episodes = successful
                 if not episodes:
@@ -734,10 +739,14 @@ class Runtime:
                         if is_cancelled():
                             raise InterruptedError('Проверка остановлена')
                         progress(f'Проверка сцены {index + 1} из {request.count}', progress=100 * index / request.count)
-                        summary = self.env.make_episode_trial(output / f'heldout-{index:04d}', seed=seed, policy=actor, progress=physics_progress, **({'task_id':request.task_id} if request.task_id!='sock_basket' else {}))
-                        results.append({key: summary.get(key) for key in ('id', 'success', 'error', 'outcome')})
+                        summary = self.env.make_episode_trial(output / f'heldout-{index:04d}', seed=seed, policy=actor, progress=physics_progress, scene_profile=bundle.get('scene_profile','baseline'), **({'task_id':request.task_id} if request.task_id!='sock_basket' else {}))
+                        results.append({key: summary.get(key) for key in ('id', 'success', 'error', 'outcome', 'domain_variation')})
                     from simulator.explorer_model import model_metadata
                     report = {'validation_kind': 'closed_loop_policy', 'task_id':request.task_id, 'task_spec':task_spec(request.task_id), 'episodes': len(results), 'successes': sum(bool(item['success']) for item in results), 'physics_validated': False, 'real_hardware_accepted': False, 'results': results, 'environment_provenance': model_metadata(), **seed_plan}
+                    if bundle.get('scene_profile') == 'sock_variants_v1':
+                        from .domain_randomization import scene_coverage
+                        report['scene_coverage'] = scene_coverage(results)
+                        report['scene_profile'] = bundle['scene_profile']
                     (output / 'validation.json').write_text(json.dumps(jsonable(report), ensure_ascii=False, indent=2), encoding='utf8')
                     return report
                 result = self.on_owner(lambda: self.physics_task(validate_rollouts))
@@ -924,6 +933,11 @@ def create_app(env_factory=None, data_root=DATA_ROOT, learning_module=None, star
         if kind not in {'trials', 'train', 'validate', 'export', 'night', 'deploy', 'assistant'}:
             raise HTTPException(404, 'Неизвестное задание')
         return request.app.state.runtime.launch_job(kind, command)
+
+    @app.get('/api/night-readiness')
+    def night_readiness(request: Request):
+        from .preflight import night_readiness
+        return night_readiness(request.app.state.runtime.data_root)
 
     @app.get('/api/package')
     def package(request: Request):
