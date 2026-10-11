@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import pytest
 from grounded_targets import GroundedTargets
+from grounded_targets import StationaryDepthTarget
 
 
 def frame(stamp=10., shift=0):
@@ -56,7 +57,28 @@ def test_reacquisition_rejects_moved_or_unlocalized_hypothesis():
     tracker = GroundedTargets()
     tracker.install("c"*32, frame(), frame(10.1, 20), recognized(), now=10.1)
     assert not tracker.targets
+
     item = recognized()[0]
     item["position"] = None
     tracker.install("d"*32, frame(), frame(10.1), [item], now=10.1)
     assert not tracker.targets
+
+
+def test_depth_reobservation_never_follows_a_moving_observer_or_survives_occlusion():
+    original=frame()
+    original["observer_key"]=("boot",(90,90,30,0))
+    target=StationaryDepthTarget(original,recognized()[0]["bbox"])
+    current=frame(10.1)
+    current["observer_key"]=original["observer_key"]
+    observation=target.update(current)
+    assert observation["point_camera"][2] == pytest.approx(.47)
+    assert observation["association_fraction"] is None
+    assert observation["object_position_uncertainty_m"] is None
+    current=frame(10.2)
+    current["observer_key"]=("boot",(90,91,30,0))
+    with pytest.raises(ValueError,match="Observer moved"):
+        target.update(current)
+    current["observer_key"]=original["observer_key"]
+    current["depth"][:]=.5
+    with pytest.raises(ValueError,match="separated object"):
+        target.update(current)

@@ -8,6 +8,28 @@ import numpy as np
 from delivery_vision import FeatureObject, reacquire_candidate
 
 
+class StationaryDepthTarget:
+    """Re-observe a texture-poor target only while the observer remains settled."""
+    def __init__(self, sample, box):
+        if sample.get("observer_key") is None:
+            raise ValueError("Texture-poor target requires a stationary observer")
+        self.sample, self.box = sample, list(box)
+        self.object_id = "depth-" + str(time.time_ns())
+
+    def update(self, sample):
+        if not float(self.sample["stamp"]) < float(sample["stamp"]) <= float(self.sample["stamp"]) + .4:
+            raise ValueError("Stationary depth target frame gap")
+        if sample.get("observer_key") != self.sample.get("observer_key"):
+            raise ValueError("Observer moved; texture-poor target needs new recognition")
+        evidence = reacquire_candidate(self.sample, sample, self.box)
+        self.sample = sample
+        position = evidence["position_camera"]
+        return {"point_camera": np.array([position[k] for k in ("x","y","z")]),
+            "association_fraction": None, "object_position_uncertainty_m": None,
+            "association_method": "stationary_RGBD_dense_appearance",
+            "appearance_correlation": evidence["appearance_correlation"]}
+
+
 class GroundedTargets:
     def __init__(self):
         self.targets = []
@@ -30,7 +52,12 @@ class GroundedTargets:
             if item.get("position") is not None and item.get("confidence", 0) >= .35:
                 try:
                     association = reacquire_candidate(reference, sample, item["bbox"])
-                    tracker = FeatureObject(sample, association["bbox"])
+                    try:
+                        tracker = FeatureObject(sample, association["bbox"])
+                    except ValueError as exc:
+                        if "insufficient visible tracking texture" not in str(exc):
+                            raise
+                        tracker = StationaryDepthTarget(sample, association["bbox"])
                     self.targets.append({"tracker": tracker, "box": np.array(item["bbox"], dtype=float),
                         "label": item.get("requested_label", item["label"]),
                         "model_label": item["label"], "confidence": item["confidence"],
@@ -49,10 +76,11 @@ class GroundedTargets:
         rows, surviving = [], []
         for item in self.targets:
             tracker = item["tracker"]
-            previous = np.median(tracker.points[:, 0], axis=0)
+            previous = None if isinstance(tracker,StationaryDepthTarget) else np.median(tracker.points[:, 0], axis=0)
             try:
                 observation = tracker.update(sample)
-                item["box"] += np.tile(np.median(tracker.points[:, 0], axis=0) - previous, 2)
+                if previous is not None:
+                    item["box"] += np.tile(np.median(tracker.points[:, 0], axis=0) - previous, 2)
                 h, w = sample["rgb"].shape[:2]
                 box = item["box"]
                 if not (0 <= box[0] < box[2] <= w and 0 <= box[1] < box[3] <= h):
@@ -66,7 +94,8 @@ class GroundedTargets:
                         "frame": str(sample["frame"])},
                     "association_fraction": observation["association_fraction"],
                     "position_uncertainty_m": observation["object_position_uncertainty_m"],
-                    "label_source": "GroundingDINO_hypothesis_reciprocal_RGBD_tracking",
+                    "label_source": "GroundingDINO_hypothesis",
+                    "association_method": observation.get("association_method","reciprocal_RGBD_features"),
                     "identity_verified": False, "motion_authorized": False})
                 surviving.append(item)
             except ValueError as exc:

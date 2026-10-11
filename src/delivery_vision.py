@@ -105,6 +105,7 @@ def reacquire_candidate(reference, current, bbox):
     if not math.isfinite(correlation) or correlation<.92:raise ValueError('Candidate appearance changed during recognition')
     return dict(bbox=list(bbox),image_stamp=float(current['stamp']),
                 previous_image_stamp=float(reference['stamp']),appearance_correlation=correlation,
+                position_camera=new["position"],depth_evidence=new["evidence"],
                 semantic_identity_verified=False,continuous_from_previous_image=False)
 
 
