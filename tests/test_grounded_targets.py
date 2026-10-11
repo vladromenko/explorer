@@ -74,7 +74,12 @@ def test_depth_reobservation_never_follows_a_moving_observer_or_survives_occlusi
     assert observation["point_camera"][2] == pytest.approx(.47)
     assert observation["association_fraction"] is None
     assert observation["object_position_uncertainty_m"] is None
-    current=frame(10.2)
+    repeated=frame(10.8)
+    repeated["observer_key"]=original["observer_key"]
+    assert target.update(repeated)["point_camera"][2] == pytest.approx(.47)
+    with pytest.raises(ValueError,match="frame gap"):
+        target.update(dict(repeated,stamp=13.))
+    current=frame(10.9)
     current["observer_key"]=("boot",(90,91,30,0))
     with pytest.raises(ValueError,match="Observer moved"):
         target.update(current)

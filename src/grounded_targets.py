@@ -52,7 +52,9 @@ class StationaryDepthTarget:
         return mask,np.median(xyz[mask],axis=0)
 
     def update(self, sample):
-        if not float(self.sample["stamp"]) < float(sample["stamp"]) <= float(self.sample["stamp"]) + .4:
+        # Independent read-only re-observations of an unchanged, settled view
+        # can bridge processing delay; this is not continuous motion feedback.
+        if not float(self.sample["stamp"]) < float(sample["stamp"]) <= float(self.sample["stamp"]) + 2.:
             raise ValueError("Stationary depth target frame gap")
         if sample.get("observer_key") != self.sample.get("observer_key"):
             raise ValueError("Observer moved; texture-poor target needs new recognition")
@@ -140,6 +142,7 @@ class GroundedTargets:
                     "position_uncertainty_m": observation["object_position_uncertainty_m"],
                     "label_source": "GroundingDINO_hypothesis",
                     "association_method": observation.get("association_method","reciprocal_RGBD_features"),
+                    "continuous_association": not isinstance(tracker,StationaryDepthTarget),
                     "identity_verified": False, "motion_authorized": False})
                 surviving.append(item)
             except ValueError as exc:
