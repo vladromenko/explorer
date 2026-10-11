@@ -1,13 +1,39 @@
 import math
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, MagicMock, patch
 import numpy as np
 
 from delivery_robot import DeliveryRobot, placement_zone, validated_places
 
 
 class DeliveryRobotTests(unittest.TestCase):
+    def test_raw_inspection_does_not_require_nms_box_to_have_depth(self):
+        whole = dict(label="sock", bbox=[20.,20.,100.,100.], confidence=.5,
+            position={"z": .3})
+        part = dict(label="sock", bbox=[20.,20.,90.,100.], confidence=.8, position=None)
+        finder = SimpleNamespace(start=Mock(return_value={"id": "search"}),
+            status=Mock(return_value={"id": "search", "phase": "ready", "busy": False,
+                "result": {"objects": [part], "raw_objects": [part, whole]}}))
+        sample = {"rgb": np.zeros((120,160,3), dtype=np.uint8)}
+        vision = SimpleNamespace(wait_snapshot=Mock(return_value=sample), make_tracker=Mock(),
+            start_tracker=Mock(), frames=[{}], latest=Mock(return_value={"grasp_xyz": [.24,0,.03]}))
+        arm = SimpleNamespace(reference=lambda: {"servo_deg": [90]*6})
+        missions = SimpleNamespace(maps=SimpleNamespace(pose=lambda: {"x":0.,"y":0.,"yaw":0.}))
+        robot = DeliveryRobot(".", missions, arm, None, finder, vision, None)
+        robot.mid = "task"; robot.settings = {}; robot.permit = lambda mid: None
+        archive = MagicMock()
+        archive.__enter__.return_value = sample
+        with patch("delivery_robot.np.load", return_value=archive), patch(
+                "delivery_robot.reacquire_candidate", return_value={"bbox": whole["bbox"]}):
+            found = robot._detect_current("here", inspect_visibility=True)
+        self.assertIsNotNone(found)
+        vision.make_tracker.assert_called_once_with(sample, whole["bbox"])
+        self.assertFalse(found["semantic_identity_verified"])
+        vision.make_tracker.reset_mock()
+        self.assertIsNone(robot._detect_current("here"))
+        vision.make_tracker.assert_not_called()
+
     def test_lost_target_uses_active_views_before_retreat(self):
         calls = []
         found = iter([None, None, {"target": {"grasp_xyz": [.24, 0, .03]}}])

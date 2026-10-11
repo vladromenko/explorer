@@ -349,7 +349,7 @@ class DeliveryRobot:
                 raise ValueError('Поиск предмета не завершился: '+str(found.get('error','timeout')))
             objects=[o for o in found['result']['objects'] if o.get('position') and o.get('confidence',0)>=.35]
             if len(objects)>1 and not inspect_visibility:raise ValueError('Несколько похожих предметов: выбор для принятого сценария неоднозначен')
-            if objects:
+            if objects or inspect_visibility:
                 with np.load(self.root/'data/object-searches'/request['id']/'rgbd.npz',allow_pickle=False) as f:initial=dict(f)
                 if inspect_visibility:
                     height,width=initial["rgb"].shape[:2]
