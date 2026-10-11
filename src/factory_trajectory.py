@@ -142,7 +142,16 @@ def compile_path(start,goal,trajectory,model,motion=None):
             rows=np.asarray(trajectory[field],dtype=float)
             if rows.shape!=(len(times),5):raise ValueError('Incomplete MoveIt timed path')
             values=rows[:,order]*SIGNS
-            if field=='positions':values+=math.pi/2
+            if field=='positions':
+                values+=math.pi/2
+                # TOTG can return nextafter(-pi/2, -inf) for a 0-degree
+                # endpoint. Correct only conversion roundoff outside a bound;
+                # a real excursion still reaches TimedPath's strict rejection.
+                lower=np.radians([bound[0] for bound in HARD_LIMITS[:5]])
+                upper=np.radians([bound[1] for bound in HARD_LIMITS[:5]])
+                roundoff=16*np.finfo(float).eps*np.maximum(1.,np.maximum(abs(lower),abs(upper)))
+                values=np.where((values<lower)&(values>=lower-roundoff),lower,values)
+                values=np.where((values>upper)&(values<=upper+roundoff),upper,values)
             target.extend(np.column_stack([values,np.full(len(times),a[5] if field=='positions' else 0.)]))
         if not np.allclose(positions[0],a,atol=math.radians(.1)) or not np.allclose(positions[-1][:5],b[:5],atol=math.radians(.1)):
             raise ValueError('MoveIt endpoints disagree with current pose')

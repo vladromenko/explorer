@@ -102,3 +102,15 @@ class FactoryTrajectoryTests(unittest.TestCase):
         limits=Limits(np.array([-2.0]*2),np.array([2.0]*2),np.ones(2),np.ones(2),np.ones(2)*10)
         for q in (np.array([[0.,0.],[.1,.2],[.3,.3]]),np.array([[0.,0.],[.4,.4],[.3,.3]])):
             self.assertIsNone(_straight_retime([0.,1.,2.],q,np.zeros_like(q),np.zeros_like(q),limits))
+
+    def test_real_down_view_totg_roundoff_does_not_block_boundary_goal(self):
+        record=json.loads((Path(__file__).parent/"fixtures/totg-down-limit-20261011.json").read_text())
+        path=compile_path(record["start"],record["goal"],record["joint_trajectory"],self.model)
+        self.assertEqual(path["commands"][-1]["pose"],record["goal"])
+        self.assertTrue(all(0<=command["pose"][3]<=180 for command in path["commands"]))
+        self.assertEqual(path["source_waypoint_count"],len(record["joint_trajectory"]["times"]))
+        # This is deliberately tiny physically, but far beyond floating-point
+        # conversion error. It must never be silently clipped to the limit.
+        record["joint_trajectory"]["positions"][-1][3]-=1e-8
+        with self.assertRaisesRegex(ValueError,"soft limits"):
+            compile_path(record["start"],record["goal"],record["joint_trajectory"],self.model)
