@@ -50,8 +50,10 @@
     "dependency_check": true,
     "javascript_syntax": true,
     "shell_syntax": true,
-    "native_viewer_8_second_smoke": "passed before final interpreter relocation",
-    "final_native_UI_check": "Mac locked; unlock requested; server separately verified"
+    "native_viewer_8_second_smoke": "passed after final interpreter relocation and user unlock; exit code 0",
+    "final_native_UI_check": "passed after user unlocked Mac: old server terminated, application launched fresh server, panel and RGB/depth available",
+    "app_restart_server_pid": 87916,
+    "repeated_app_launch": "existing server reused"
   },
   "teacher": {
     "camera_first_episodes": 3,
