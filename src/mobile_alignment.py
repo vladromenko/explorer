@@ -2,13 +2,15 @@
 import math
 
 
-def reachable_correction(object_xyz, reachable, preferred_distance_m=.24):
+def reachable_correction(object_xyz, reachable, preferred_distance_m=.24, arrival_margin_m=0.):
     """Choose a base position using the complete arm approach/contact/lift test.
 
     This is geometry only. Nav2 must check the map and execute the base goal;
     after arrival the object must be detected again before arm execution.
     Sampling distances does not change any joint or collision limits.
     """
+    if not math.isfinite(arrival_margin_m) or not 0. <= arrival_margin_m <= .10:
+        raise ValueError("Invalid base arrival margin")
     initial = correction(object_xyz, preferred_distance_m)
     x, y, z = (float(value) for value in object_xyz)
     distance = initial["object_distance_m"]
@@ -19,7 +21,8 @@ def reachable_correction(object_xyz, reachable, preferred_distance_m=.24):
     choices.add(distance)
     distances = sorted(choices, key=lambda value: (abs(value - distance), abs(value - preferred_distance_m)))
     for target_distance in distances:
-        if .03 < target_distance <= 1. and reachable([target_distance, 0., z]):
+        samples = {target_distance, target_distance - arrival_margin_m, target_distance + arrival_margin_m}
+        if .03 < target_distance <= 1. and all(.03 < value <= 1. and reachable([value, 0., z]) for value in sorted(samples)):
             plan = correction(object_xyz, target_distance, bearing_tolerance_rad=0.)
             # A small correction still matters if the current IK failed. Do not
             # discard it using correction()'s ordinary 2.5 cm range tolerance.
@@ -30,7 +33,7 @@ def reachable_correction(object_xyz, reachable, preferred_distance_m=.24):
                     "direction": "forward" if delta > 0 else "backward"})
             if plan["actions"]:
                 return dict(plan, aligned=False, reobserve_required=True,
-                    reachability_checked=True, nominal_arm_geometry=True)
+                    reachability_checked=True, nominal_arm_geometry=True, arrival_margin_m=arrival_margin_m)
     raise ValueError("Нет позиции базы с достижимыми подходом, контактом и подъёмом предмета")
 
 def correction(object_xyz, desired_distance_m=.24, bearing_tolerance_rad=.12):

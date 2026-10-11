@@ -33,3 +33,11 @@ class AlignmentTests(unittest.TestCase):
         self.assertTrue(reachable_correction([.29, 0, .02], lambda point: True)["aligned"])
         with self.assertRaisesRegex(ValueError, "Нет позиции"):
             reachable_correction([.3, .1, .02], lambda point: False)
+
+    def test_nav_arrival_margin_keeps_full_grasp_inside_workspace(self):
+        plan = reachable_correction([.44, 0., .02],
+            lambda point: .20 <= point[0] <= .28, arrival_margin_m=.025)
+        self.assertAlmostEqual(plan["desired_distance_m"], .24)
+        self.assertAlmostEqual(plan["arrival_margin_m"], .025)
+        with self.assertRaisesRegex(ValueError, "margin"):
+            reachable_correction([.44, 0., .02], lambda point: True, arrival_margin_m=-.01)

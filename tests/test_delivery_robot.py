@@ -30,7 +30,7 @@ class DeliveryRobotTests(unittest.TestCase):
         robot.mid = "task"; robot.tracking = True
         robot.hold = lambda: calls.append(("hold",))
         robot._move = lambda pose: calls.append(("arm", pose))
-        robot.grasp_path = lambda point: {"reachable": abs(point[0] - .26) < .0001 and point[1] == 0.}
+        robot.grasp_path = lambda point: {"reachable": .23 <= point[0] <= .29 and point[1] == 0.}
         result = robot.approach({})
         self.assertTrue(result["reobserve_required"])
         self.assertFalse(result["reachable"])
