@@ -100,8 +100,12 @@ class AuditRegressions(unittest.TestCase):
                 self.assertTrue(quality["usable"],quality)
                 (source/"episode.json").write_text(json.dumps({"id":"demo","name":"sock","state":"complete",
                     "outcome":"success","label_source":"operator","quality":quality}))
+                # Current provenance includes the exact image bytes, as well
+                # as actions/manifest. A legacy JSON-only fingerprint cannot
+                # prove an unchanged dataset after an image was replaced.
+                names = ["episode.json", "samples.jsonl"] + [row["image"] for row in samples]
                 inputs={"demo":{name:hashlib.sha256((source/name).read_bytes()).hexdigest()
-                                for name in ("episode.json","samples.jsonl")}}
+                                for name in sorted(names)}}
                 fingerprint=hashlib.sha256(json.dumps(inputs,sort_keys=True).encode()).hexdigest()
                 jobs=LearningJobs(root);old=jobs.folder/"old";old.mkdir()
                 old_record={"id":"old","at":9999999999,"state":previous,"skill_id":None,
