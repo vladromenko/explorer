@@ -1,4 +1,5 @@
 import unittest
+import json
 import numpy as np
 from surface_foreground import locate, interior_surface_point
 
@@ -33,6 +34,7 @@ class ForegroundTests(unittest.TestCase):
         self.assertEqual(s["depth"][y, x], .47)
         self.assertGreaterEqual(grasp["clearance_px"], 4.)
         self.assertFalse(grasp["finger_clearance_measured"])
+        json.dumps(result, allow_nan=False)
 
     def test_selection_rejects_invalid_depth_and_counts_image_border(self):
         xyz = np.ones((8, 8, 3))

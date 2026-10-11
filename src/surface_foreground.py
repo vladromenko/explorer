@@ -76,7 +76,7 @@ def locate(sample,box):
         return dict(unknown('AMBIGUOUS_COMPONENTS'),evidence=evidence)
     selected=labels==sizes[0][1];points=xyz[selected];position=np.median(points,axis=0)
     grasp = interior_surface_point(xyz, selected)
-    grasp["pixel"] = [grasp["pixel"][0] + xa, grasp["pixel"][1] + ya]
+    grasp["pixel"] = [int(grasp["pixel"][0] + xa), int(grasp["pixel"][1] + ya)]
     evidence.update(pixels=int(selected.sum()),median_surface_height_m=float(np.median(height[selected])),
                     image_centroid_px=[float(np.median(u[selected])),float(np.median(v[selected]))])
     return dict(outcome='candidate',evidence=evidence,grasp_surface=grasp,position=dict(
