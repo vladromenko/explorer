@@ -19,7 +19,10 @@ def reachable_correction(object_xyz, reachable, preferred_distance_m=.24, arriva
             reachability_checked=True, nominal_arm_geometry=True)
     choices = {preferred_distance_m + delta for delta in (0., -.02, .02, -.04, .04, -.06, .06)}
     choices.add(distance)
-    distances = sorted(choices, key=lambda value: (abs(value - distance), abs(value - preferred_distance_m)))
+    # When a correction is required, prefer the central working distance
+    # over a minimally shorter drive that leaves the arm fully stretched.
+    # An already aligned, reachable pose above still needs no base motion.
+    distances = sorted(choices, key=lambda value: (abs(value - preferred_distance_m), abs(value - distance)))
     for target_distance in distances:
         samples = {target_distance, target_distance - arrival_margin_m, target_distance + arrival_margin_m}
         if .03 < target_distance <= 1. and all(.03 < value <= 1. and reachable([value, 0., z]) for value in sorted(samples)):

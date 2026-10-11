@@ -41,3 +41,9 @@ class AlignmentTests(unittest.TestCase):
         self.assertAlmostEqual(plan["arrival_margin_m"], .025)
         with self.assertRaisesRegex(ValueError, "margin"):
             reachable_correction([.44, 0., .02], lambda point: True, arrival_margin_m=-.01)
+
+    def test_required_correction_prefers_centre_over_stretched_nearest_pose(self):
+        plan = reachable_correction([.26, -.05, .02],
+            lambda point: .20 <= point[0] <= .28 and point[1] == 0., arrival_margin_m=.01)
+        self.assertAlmostEqual(plan["desired_distance_m"], .24)
+        self.assertEqual(plan["actions"][-1]["direction"], "forward")
