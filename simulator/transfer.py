@@ -216,8 +216,8 @@ def _extract_verified(archive_path, destination):
 def import_package(archive, robot_root, register=False):
     """Unpack into quarantine or explicitly register an inactive simulation candidate.
 
-    Registration state is deliberately incompatible with the existing physical
-    trial selector. Commissioning and observed transfer validation are separate.
+    Only independently qualified imports can enter the observed trial selector.
+    Commissioning and observed transfer validation remain separate.
     """
     if type(register) is not bool:
         raise ValueError("Registration must be explicitly true or false")
@@ -261,6 +261,12 @@ def export_curriculum(plan, destination):
     destination.parent.mkdir(parents=True,exist_ok=True)
     manifest = dict(format='explorer_curriculum_v1',batch_id=plan['id'],tasks=[],
                     created=time.time(),automatic_execution_allowed=False,files={})
+    if plan.get('learning_goal'):
+        source=plan['learning_goal']
+        manifest['learning_goal']={key:source[key] for key in
+            ('title','request','task_ids','fully_supported','missing','requested_handover',
+             'automatic_hardware_execution','physical_ready')}
+        _validate_learning_goal(manifest['learning_goal'],[task['task_id'] for task in plan['tasks']])
     with tempfile.TemporaryDirectory(dir=destination.parent) as name:
         stage = Path(name)
         for task in plan['tasks']:
@@ -286,6 +292,26 @@ def export_curriculum(plan, destination):
         archive_path.replace(destination)
     return dict(path=str(destination),sha256=sha256(destination),tasks=len(manifest['tasks']),
                 policies=len(manifest['files']),automatic_execution_allowed=False)
+
+
+def _validate_learning_goal(goal, task_ids):
+    """Intent metadata is inert; it cannot widen an executable task contract."""
+    keys={'title','request','task_ids','fully_supported','missing','requested_handover',
+          'automatic_hardware_execution','physical_ready'}
+    if not isinstance(goal,dict) or set(goal)!=keys:
+        raise ValueError('Invalid language goal metadata')
+    if goal['physical_ready'] is not False or goal['automatic_hardware_execution'] is not False:
+        raise ValueError('Language goals cannot grant hardware execution')
+    if goal['task_ids']!=task_ids or type(goal['fully_supported']) is not bool:
+        raise ValueError('Language goal differs from the packaged curriculum')
+    if any(not isinstance(goal[key],str) or not 0<len(goal[key])<=limit for key,limit in (('title',120),('request',4000))):
+        raise ValueError('Language request exceeds metadata limits')
+    if not isinstance(goal['missing'],list) or len(goal['missing'])>16 or any(not isinstance(text,str) or len(text)>500 for text in goal['missing']):
+        raise ValueError('Invalid missing skill description')
+    if goal['requested_handover'] not in ('none','supported_surface','human_hand'):
+        raise ValueError('Unknown handover contract')
+    if goal['fully_supported'] and (goal['missing'] or goal['requested_handover']=='human_hand'):
+        raise ValueError('Unimplemented handover cannot be marked complete')
 
 
 def import_curriculum(archive, robot_root, register=False):
@@ -317,6 +343,8 @@ def import_curriculum(archive, robot_root, register=False):
                 raise ValueError('Curriculum checksum mismatch')
         seen = set()
         nested_bytes = 0
+        if manifest.get('learning_goal') is not None:
+            _validate_learning_goal(manifest['learning_goal'],[task['task']['id'] for task in manifest['tasks']])
         for task in manifest['tasks']:
             identifier = task['task']['id']
             if task['task'] != task_spec(identifier) or identifier in seen:

@@ -1,0 +1,76 @@
+{
+  "started": "2026-10-11",
+  "verified": "2026-10-12",
+  "scope": "Local language-guided simulation learning, persistent goals and checked intent transfer",
+  "hardware_execution": false,
+  "jetson_connected": false,
+  "firmware_changed": false,
+  "local_planner": {
+    "model": "qwen3.5:4b",
+    "digest": "d8b0f5e9760cd1682034f292d7ef72ec46f432149be0df7574bf2d6e92e38c04",
+    "endpoint": "127.0.0.1:11435",
+    "weights_on_external_disk": true,
+    "cloud_disabled": true,
+    "metal_discovery_verified": true,
+    "original_ollama_service_modified": false
+  },
+  "supported_curricula": [
+    "sock_basket",
+    "cookie_delivery",
+    "toy_box",
+    "cloth_basket"
+  ],
+  "tests": {
+    "passed": 85,
+    "warnings": 1,
+    "warning": "Starlette TestClient deprecation",
+    "language_tests": 12,
+    "javascript_syntax": true
+  },
+  "live_checks": {
+    "plan_only_hand_delivery": "missing handover preserved; no training started",
+    "clarification": {
+      "goal_id": "83b1908145dd",
+      "handover": "supported_surface",
+      "state": "planned",
+      "fully_supported_simulation": true,
+      "hardware_ready": false
+    },
+    "persistent_history_selector": true,
+    "goal_specific_download_sha256_checked": true
+  },
+  "actual_pipeline_smoke": {
+    "goal_id": "9cb226eb371d",
+    "request": "Научись складывать маленькие лёгкие кубики в коробку",
+    "framework": "LeRobot ACT",
+    "training_device": "mps",
+    "gradient_steps": 5,
+    "teacher_successes": 2,
+    "independent_policy_scenes": 10,
+    "policy_successes": 0,
+    "result": "needs_more_training",
+    "archive_sha256": "d0a4898419a97bc46eb47608f270a28c15ea39b5f015797b46c91b8e6ca9d0ad",
+    "imported_inactive": true,
+    "original_intent_preserved": true
+  },
+  "remaining": [
+    "Robust learned policies not established by the five-step integration smoke test",
+    "True dynamics and contact identification still estimated",
+    "Human handover not implemented",
+    "New local models not integrated into accepted real multiroom delivery",
+    "No physical transfer trial performed while robot offline"
+  ],
+  "evidence_paths": {
+    "live_plans": "/Volumes/ExplorerSim/ExplorerSim/logs/language-planner-live-20261011.json",
+    "pipeline": "/Volumes/ExplorerSim/ExplorerSim/logs/language-training-smoke-result-20261011.json",
+    "clarification": "/Volumes/ExplorerSim/ExplorerSim/logs/language-followup-result-20261011.json"
+  },
+  "research": [
+    "https://say-can.github.io/",
+    "https://huggingface.co/docs/lerobot/smolvla",
+    "https://github.com/Physical-Intelligence/openpi",
+    "https://docs.ollama.com/capabilities/structured-outputs",
+    "https://docs.ollama.com/faq"
+  ],
+  "rollback_tag": "explorer-before-language-learning-20261011"
+}

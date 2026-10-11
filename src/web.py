@@ -423,7 +423,20 @@ def simulation_tasks():
                     trial=mobile_policy_execution.preflight(record['skill_id'])))
         except (OSError,ValueError,KeyError,TypeError,AttributeError) as exc:
             output.append(dict(job_id=path.parent.name,error=str(exc),ready=False))
-    return dict(tasks=output,automatic_execution=False)
+    goals=[]
+    for path in (ROOT/'data/simulation-curricula').glob('*.json'):
+        try:
+            manifest=json.loads(path.read_text())['manifest']
+            if not isinstance(manifest,dict):
+                raise ValueError('Повреждён файл учебного пакета')
+            goal=manifest.get('learning_goal')
+            if isinstance(goal,dict):
+                goals.append(dict(title=goal['title'],request=goal['request'],
+                    missing=goal['missing'],task_ids=goal['task_ids'],physical_ready=False,
+                    note='Исходная просьба сохранена; модели проверяются отдельно. Полная автономная доставка этим импортом не подтверждена.'))
+        except (OSError,ValueError,KeyError,TypeError):
+            pass
+    return dict(tasks=output,goals=goals,automatic_execution=False)
 
 @app.post('/api/simulation-tasks/{identifier}/trial')
 def simulation_task_trial(identifier:str,c:SkillTrial):

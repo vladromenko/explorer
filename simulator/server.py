@@ -31,6 +31,7 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pydantic import BaseModel, Field, field_validator
 from .curriculum import TASKS, NightQueue, task_spec
+from .language_learning import LearningGoals, LocalLanguageModel, grounded_plan
 
 DATA_ROOT = Path(os.environ.get('EXPLORER_SIM_VOLUME', '/Volumes/ExplorerSim')).expanduser() / 'ExplorerSim'
 GUIDE_FILE = Path(__file__).resolve().parent.parent / 'docs' / 'SIMULATOR-AND-TRANSFER.ru.md'
@@ -178,6 +179,10 @@ class JobRequest(BaseModel):
     rounds: int = Field(default=3, ge=1, le=5)
     independent_demos_required: bool = False
     validation_seed: int = Field(default=10000,ge=0,le=2**31-1001)
+    request_text: str | None = Field(default=None, min_length=1, max_length=4000)
+    goal_id: str | None = Field(default=None, pattern='^[0-9a-f]{12}$')
+    auto_train: bool = True
+    allow_partial: bool = False
 
     @field_validator('episode_ids')
     @classmethod
@@ -223,6 +228,8 @@ class Runtime:
         self.log_file = (self.data_root / 'logs' / f"session-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}-{secrets.token_hex(3)}.jsonl").open('a', encoding='utf8')
         self.latest_package = None
         self.night_queue = NightQueue(self.data_root)
+        self.learning_goals = LearningGoals(self.data_root)
+        self.language = LocalLanguageModel(self.data_root)
         self.latest_job_folder = None
         self.model_info = None
         self.latest_model()
@@ -337,6 +344,7 @@ class Runtime:
 
     def close(self):
         self.cancel_job.set()
+        self.language.close()
         self.stop_event.set()
         self.stop_control()
         deadline = time.monotonic() + 30
@@ -502,7 +510,8 @@ class Runtime:
 
     def snapshot(self):
         with self.lock:
-            return jsonable({'state': self.cached_state, 'reward': self.reward, 'info': self.info, 'done': self.done, 'paused': self.paused, 'error': self.error, 'recording': bool(self.record_file), 'record_frames': self.record_frames, 'jobs': self.jobs[-20:], 'logs': self.logs[-40:], 'model': self.model_info, 'night_batches':self.night_queue.list(), 'package_available': self.latest_package is not None, 'data_root': self.data_root, 'depth_available': 'depth' in self.images, 'frame_age': round(time.monotonic() - self.frame_at, 2) if self.frame_at else None})
+            batches = self.night_queue.list()
+            return jsonable({'state': self.cached_state, 'reward': self.reward, 'info': self.info, 'done': self.done, 'paused': self.paused, 'error': self.error, 'recording': bool(self.record_file), 'record_frames': self.record_frames, 'jobs': self.jobs[-20:], 'logs': self.logs[-40:], 'model': self.model_info, 'night_batches':batches, 'learning_goals':self.learning_goals.list(batches), 'package_available': self.latest_package is not None, 'data_root': self.data_root, 'depth_available': 'depth' in self.images, 'frame_age': round(time.monotonic() - self.frame_at, 2) if self.frame_at else None})
 
     def episodes(self):
         output = []
@@ -583,12 +592,60 @@ class Runtime:
                     if time.monotonic() - self.frame_at > .15:
                         self.capture_images()
                         self.frame_at = time.monotonic()
-            if job['kind'] == 'night':
+            if job['kind'] == 'assistant':
+                if request.goal_id and not request.request_text:
+                    goal = self.learning_goals.get(request.goal_id)
+                else:
+                    progress('Локальный помощник разбирает просьбу; движение не запускается')
+                    if not request.request_text or not request.request_text.strip():
+                        raise ValueError('Напишите, чему научить Explorer')
+                    text = request.request_text
+                    previous = self.learning_goals.get(request.goal_id) if request.goal_id else None
+                    if previous:
+                        text = previous['plan']['request']+'\nУточнение пользователя: '+text
+                    if len(text)>4000:
+                        raise ValueError('Перепишите полную просьбу короче: история уточнений превысила 4000 символов')
+                    parsed, provenance = self.language.plan(text)
+                    plan = grounded_plan(text, parsed, provenance)
+                    goal = self.learning_goals.create(plan,dict(count=request.count,
+                        steps=request.steps,batch_size=min(32,request.batch_size),hours=request.hours,
+                        seed=request.seed,rounds=request.rounds))
+                    if previous:
+                        goal['parent_id'] = previous['id']
+                        self.learning_goals.save(goal)
+                job['goal_id'] = goal['id']
+                if is_cancelled():
+                    raise InterruptedError('Разбор остановлен; просьба сохранена')
+                if request.auto_train and goal['plan']['task_ids'] and (goal['plan']['fully_supported'] or request.allow_partial):
+                    job['message'] = 'Учебный план разобран; выполняются попытки, обучение и проверка'
+                    child = dict(id=secrets.token_hex(6),kind='night',status='running',progress=0,message='Запуск…')
+                    with self.lock:
+                        self.jobs.append(child)
+                    values = dict(goal['options'],goal_id=goal['id'],
+                        task_ids=goal['plan']['task_ids'],plan_id=goal.get('night_plan_id'))
+                    self.run_job(child,JobRequest(**values),extra_cancelled=is_cancelled)
+                    goal['state'] = 'finished' if child['status']=='complete' else child['status']
+                    goal['error'] = None if child['status']=='complete' else child['message']
+                    if child.get('result',{}).get('archive'):
+                        goal['archive'] = child['result']['archive']
+                    # The child linked its persistent batch before beginning.
+                    goal['night_plan_id'] = self.learning_goals.get(goal['id']).get('night_plan_id')
+                    self.learning_goals.save(goal)
+                    if child['status']=='cancelled':
+                        raise InterruptedError(child['message'])
+                    if child['status']!='complete':
+                        raise ValueError(child['message'])
+                result = self.learning_goals.get(goal['id'])
+            elif job['kind'] == 'night':
                 if request.plan_id:
                     plan = self.night_queue.get(request.plan_id)
                 else:
                     plan = self.night_queue.create(request.task_ids,request.count,request.steps,request.batch_size,request.hours,request.seed,request.rounds)
                 job['plan_id'] = plan['id']
+                if request.goal_id:
+                    goal = self.learning_goals.get(request.goal_id)
+                    goal.update(night_plan_id=plan['id'],state='running')
+                    self.learning_goals.save(goal)
                 def execute(stage, task, options, cancelled):
                     child = dict(id=secrets.token_hex(6),kind=stage,status='running',progress=0,message='Запуск…')
                     with self.lock:
@@ -608,6 +665,8 @@ class Runtime:
                 if result['state']=='paused':
                     raise InterruptedError(result['reason'])
                 from .transfer import export_curriculum
+                if request.goal_id:
+                    result['learning_goal'] = self.learning_goals.get(request.goal_id)['plan']
                 result['archive'] = export_curriculum(result,self.data_root/'exports'/f"night-{plan['id']}-{job['id']}.tar.gz")
                 self.latest_package = Path(result['archive']['path'])
             elif job['kind'] == 'trials':
@@ -700,9 +759,17 @@ class Runtime:
                 self.latest_package = candidate
                 result['task_id'] = request.task_id
             elif job['kind'] == 'deploy':
-                if self.latest_package is None:
-                    raise ValueError('Сначала соберите пакет или завершите ночное обучение')
                 archive = self.latest_package
+                if request.goal_id:
+                    saved = self.learning_goals.get(request.goal_id).get('archive')
+                    if not saved:
+                        raise ValueError('Для этой просьбы ещё нет пакета')
+                    archive = Path(saved['path']).resolve()
+                    from .transfer import sha256
+                    if not archive.is_relative_to(self.data_root/'exports') or not archive.is_file() or sha256(archive)!=saved['sha256']:
+                        raise ValueError('Пакет просьбы изменён или отсутствует')
+                if archive is None:
+                    raise ValueError('Сначала соберите пакет или завершите ночное обучение')
                 remote = '/home/vlad/Explorer/data/simulation-inbox/' + archive.name
                 ssh = ['ssh','-o','BatchMode=yes','-o','ConnectTimeout=8','explorer']
                 def remote_run(command):
@@ -854,7 +921,7 @@ def create_app(env_factory=None, data_root=DATA_ROOT, learning_module=None, star
 
     @app.post('/api/jobs/{kind}')
     def job(kind: str, command: JobRequest, request: Request):
-        if kind not in {'trials', 'train', 'validate', 'export', 'night', 'deploy'}:
+        if kind not in {'trials', 'train', 'validate', 'export', 'night', 'deploy', 'assistant'}:
             raise HTTPException(404, 'Неизвестное задание')
         return request.app.state.runtime.launch_job(kind, command)
 
@@ -864,6 +931,21 @@ def create_app(env_factory=None, data_root=DATA_ROOT, learning_module=None, star
         if not path:
             raise HTTPException(404, 'Сначала создайте пакет')
         return FileResponse(path, filename=path.name, media_type='application/gzip')
+
+    @app.get('/api/goals/{identifier}/package')
+    def goal_package(identifier: str, request: Request):
+        runtime = request.app.state.runtime
+        try:
+            saved = runtime.learning_goals.get(identifier).get('archive')
+            if not saved:
+                raise ValueError('Пакет этой просьбы ещё не создан')
+            path = Path(saved['path']).resolve()
+            from .transfer import sha256
+            if not path.is_relative_to(runtime.data_root/'exports') or not path.is_file() or sha256(path)!=saved['sha256']:
+                raise ValueError('Пакет изменён или отсутствует')
+            return FileResponse(path, filename=path.name, media_type='application/gzip')
+        except (OSError,ValueError,KeyError) as exc:
+            raise HTTPException(404,str(exc)) from exc
 
     @app.get('/{camera}.jpg')
     def camera_image(camera: str, request: Request):

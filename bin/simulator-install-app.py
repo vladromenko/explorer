@@ -39,6 +39,7 @@ for name in ("mobile_policy_contract.py", "learning_environment.py", "simulation
 (installed_root / "src/__init__.py").write_text("")
 shutil.copy2(root / "docs/SIMULATOR-AND-TRANSFER.ru.md", installed_root / "docs/SIMULATOR-AND-TRANSFER.ru.md")
 shutil.copy2(root / "bin/start-simulator.command", installed_root / "bin/start-simulator.command")
+shutil.copy2(root / "bin/install-simulator-language.py", installed_root / "bin/install-simulator-language.py")
 target = f"gui/{os.getuid()}"
 subprocess.run(["launchctl", "bootout", target + "/local.explorer.simulator"], capture_output=True)
 if runtime_root.exists():

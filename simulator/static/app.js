@@ -3,7 +3,7 @@ const $ = id => document.getElementById(id);
 let depthView = false;
 let token = '', session = null, latest = null, selectedJoint = 0, arm = Array(6).fill(0), keys = new Set(), held = {arm: Array(6).fill(0), base: [0, 0, 0]}, recording = false, busy = false, gamepadButtons = [];
 const jointNames = ['Поворот основания', 'Подъём плеча', 'Локоть', 'Наклон кисти', 'Поворот кисти', 'Захват'];
-const jobNames = {trials: 'Попытки', train: 'Обучение ACT', validate: 'Проверка', export: 'Пакет переноса', night: 'Ночная очередь', deploy: 'Загрузка на Jetson'};
+const jobNames = {trials: 'Попытки', train: 'Обучение ACT', validate: 'Проверка', export: 'Пакет переноса', night: 'Ночная очередь', deploy: 'Загрузка на Jetson', assistant: 'Ваша учебная задача'};
 const statusNames = {running: 'в работе', complete: 'готово', failed: 'ошибка', exporting: 'подготовка данных', training: 'обучение', validating: 'проверка', validated_simulation: 'проверено по записям', trained_simulation_unvalidated: 'обучено; успешность задачи не подтверждена', cancelled: 'остановлено', queued: 'ожидает', paused: 'приостановлено', interrupted: 'прервано; можно продолжить', corrupt: 'файл повреждён'};
 const phases = {approach: 'Подведите захват к предмету', reach: 'Подведите захват к предмету', grasp: 'Замкните захват', lift: 'Поднимите предмет', transport: 'Перенесите к корзине', place: 'Отпустите в корзину', success: 'Объект доставлен', navigate_source: 'Едет в соседнюю комнату', navigate_destination: 'Перевозит предмет через дверь', idle: 'Готов к вашему показу', align_base: 'Подъезжает к объекту', lower: 'Опускает захват', close: 'Замыкает захват', policy: 'Обученная политика пробует выполнить задачу'};
 function notify(text, error = false) { $('notice').textContent = text; $('notice').classList.toggle('error', error); $('notice').classList.remove('hidden'); clearTimeout(notify.timer); notify.timer = setTimeout(() => $('notice').classList.add('hidden'), 4500); }
@@ -71,7 +71,10 @@ function renderStatus(snapshot) {
   $('contact').textContent = task.grasp_contact ? 'Есть' : 'Нет'; $('lifted').textContent = task.lifted ? 'Да' : 'Нет'; $('placed').textContent = task.placed ? 'Да' : 'Нет'; $('simtime').textContent = `${Number(state.sim_time || 0).toFixed(1)} с`;
   $('pause').textContent = snapshot.paused ? 'Продолжить' : 'Пауза'; recording = snapshot.recording; $('record').textContent = recording ? 'Закончить запись' : 'Начать запись'; $('record-status').textContent = recording ? `● ${snapshot.record_frames} кадров` : ''; $('annotation').disabled = !recording;
   const jobs = snapshot.jobs || []; busy = jobs.some(job => ['running', 'exporting', 'training', 'validating'].includes(job.status));
-  ['trials', 'train', 'show-policy', 'validate', 'export', 'night-start', 'night-resume', 'deploy'].forEach(id => { $(id).disabled = busy; }); $('cancel-job').classList.toggle('hidden', !busy); $('reset').disabled = busy; $('task-select').disabled = busy || recording; $('floor-view').disabled = busy;
+  ['trials', 'train', 'show-policy', 'validate', 'export', 'night-start', 'night-resume', 'deploy', 'request-learn', 'request-plan', 'request-reply', 'request-partial', 'request-resume', 'request-deploy'].forEach(id => { $(id).disabled = busy; }); $('cancel-job').classList.toggle('hidden', !busy); $('reset').disabled = busy; $('task-select').disabled = busy || recording; $('floor-view').disabled = busy;
+  renderGoals(snapshot.learning_goals || []);
+  $('request-cancel').classList.toggle('hidden',!busy);
+  const activeJob=jobs.at(-1);$('request-progress').textContent=busy?`${jobNames[activeJob.kind]}: ${activeJob.message || 'В работе'}`:activeJob?.status==='failed'?`Не завершено: ${activeJob.message}`:'';
   renderNight(snapshot.night_batches || []); const current = jobs.at(-1); $('job-state').firstElementChild.textContent = current ? `${jobNames[current.kind]} · ${current.message || statusNames[current.status] || current.status}` : 'Готов к работе'; $('job-state').querySelector('progress').value = current?.progress || 0;
   if (jobs.length) { $('jobs').replaceChildren(); jobs.slice().reverse().forEach(job => { const row = document.createElement('div'); row.className = 'job'; const title = document.createElement('strong'); title.textContent = jobNames[job.kind]; const status = document.createElement('span'); status.textContent = statusNames[job.status] || job.status; const detail = document.createElement('small'); detail.style.display = 'block'; detail.textContent = showResult(job.result) || job.message || ''; row.append(title, status, detail); $('jobs').append(row); }); }
   $('logs').replaceChildren(); (snapshot.logs || []).slice().reverse().forEach(log => { const row = document.createElement('div'), stamp = document.createElement('time'); stamp.textContent = log.time; row.append(stamp, document.createTextNode(log.message)); $('logs').append(row); });
@@ -84,6 +87,51 @@ function renderNight(plans) {
   const heading=document.createElement('p'); heading.textContent=`Очередь ${plan.id}: ${statusNames[plan.state] || plan.state} · ${plan.reason || ''}`; root.append(heading);
   plan.tasks.forEach(task=>{const row=document.createElement('p'); const report=task.stages.validate; const stateLabel=task.state==='complete'?(task.simulation_qualified?'проверено в симуляции':'расчёт завершён; навык ещё не прошёл проверку'):(statusNames[task.state] || task.state); row.textContent=`${({sock_basket:'Носок → корзина',cookie_delivery:'Печенье → поднос',toy_box:'Кубик → коробка',cloth_basket:'Ткань → бельё'})[task.task_id] || task.task_id}: ${stateLabel} · ${report ? 'Доставок '+report.successes+'/'+report.episodes : task.error || 'Ожидает проверки'}`; root.append(row);});
 }
+let currentGoal = null, goalSignature = '', selectedGoalId = null, goalHistorySignature = '';
+const readableGoalTitle = goal => ({sock_basket:'Носок → корзина',cookie_delivery:'Печенье в упаковке → поднос',toy_box:'Кубик → коробка',cloth_basket:'Ткань → бельё'})[goal.plan?.title] || goal.plan?.title || 'Повреждённая запись';
+function renderGoals(goals) {
+  const history=$('request-history');
+  const historySignature=JSON.stringify(goals.map(goal=>[goal.id,goal.plan?.title]));
+  if(historySignature!==goalHistorySignature){
+    goalHistorySignature=historySignature;history.replaceChildren();
+    goals.forEach(goal=>{const option=document.createElement('option');option.value=goal.id;option.textContent=readableGoalTitle(goal)+' · '+new Date(goal.created*1000).toLocaleString('ru-RU');history.append(option);});
+  }
+  $('request-history-label').classList.toggle('hidden',goals.length<2);
+  const goal=goals.find(item=>item.id===selectedGoalId) || goals[0]; currentGoal=goal;
+  if(goal)history.value=goal.id;
+  const signature=JSON.stringify(goal); if(signature===goalSignature)return; goalSignature=signature;
+  if(!goal)return;
+  const root=$('request-result'); root.replaceChildren();
+  const line=(text,tag='p',className='')=>{const node=document.createElement(tag);node.textContent=text;if(className)node.className=className;root.append(node);return node;};
+  if(!goal.plan){line(goal.error || 'Просьба не прочитана');['request-reply','request-partial','request-resume','request-deploy','request-download'].forEach(id=>$(id).classList.add('hidden'));return;}
+  const plan=goal.plan;
+  line(readableGoalTitle(goal),'h2');line('Вы попросили: '+plan.request);
+  line(plan.explanation);line('Понимание текста: локальная '+plan.language_model.model+' · данные не отправлялись в облако','small');
+  if(plan.missing.length || plan.clarification){line('Что пока не входит в готовый сценарий','h3');plan.missing.forEach(text=>line(text,'p','gap'));if(plan.clarification)line(plan.clarification,'p','gap');}
+  plan.tasks.forEach(task=>{const box=document.createElement('div');box.className='result-task';const title=document.createElement('h3');title.textContent=task.title;box.append(title);const info=document.createElement('p');info.textContent=task.learns;box.append(info);const details=document.createElement('details');const summary=document.createElement('summary');summary.textContent='Порядок действий: найти → подъехать → взять → перевезти → отпустить';details.append(summary);const list=document.createElement('ol');task.steps.forEach(step=>{const li=document.createElement('li');li.textContent=step.title;list.append(li);});details.append(list);box.append(details);root.append(box);});
+  const resultStates={planned:'План готов. Можно начать обучение.',needs_decision:'Нужен ваш выбор: переформулируйте просьбу или обучите только доступную часть.',running:'Обучение идёт. Попытки и результаты сохраняются на внешнем диске.',paused:'Очередь приостановлена. Продолжение сохранит готовые этапы.',interrupted:'Приложение перезапускалось. Продолжите сохранённую задачу.',simulation_checked:'Все выбранные задачи прошли проверку в симуляции. Подключите Jetson, загрузите модели и выполните наблюдаемую проверку.',partial_simulation_checked:'Доступная часть прошла симуляцию. Исходная просьба ещё не выполнена полностью; недостающие этапы перечислены выше.',needs_more_training:'Расчёт закончен, но модель ещё не выполняет задачу устойчиво. Не используйте её как готовый автономный навык.',failed:'Задание завершилось ошибкой.',cancelled:'Задание остановлено.'};
+  line(resultStates[goal.state] || 'Состояние: '+goal.state,'p',goal.state==='simulation_checked'?'ready':'gap');
+  if(goal.error)line(goal.error);
+  (goal.results || []).forEach(result=>line(`${result.title}: ${result.successes ?? '—'}/${result.episodes ?? '—'} успешных новых сцен${result.error?' · '+result.error:''}`));
+  line('На настоящем роботе: импорт → проверка готовности → наблюдаемая попытка. Прохождение виртуальных сцен не открывает физическую автономность автоматически.');
+  const resumable=['paused','interrupted'].includes(goal.state);
+  $('request-resume').classList.toggle('hidden',!resumable);
+  $('request-reply').classList.toggle('hidden',!plan.clarification && !plan.missing.length);
+  $('request-partial').classList.toggle('hidden',!plan.task_ids.length || Boolean(goal.night_plan_id) || resumable);
+  $('request-partial').textContent=plan.fully_supported?'Начать обучение по плану':'Обучить доступную часть';
+  const downloadable=Boolean(goal.archive);
+  $('request-deploy').classList.toggle('hidden',!downloadable);$('request-download').classList.toggle('hidden',!downloadable);
+  $('request-download').href='/api/goals/'+encodeURIComponent(goal.id)+'/package';
+}
+async function languageRequest(autoTrain,reply=false){zeroControls();const text=$('learning-request').value.trim();if(!text)throw new Error('Напишите, чему научить робота');const parent=reply?currentGoal.id:null;await api('/api/jobs/assistant',{request_text:text,goal_id:parent,auto_train:autoTrain,count:Number($('request-attempts').value),steps:Number($('request-steps').value),hours:Number($('request-hours').value),batch_size:16,seed:Math.floor(Math.random()*1000000)});selectedGoalId=null;goalSignature='';notify('Помощник разбирает просьбу на этом Mac');await poll();}
+$('request-history').addEventListener('change',()=>{selectedGoalId=$('request-history').value;goalSignature='';renderGoals(latest?.learning_goals || []);if(currentGoal?.plan)$('learning-request').value=currentGoal.plan.request;});
+button('request-learn',()=>languageRequest(true));button('request-plan',()=>languageRequest(false));
+button('request-reply',()=>languageRequest(true,true));
+button('request-cancel',async()=>{await api('/api/cancel',{});notify('Обучение останавливается; готовые этапы сохранятся');});
+button('request-partial',async()=>{if(!currentGoal)throw new Error('Сначала составьте план');await api('/api/jobs/assistant',{goal_id:currentGoal.id,allow_partial:true});await poll();});
+button('request-resume',async()=>{await api('/api/jobs/assistant',{goal_id:currentGoal.id,allow_partial:!currentGoal.plan.fully_supported});await poll();});
+button('request-deploy',async()=>{await api('/api/jobs/deploy',{goal_id:currentGoal.id});notify('Передача моделей этой просьбы началась; робот не двигается');await poll();});
+document.querySelectorAll('[data-request]').forEach(button=>button.addEventListener('click',()=>{$('learning-request').value=button.dataset.request;$('learning-request').focus();}));
 button('night-start',async()=>{zeroControls();const tasks=[...document.querySelectorAll('.night-tasks input:checked')].map(input=>input.value);await api('/api/jobs/night',{task_ids:tasks,count:Number($('night-attempts').value),steps:Number($('night-steps').value),hours:Number($('night-hours').value),batch_size:16,seed:Math.floor(Math.random()*1000000)});notify('Ночная очередь запущена');await poll();});
 button('night-resume',async()=>{const plan=(latest.night_batches || [])[0];await api('/api/jobs/night',{plan_id:plan.id});await poll();});
 button('deploy',async()=>{await api('/api/jobs/deploy',{});notify('Загрузка началась; движений не будет');await poll();});

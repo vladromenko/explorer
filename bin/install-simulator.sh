@@ -30,5 +30,13 @@ fi
 "$sim_uv" pip sync --python "$sim_volume/env/bin/python" "$task_root/config/simulator-macos.lock.txt"
 cd "$task_root"
 EXPLORER_SIM_VOLUME="$sim_volume" "$sim_volume/env/bin/python" bin/simulator-assets.py
+if ! command -v ollama >/dev/null 2>&1 && command -v brew >/dev/null 2>&1; then
+  brew install ollama
+fi
+if command -v ollama >/dev/null 2>&1; then
+  EXPLORER_SIM_VOLUME="$sim_volume" "$sim_volume/env/bin/python" bin/install-simulator-language.py
+else
+  echo 'Для свободного текста установите Ollama с ollama.com, затем запустите bin/install-simulator-language.py. Учебные кнопки работают без LLM.'
+fi
 EXPLORER_SIM_VOLUME="$sim_volume" "$sim_volume/env/bin/python" bin/simulator-install-app.py
 echo "Explorer Simulator установлен. Данные: $sim_volume/ExplorerSim"
