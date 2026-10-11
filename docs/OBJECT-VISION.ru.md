@@ -49,3 +49,11 @@
 - `src/grasp_verification.py`: независимые правила исхода подъёма и размещения; распознавание не равно успешному захвату.
 
 Фотографии и NPZ кадров сохраняются локально и не публикуются в Git.
+
+## Источник времени RGB-D
+
+Explorer сохраняет исходный `Image.header.stamp`, не заменяя его временем получения кадра. Поле `exposure_time_source=ROS_image_header_timestamp` описывает именно этот источник; оно не утверждает аппаратный момент экспозиции. У установленного Orbbec ROS driver 1.5.22 фактический startup journal сообщает `current time domain: system`, хотя ROS parameter dump показывает `time_domain=device`. В [официальном коде версии 1.5.22](https://github.com/orbbec/OrbbecSDK_ROS2/blob/v1.5.22/orbbec_camera/src/ob_camera_node.cpp) OpenNI-устройства переопределяют этот параметр на SDK system timestamp; ROS header формируется через `getFrameTimestampUs()` и `systemTimeStampUs()`. Поэтому возраст header измеряет возраст этой отметки, а не доказанный возраст аппаратной экспозиции.
+
+`enable_frame_sync` и `frame_aggregate_mode` в этой версии применяются при запуске pipeline. Изменение ROS-параметра в работающем процессе может вернуть успешный результат, одновременно записав предупреждение `can not be changed in runtime`; это не подтверждение включённой синхронизации. Режим `ANY` допускает frameset без одного из потоков, `full_frame` требует все открытые потоки. Даже совместный frameset не отменяет проверку реальной разницы исходных header timestamps. Порог совмещения 40 мс и ограничения свежести сохранены.
+
+Проверка startup 11 октября на данном DCW2 дала SDK ошибку `Current device does not support frame sync!`; исходный запуск без этой настройки восстановлен. `bin/camera-rgbd.launch.py` — адаптер для диагностики версии 1.5.22, а не свидетельство работающей синхронизации этой камеры. CSV SDK показал, что отметка depth уже примерно на 108 мс старше момента получения frameset из SDK; задержка дальнейшей публикации depth в ROS была менее 1 мс. Это локализует задержку до ROS callback и не разрешает компенсировать её искусственным изменением header timestamps.

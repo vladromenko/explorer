@@ -124,7 +124,7 @@ class Perception(Node):
                         camera_info_version=info_version,
                         intrinsic_k=list(camera_info.k) if camera_info is not None and camera_info.width==frame.shape[1] and camera_info.height==frame.shape[0] else None,
                         distortion_d=list(camera_info.d) if camera_info is not None else None,
-                        exposure_time_source="ROS_image_header_device_timestamp",
+                        exposure_time_source="ROS_image_header_timestamp",
                         jpeg_sha256=hashlib.sha256(jpg.tobytes()).hexdigest(),
                         jpeg="frame-raw.jpg",same_frame_hash_verified=True)))
                     metadata.replace(ROOT/"data/camera-frame.json")

@@ -16,7 +16,9 @@ case "$1" in
         exec python3 src/controller_driver.py
       fi
       exec "$EXPLORER_ROOT/vendor/ros/micro_ros_agent/lib/micro_ros_agent/micro_ros_agent" serial --dev /dev/explorer_mcu -b 2000000 -v3;;
- camera) exec ros2 launch orbbec_camera dabai_dcw2.launch.py enable_point_cloud:=false enable_ir:=false depth_registration:=true color_fps:=15 depth_fps:=15;;
+ camera) # DCW2 SDK aggregation held depth for about 108 ms. Independent
+         # delivery preserves registered geometry; Explorer pairs timestamps.
+         exec ros2 launch "$EXPLORER_ROOT/bin/camera-rgbd.launch.py" enable_point_cloud:=false enable_ir:=false depth_registration:=true color_fps:=15 depth_fps:=15 enable_frame_sync:=false frame_aggregate_mode:=disable;;
  control) exec python3 src/core.py;;
  power) exec python3 src/power_manager.py;;
  learning) exec python3 src/learning_worker.py;;
