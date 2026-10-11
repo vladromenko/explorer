@@ -13,6 +13,22 @@
     "javascript_and_regressions_mac": {
       "passed": 11,
       "agent_script_syntax": "passed"
+    },
+    "jetson_after_perception_and_precision_approach": {
+      "passed": 742,
+      "skipped": 3,
+      "elapsed_s": 40.14,
+      "log": "Explorer-backups/20261011-perception/explorer-final-approach-tests.log",
+      "code_commit": "a5ef829"
+    },
+    "javascript_and_regressions_after_perception_mac": {
+      "passed": 45
+    },
+    "foreground_grasp_regressions_mac": {
+      "passed": 74,
+      "includes_javascript": true,
+      "elapsed_s": 0.81,
+      "jetson_full_suite_after_this_fix": "pending_connection"
     }
   },
   "arm_observation": {
@@ -194,10 +210,94 @@
   },
   "mobile_alignment": {
     "code_implemented": true,
-    "physical_repositioning_executed": false,
+    "physical_repositioning_executed": true,
     "path": "DeliveryRobot.approach -> reachable_correction -> Nav2 -> search_pose -> find_aligned",
-    "current_local_trial_base_stationary": true
+    "current_local_trial_base_stationary": false,
+    "ordinary_room_controller_preserved": "DWB",
+    "precision_controller": "Nav2 Regulated Pure Pursuit",
+    "precision_goal_tolerance_m": 0.01,
+    "precision_goal_tolerance_rad": 0.1,
+    "maximum_approach_speed_m_s": 0.08,
+    "automatic_contact_verified": false,
+    "observed_precision_approach": {
+      "task": "b5530e1760cc47e998486319f635e632",
+      "journal": "data/onboard-validation/1791702911801161527-observed-sock-base-approach",
+      "goal_map": [
+        0.165996713744,
+        -0.028123853449,
+        0.071740882289
+      ],
+      "final_map": [
+        0.16647496453,
+        -0.029383797966,
+        0.148555811322
+      ],
+      "position_residual_m": 0.00135,
+      "localization_accuracy_measured": false,
+      "fresh_sock_point_base_m": [
+        0.262378937612158,
+        -0.008374472326978936,
+        0.028872760970104994
+      ],
+      "fresh_preparation": "data/onboard-validation/1791703426357436794-observed-grasp-preparation",
+      "base_stopped_by_odometry": true,
+      "operator_confirmed_above_sock": true,
+      "operator_observed_trial": true,
+      "autonomous_delivery_verified": false,
+      "operator_confirmed_final_contact_alignment": false
+    },
+    "foreground_point_fix": {
+      "old_coordinate_median_pixel": [
+        347.1342340987462,
+        357.1904020886509
+      ],
+      "old_pixel_rgb": [
+        0,
+        1,
+        0
+      ],
+      "old_pixel_depth_m": 0.0,
+      "median_inside_resolved_depth_component": false,
+      "median_was_in_rgb_cloth": true,
+      "new_measured_foreground_pixel": [
+        408,
+        366
+      ],
+      "new_pixel_depth_m": 0.266,
+      "selection": "observed_foreground_interior",
+      "physical_misalignment_root_cause_fully_verified": false,
+      "object_centroid_preserved_for_tracking": true,
+      "grasp_coordinate_separate_from_object_centroid": true
+    },
+    "additional_precision_approach": {
+      "task": "de4e4330ed634148b8d81bc3b99fe067",
+      "journal": "data/onboard-validation/1791704393936638605-observed-sock-base-approach",
+      "planned_translation_m": 0.02432111284488779,
+      "observed_map_translation_m": 0.013749507976144973,
+      "state": "succeeded",
+      "base_stopped_by_odometry": true,
+      "fresh_preparation": "data/onboard-validation/1791704540652860696-observed-grasp-preparation",
+      "fresh_grasp_point_base_m": [
+        0.24726525528196985,
+        -0.027210042313935773,
+        0.036845496047181736
+      ],
+      "contact_executed": false,
+      "lift_executed": false,
+      "physical_contact_alignment": "pending",
+      "autonomous_success_claimed": false
+    }
   },
   "calibration_files_changed": false,
-  "secrets_images_and_datasets_committed": false
+  "secrets_images_and_datasets_committed": false,
+  "current_trial": {
+    "state": "pending_robot_connection",
+    "last_confirmed_stop_latched": true,
+    "last_confirmed_gripper_open_deg": 30,
+    "sock_grasp_not_executed": true,
+    "above_object_retry_interrupted_on_noop_open": "data/onboard-validation/1791704583198053429-observed-above-sock",
+    "robot_code_commit_last_confirmed": "41f93e4",
+    "web_process_reload_required": true,
+    "new_photos_backed_up_to_mac": false
+  }
 }

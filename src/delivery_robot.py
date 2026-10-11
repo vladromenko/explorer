@@ -452,7 +452,8 @@ class DeliveryRobot:
     def regrasp(self,target):
         """One bounded retry after a visually proven empty grasp."""
         self._xyz((np.asarray(self.grasp_xyz)+[0,0,self.settings['approach_height_m']]).tolist(),self.settings['open_deg'])
-        current=self.vision.latest();point=np.asarray(current['object_xyz'],dtype=float)
+        current=self.vision.latest()
+        point=np.asarray(current.get("grasp_xyz", current["object_xyz"]),dtype=float).copy()
         point[2]+=self.settings['grasp_tcp_offset_m'];self.grasp_xyz=point.tolist()
         self.align(target)
         return self.grasp(target)
