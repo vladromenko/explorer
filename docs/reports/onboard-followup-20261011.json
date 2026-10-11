@@ -298,7 +298,7 @@
   "calibration_files_changed": false,
   "secrets_images_and_datasets_committed": false,
   "current_trial": {
-    "state": "new_boot_waiting_for_operator_presence",
+    "state": "waiting_for_operator_target_identity",
     "last_confirmed_stop_latched": true,
     "last_confirmed_gripper_open_deg": null,
     "sock_grasp_not_executed": true,
@@ -308,21 +308,94 @@
     "new_photos_backed_up_to_mac": true,
     "boot_id": "94dbfe3d-e2ef-4883-9da6-796a572c6cb6",
     "last_confirmed_servo_deg": [
+      60,
       90,
-      90,
-      90,
-      90,
+      10,
+      0,
       90,
       90
     ],
-    "last_confirmed_battery_v": 12.172351837158203,
+    "last_confirmed_battery_v": 12.055465698242188,
     "new_boot_invalidates_previous_target": true,
-    "physical_motion_sent_after_resume": false,
+    "physical_motion_sent_after_resume": true,
     "prior_trial_private_archive": {
       "path": "Explorer-backups/20261011-perception/precision-and-surface-trials.tar.gz",
       "folders": 24,
       "sha256": "d7620402df5569004ad95e3c89c567613aa344a4d60a9a1c75065055cb751a43",
       "bytes": 66499996
+    }
+  },
+  "resumed_observed_trial": {
+    "at": 1791720444.379905,
+    "boot_id": "94dbfe3d-e2ef-4883-9da6-796a572c6cb6",
+    "code_commit": "d352d75",
+    "operator_permission": "Да, рядом, проверку разрешаю",
+    "camera_down": "data/onboard-validation/1791719659233250185-camera-down-perception",
+    "base_preparation": "data/onboard-validation/1791719714178050535-observed-grasp-preparation",
+    "base_approach": "data/onboard-validation/1791719774329036500-observed-sock-base-approach",
+    "base_task": "f436c964d9dc40f3a284721443f68146",
+    "planned_translation_m": 0.22705875284006186,
+    "planned_yaw_change_rad": -0.2775230282231559,
+    "nav_final_map_pose": [
+      0.20015938521158133,
+      -0.06905349911319007,
+      -0.3630832672912767
+    ],
+    "localization_accuracy_measured": false,
+    "forward_down_reacquisition": "no_object",
+    "camera_pans": [
+      "1791720070788486136-observed-floor-camera-pan",
+      "1791720123573968006-observed-floor-camera-pan",
+      "1791720172548950798-observed-floor-camera-pan",
+      "1791720364352725940-observed-floor-camera-pan"
+    ],
+    "left_visible_hypothesis": {
+      "object_base_m": [
+        0.1411204909639293,
+        0.16331225099843885,
+        0.037709159784327734
+      ],
+      "frame_truncated": true,
+      "model_label": "black sock",
+      "operator_identity_confirmation": "pending",
+      "contact_allowed": false
+    },
+    "physical_base_misalignment_root_cause_verified": false,
+    "physical_contact_executed": false,
+    "gripper_closure_executed": false,
+    "lift_executed": false,
+    "autonomous_success_claimed": false,
+    "stop_latched": true,
+    "velocity": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "odom_velocity": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "battery_v": 12.055465698242188,
+    "arm_command_estimate": [
+      60,
+      90,
+      10,
+      0,
+      90,
+      90
+    ],
+    "camera_floor_plane": {
+      "before_height_m": 0.30007975031826156,
+      "after_height_m": 0.30086648656089665,
+      "nominal_down_plane_normal_cos_before": 0.9997887190131842,
+      "nominal_down_plane_normal_cos_after": 0.999722548473191,
+      "diagnostic_only": true
+    },
+    "private_archive": {
+      "path": "Explorer-backups/20261011-perception/resumed-observed-trial.tar.gz",
+      "sha256": "7a65f9993af2fb39fd2b0b932e3af8b57bb7621ac85a74bf7c18dd8136595109",
+      "folders": 11
     }
   }
 }
