@@ -87,3 +87,17 @@ def test_depth_reobservation_never_follows_a_moving_observer_or_survives_occlusi
     current["depth"][:]=.5
     with pytest.raises(ValueError,match="separated object"):
         target.update(current)
+
+
+def test_motion_between_stationary_samples_invalidates_depth_label():
+    original = frame()
+    original["observer_key"] = ("boot", (90,90,30,0))
+    original["observer_pose"] = (0.,0.,0.)
+    target = StationaryDepthTarget(original, recognized()[0]["bbox"])
+    current = dict(frame(10.1), observer_key=original["observer_key"], observer_pose=(.001,0.,0.))
+    target.update(current)
+    # The velocity can be zero again; identical pixels do not prove that the
+    # base stayed put. Compare odometry with the original recognition pose.
+    moved = dict(frame(10.2), observer_key=original["observer_key"], observer_pose=(.003,0.,0.))
+    with pytest.raises(ValueError, match="Observer moved between"):
+        target.update(moved)

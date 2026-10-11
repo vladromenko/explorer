@@ -167,7 +167,10 @@ def track_grounded(node):
                     if (0<=time.time()-base["at"]<1
                             and all(abs(v)<.005 for v in base["velocity"]+base["odom_velocity"])):
                         arm=settled_reference(ROOT,base["boot_id"],float(sample["stamp"]))
-                        sample["observer_key"]=(base["boot_id"],tuple(arm["servo_deg"][:4]))
+                        pose=tuple(base["raw_pose"][key] for key in ("x","y","yaw"))
+                        if all(math.isfinite(value) for value in pose):
+                            sample["observer_key"]=(base["boot_id"],tuple(arm["servo_deg"][:4]))
+                            sample["observer_pose"]=pose
                 except (OSError,ValueError,KeyError):pass
                 installed=False
                 request_path=ROOT/"data/grounded-target-request.json"

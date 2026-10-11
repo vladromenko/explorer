@@ -377,7 +377,7 @@ class DeliveryRobot:
         grasp_point = point.copy()
         grasp_point[2] += self.settings["grasp_tcp_offset_m"]
         alignment = reachable_correction(grasp_point, lambda candidate: self.grasp_path(candidate)["reachable"],
-            arrival_margin_m=.025)
+            arrival_margin_m=.01)
         if alignment['reobserve_required']:
             pose=self.missions.maps.pose();bearing=pose['yaw']+alignment['bearing_rad']
             world_x=pose['x']+math.cos(pose['yaw'])*point[0]-math.sin(pose['yaw'])*point[1]

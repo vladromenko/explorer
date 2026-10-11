@@ -3,6 +3,7 @@
 Recognition names never constitute verified identity or permission to move.
 Lost targets cannot inherit a new object's label without a new recognition.
 """
+import math
 import time
 import cv2
 import numpy as np
@@ -15,6 +16,7 @@ class StationaryDepthTarget:
         if sample.get("observer_key") is None:
             raise ValueError("Texture-poor target requires a stationary observer")
         self.sample, self.box = sample, list(box)
+        self.observer_pose = sample.get("observer_pose")
         self.object_id = "depth-" + str(time.time_ns())
         if geometry is None:
             from surface_foreground import locate
@@ -58,6 +60,13 @@ class StationaryDepthTarget:
             raise ValueError("Stationary depth target frame gap")
         if sample.get("observer_key") != self.sample.get("observer_key"):
             raise ValueError("Observer moved; texture-poor target needs new recognition")
+        if self.observer_pose is not None:
+            pose = sample.get("observer_pose")
+            if pose is None or len(pose) != 3 or not all(math.isfinite(v) for v in pose):
+                raise ValueError("Stationary observer pose unavailable")
+            heading = math.atan2(math.sin(pose[2]-self.observer_pose[2]), math.cos(pose[2]-self.observer_pose[2]))
+            if math.hypot(pose[0]-self.observer_pose[0], pose[1]-self.observer_pose[1]) > .002 or abs(heading) > .005:
+                raise ValueError("Observer moved between observations; new recognition required")
         mask,point=self.segment(sample)
         if np.count_nonzero(mask&self.mask)/max(1,np.count_nonzero(mask|self.mask))<.7:
             raise ValueError("Stationary object depth silhouette changed")

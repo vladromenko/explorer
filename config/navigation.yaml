@@ -20,7 +20,7 @@ controller_server:
       plugin: nav2_controller::SimpleGoalChecker
       # Room navigation also serves the final arm approach. A 10 cm early
       # stop left floor objects beyond reach despite a successful Nav2 result.
-      xy_goal_tolerance: 0.025
+      xy_goal_tolerance: 0.01
       yaw_goal_tolerance: 0.15
       stateful: true
     FollowPath:
@@ -47,7 +47,7 @@ controller_server:
       linear_granularity: 0.025
       angular_granularity: 0.025
       transform_tolerance: 0.2
-      xy_goal_tolerance: 0.025
+      xy_goal_tolerance: 0.01
       trans_stopped_velocity: 0.015
       short_circuit_trajectory_evaluation: true
       stateful: true
