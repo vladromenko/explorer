@@ -12,7 +12,7 @@ import numpy as np
 from grasp_verification import verify_lift, verify_place
 from delivery_vision import reacquire_candidate
 from mobile_alignment import reachable_correction
-from target_view_recovery import recover_view, visible_target
+from target_view_recovery import recover_view, visible_search_target
 from camera_views import VIEWS
 from semantic_world import guarded_closure
 from learning_stack import CandidateScorer
@@ -357,7 +357,7 @@ class DeliveryRobot:
                 with np.load(self.root/'data/object-searches'/request['id']/'rgbd.npz',allow_pickle=False) as f:initial=dict(f)
                 if inspect_visibility:
                     height,width=initial["rgb"].shape[:2]
-                    inspection=visible_target(found["result"]["objects"],width,height)
+                    inspection=visible_search_target(found["result"],width,height)
                     if not inspection["found"]:
                         return None
                     objects=[inspection["target"]]

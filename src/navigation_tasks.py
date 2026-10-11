@@ -10,7 +10,7 @@ import uuid
 import numpy as np
 from lerobot_bridge import write_json
 from stored_records import records
-from target_view_recovery import recover_view, visible_target
+from target_view_recovery import recover_view, visible_search_target
 
 CATALOG=[
  {"id":"map_room","name":"Медленно построить карту","description":"Исследовать доступные границы, вернуться к старту и сохранить карту. Бортовая камера смотрит вперёд при поездке и осматривается на остановках.","parameters":["map_name"]},
@@ -152,7 +152,7 @@ class NavigationTasks:
             objects = (result.get("result") or {}).get("objects", [])
             with np.load(self.root / "data/object-searches" / request["id"] / "rgbd.npz", allow_pickle=False) as sample:
                 height, width = sample["rgb"].shape[:2]
-            return dict(visible_target(objects, width, height), search_id=request["id"],
+            return dict(visible_search_target(result.get("result") or {}, width, height), search_id=request["id"],
                         objects=objects, image_stamp=(result.get("result") or {}).get("image_stamp"))
 
         def retreat(distance):

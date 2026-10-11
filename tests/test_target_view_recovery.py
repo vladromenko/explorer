@@ -1,8 +1,25 @@
 import unittest
-from target_view_recovery import FLOOR_VIEWS, recover_view, visible_target
+from target_view_recovery import FLOOR_VIEWS, recover_view, visible_target, visible_search_target
 
 
 class RecoveryTests(unittest.TestCase):
+    def test_lower_confidence_enclosing_box_survives_inspection_nms(self):
+        from detection_candidates import unique_candidates
+        rows = [dict(label="black sock", bbox=[22.81,165.70,490.,289.69], confidence=.4047, position={"z":.313}),
+            dict(label="black sock", bbox=[22.58,165.47,218.44,289.45], confidence=.5108, position={"z":.316}),
+            dict(label="black sock", bbox=[215.31,170.86,489.69,282.66], confidence=.4775, position={"z":.307})]
+        filtered = unique_candidates(rows)
+        self.assertEqual(len(filtered), 2)
+        self.assertFalse(visible_target(filtered, 640, 480)["found"])
+        result = visible_search_target({"objects": filtered, "raw_objects": rows}, 640, 480)
+        self.assertTrue(result["found"])
+        self.assertIs(result["target"], rows[0])
+        self.assertEqual(result["inspection_source"], "raw_hypotheses")
+        self.assertFalse(result["physical_object_count_verified"])
+        self.assertFalse(result["identity_verified"])
+        outside = dict(rows[0], bbox=[500.,100.,630.,300.])
+        self.assertFalse(visible_search_target({"objects": filtered, "raw_objects": rows + [outside]}, 640, 480)["found"])
+
     def test_observed_nested_toe_does_not_force_another_retreat(self):
         rows = [dict(label="black sock", bbox=[25.,183.75,488.4375,303.28125], confidence=.4728, position={"z":.32}),
                 dict(label="black sock", bbox=[24.84375,183.515625,220.46875,302.578125], confidence=.4281, position={"z":.324})]

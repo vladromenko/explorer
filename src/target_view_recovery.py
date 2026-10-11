@@ -5,6 +5,14 @@ FLOOR_VIEWS = ("down", "down_near", "down_left", "down_right",
                "down_near_left", "down_near_right")
 
 
+def visible_search_target(result, width, height):
+    """Inspect raw boxes: NMS may discard the enclosing cloth hypothesis."""
+    raw = "raw_objects" in result
+    objects = result["raw_objects"] if raw else result.get("objects", [])
+    return dict(visible_target(objects, width, height),
+                inspection_source="raw_hypotheses" if raw else "filtered_hypotheses")
+
+
 def visible_target(objects, width, height):
     """Accept one enclosing depth hypothesis for inspection, never item count.
 
