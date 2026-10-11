@@ -36,6 +36,17 @@
       "elapsed_s": 39.61,
       "code_commit": "ffaf3e3",
       "log": "Explorer-backups/20261011-perception/explorer-resume-full-tests.log"
+    },
+    "jetson_after_automatic_view_recovery": {
+      "passed": 757,
+      "skipped": 3,
+      "elapsed_s": 39.68,
+      "code_commit": "c1ff552",
+      "log": "Explorer-backups/20261011-perception/explorer-inspection-integrated-tests.log"
+    },
+    "inspection_regressions_and_javascript_mac": {
+      "passed": 29,
+      "mapping_script_syntax": "passed"
     }
   },
   "arm_observation": {
@@ -298,24 +309,24 @@
   "calibration_files_changed": false,
   "secrets_images_and_datasets_committed": false,
   "current_trial": {
-    "state": "waiting_for_operator_target_identity",
+    "state": "object_view_recovered_contact_not_executed",
     "last_confirmed_stop_latched": true,
     "last_confirmed_gripper_open_deg": null,
     "sock_grasp_not_executed": true,
     "above_object_retry_interrupted_on_noop_open": "data/onboard-validation/1791704583198053429-observed-above-sock",
-    "robot_code_commit_last_confirmed": "ffaf3e3",
+    "robot_code_commit_last_confirmed": "c1ff552",
     "web_process_reload_required": false,
     "new_photos_backed_up_to_mac": true,
     "boot_id": "94dbfe3d-e2ef-4883-9da6-796a572c6cb6",
     "last_confirmed_servo_deg": [
-      60,
       90,
-      10,
+      90,
+      30,
       0,
       90,
       90
     ],
-    "last_confirmed_battery_v": 12.055465698242188,
+    "last_confirmed_battery_v": 11.876890182495117,
     "new_boot_invalidates_previous_target": true,
     "physical_motion_sent_after_resume": true,
     "prior_trial_private_archive": {
@@ -357,7 +368,7 @@
       ],
       "frame_truncated": true,
       "model_label": "black sock",
-      "operator_identity_confirmation": "pending",
+      "operator_identity_confirmation": "Это носок для теста",
       "contact_allowed": false
     },
     "physical_base_misalignment_root_cause_verified": false,
@@ -396,6 +407,171 @@
       "path": "Explorer-backups/20261011-perception/resumed-observed-trial.tar.gz",
       "sha256": "7a65f9993af2fb39fd2b0b932e3af8b57bb7621ac85a74bf7c18dd8136595109",
       "folders": 11
+    }
+  },
+  "automatic_view_recovery": {
+    "code_implemented": true,
+    "code_commit": "c1ff552",
+    "shared_policy": "src/target_view_recovery.py",
+    "floor_views": 6,
+    "maximum_retreats_per_task": 2,
+    "retreat_step_m": 0.06,
+    "backing_controller": "Nav2 BackUp with costmap collision checks",
+    "raw_detections_retained": true,
+    "enclosing_box_containment_threshold": 0.97,
+    "physical_object_count_verified": false,
+    "physical_retreat_events": [
+      {
+        "trial": "17eb58a0460042e9bdda9ee3608e4213",
+        "event": {
+          "at": 1791721651.6044416,
+          "phase": "view_retreat",
+          "result": {
+            "retreat_count": 1,
+            "result": {
+              "id": "317722f6104b45519e5a8451128b84f5",
+              "state": "succeeded",
+              "details": {
+                "pose": {
+                  "x": 0.12858824458630747,
+                  "y": -0.041203422077746396,
+                  "yaw": -0.3525607159633088,
+                  "frame": "map",
+                  "source": "slam_toolbox_lidar_map_tf",
+                  "age_s": 0.054658983,
+                  "localization_verified": false,
+                  "provisional": true
+                },
+                "requested_distance_m": 0.06,
+                "map_residual_m": 0.016790742516234632,
+                "physical_accuracy_measured": false
+              },
+              "at": 1791721651.5889807
+            }
+          }
+        }
+      },
+      {
+        "trial": "17eb58a0460042e9bdda9ee3608e4213",
+        "event": {
+          "at": 1791721772.18067,
+          "phase": "view_retreat",
+          "result": {
+            "retreat_count": 2,
+            "result": {
+              "id": "d296885ac4f1498583eb3d3256fbb9ff",
+              "state": "succeeded",
+              "details": {
+                "pose": {
+                  "x": 0.061571440502287494,
+                  "y": -0.01699967233875903,
+                  "yaw": -0.34082128397475764,
+                  "frame": "map",
+                  "source": "slam_toolbox_lidar_map_tf",
+                  "age_s": 0.027300271,
+                  "localization_verified": false,
+                  "provisional": true
+                },
+                "requested_distance_m": 0.06,
+                "map_residual_m": 0.011297763562818789,
+                "physical_accuracy_measured": false
+              },
+              "at": 1791721772.0817995
+            }
+          }
+        }
+      },
+      {
+        "trial": "e07f93d7dac0484ba493b5229d4905bf",
+        "event": {
+          "at": 1791722129.1287823,
+          "phase": "view_retreat",
+          "result": {
+            "retreat_count": 1,
+            "result": {
+              "id": "56db571e23154f76993eae161cd7b7a4",
+              "state": "succeeded",
+              "details": {
+                "pose": {
+                  "x": -0.004821487656807788,
+                  "y": 0.004704952671440391,
+                  "yaw": -0.3470604314084796,
+                  "frame": "map",
+                  "source": "slam_toolbox_lidar_map_tf",
+                  "age_s": 0.038228395,
+                  "localization_verified": false,
+                  "provisional": true
+                },
+                "requested_distance_m": 0.06,
+                "map_residual_m": 0.00997105915695438,
+                "physical_accuracy_measured": false
+              },
+              "at": 1791722129.1025279
+            }
+          }
+        }
+      }
+    ],
+    "validation_trials": [
+      {
+        "task": "17eb58a0460042e9bdda9ee3608e4213",
+        "state": "failed",
+        "reason": "Camera movement failed: trajectory exceeds joint soft limits"
+      },
+      {
+        "task": "e07f93d7dac0484ba493b5229d4905bf",
+        "state": "cancelled",
+        "reason": "Room task cancelled"
+      },
+      {
+        "task": "163088c080b44c78a21cf7042de03604",
+        "state": "succeeded",
+        "found": true,
+        "view": "down",
+        "retreat_count": 0,
+        "search_id": "fa36ffa349af4603931ad906efbc4a1c"
+      }
+    ],
+    "final_trial_no_unnecessary_retreat": true,
+    "final_target_bbox": [
+      26.875,
+      188.671875,
+      488.125,
+      304.453125
+    ],
+    "new_contact_or_hold_test": false,
+    "full_autonomous_delivery_verified": false,
+    "private_archive": {
+      "path": "Explorer-backups/20261011-perception/automatic-view-recovery.tar.gz",
+      "sha256": "4f1e0ee4b7e3d7cd5901ae5c1eeb95e025cbedd429d6a11ac45c2ec4efb273d8",
+      "bytes": 143116534
+    },
+    "final_state": {
+      "boot_id": "94dbfe3d-e2ef-4883-9da6-796a572c6cb6",
+      "age_s": 0.2692101001739502,
+      "stop_latched": true,
+      "velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "odom_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "battery": 11.876890182495117,
+      "arm_command_estimate": [
+        90,
+        90,
+        30,
+        0,
+        90,
+        90
+      ],
+      "navigation_busy": false,
+      "last_task_id": "163088c080b44c78a21cf7042de03604",
+      "last_task_state": "succeeded"
     }
   }
 }
