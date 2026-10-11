@@ -193,7 +193,7 @@ python3 bin/import-simulation-policy.py /путь/explorer-model.tar.gz --robot-
 ## Установка из Git и возврат
 
 ```bash
-git clone git@github.com:vladromenko/explorer.git
+git clone --branch codex/explorer-onboard-20261010 git@github.com:vladromenko/explorer.git
 cd explorer
 bash bin/install-simulator.sh
 ```
