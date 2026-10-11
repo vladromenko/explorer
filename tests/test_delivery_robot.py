@@ -22,7 +22,7 @@ class DeliveryRobotTests(unittest.TestCase):
     def test_base_alignment_restores_driving_then_search_view_before_refinding(self):
         calls = []
         missions = SimpleNamespace(maps=SimpleNamespace(pose=lambda: {"x": 1., "y": 2., "yaw": 0.}),
-            go=lambda *args: calls.append(("go", args)))
+            go=lambda *args, **kwargs: calls.append(("go", args, kwargs)))
         vision = SimpleNamespace(latest=lambda: {"object_xyz": [.33, -.07, .035]},
             stop=lambda: calls.append(("vision_stop",)))
         robot = DeliveryRobot(".", missions, None, None, None, vision, None)

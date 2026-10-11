@@ -388,7 +388,7 @@ class DeliveryRobot:
             # before navigation. The mission's normal camera guard remains on.
             self.vision.stop();self.tracking=False
             self._move(self.settings["transport_deg"])
-            self.missions.go(self.mid,goal_x,goal_y,bearing);self.hold()
+            self.missions.go(self.mid,goal_x,goal_y,bearing,precise=True);self.hold()
             self._move(self.settings["search_deg"])
             return dict(reachable=False,base_repositioned=True,reobserve_required=True,
                         alignment=alignment,goal_map=dict(x=goal_x,y=goal_y,yaw=bearing))

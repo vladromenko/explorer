@@ -64,6 +64,8 @@ class NavigationTasks:
                 raise ValueError("Нужны конечные координаты x, y, yaw")
             if type(spec.get("holonomic",False)) is not bool or type(spec.get("position_only",False)) is not bool:
                 raise ValueError("Неверный режим движения к точке")
+            if type(spec.get("precise",False)) is not bool or (spec.get("precise",False) and spec.get("position_only",False)):
+                raise ValueError("Неверный режим точного подхода")
             if spec.get("position_only",False) and not spec.get("holonomic",False):
                 raise ValueError("Проверка только x/y требует движения без разворота")
         if kind in ("patrol","find_object"):
@@ -163,8 +165,9 @@ class NavigationTasks:
                     (navigation.get("details") or {}).get("physical_motion_m",0)>.05)
                 result["return_target_was_safe_departure"]=bool(staging)
             elif kind=="navigate_current":
+                options={"precise":True} if spec.get("precise",False) else {}
                 result=self.await_mission(identifier,self.missions.start("navigate",spec["x"],spec["y"],spec["yaw"],scope="mapping",
-                    position_only=spec.get("position_only",False),holonomic=spec.get("holonomic",False)))
+                    position_only=spec.get("position_only",False),holonomic=spec.get("holonomic",False),**options))
             else:
                 found=self.search(identifier,spec["object_query"]) if kind=="find_object" else False
                 for name in spec.get("places",[]):

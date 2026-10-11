@@ -154,17 +154,19 @@ class Missions:
         if not p['compatible_map']:raise ValueError('Place belongs to a different map frame; load and localize on its map first')
         return self.start('navigate',p['x'],p['y'],p['yaw'])
 
-    def start(self,kind,x=None,y=None,yaw=0.,scope=None,max_goals=20,position_only=False,holonomic=False):
+    def start(self,kind,x=None,y=None,yaw=0.,scope=None,max_goals=20,position_only=False,holonomic=False,precise=False):
         if kind not in ("navigate","explore"):raise ValueError("Unsupported mission")
         scope=scope or ("mapping" if kind=="explore" else "localized")
         if kind=='navigate' and (not all(isinstance(v,(float,int)) and math.isfinite(v) for v in (x,y,yaw)) or max(abs(x),abs(y))>100):raise ValueError('Invalid target')
         if type(max_goals) is not int or not 1<=max_goals<=20:raise ValueError("Exploration goal budget: 1..20")
         if type(position_only) is not bool or type(holonomic) is not bool:raise ValueError("Invalid navigation mode")
         if position_only and not holonomic:raise ValueError("Position-only navigation requires holonomic travel")
+        if type(precise) is not bool or (precise and (kind != "navigate" or position_only)):
+            raise ValueError("Invalid precise approach mode")
         with self.lock:
             self.require_ready(scope)
             if self.active:raise ValueError('A mission is already active')
-            mid=uuid.uuid4().hex;self.active=dict(id=mid,kind=kind,scope=scope,map_epoch=self.maps.epoch(),started=time.time(),started_monotonic=time.monotonic(),deadline_monotonic=time.monotonic()+(600 if kind=='explore' else 120),phase='planning',max_goals=max_goals,position_only=position_only,holonomic=holonomic)
+            mid=uuid.uuid4().hex;self.active=dict(id=mid,kind=kind,scope=scope,map_epoch=self.maps.epoch(),started=time.time(),started_monotonic=time.monotonic(),deadline_monotonic=time.monotonic()+(600 if kind=='explore' else 120),phase='planning',max_goals=max_goals,position_only=position_only,holonomic=holonomic,precise=precise)
             self.record(self.active,'running',dict(x=x,y=y,yaw=yaw))
             self.emit("begin_mission",mission=mid,kind="mapping" if scope=="mapping" else kind)
         threading.Thread(target=self.worker,args=(mid,kind,x,y,yaw),daemon=True).start()
@@ -233,7 +235,7 @@ class Missions:
         except Exception as exc:
             self.finish(mid,'failed',dict(reason=str(exc),observations=observations))
 
-    def go(self,mid,x,y,yaw):
+    def go(self,mid,x,y,yaw,precise=False):
         pose=self.maps.pose()
         distance=math.hypot(pose["x"]-x,pose["y"]-y)
         if (self.active or {}).get("scope")=="mapping" and distance>.15:
@@ -245,7 +247,7 @@ class Missions:
                 # Once the base faces the route, keep that heading at the
                 # frontier instead of demanding a second turn beside furniture.
                 yaw=heading
-        return self.go_goal(mid,x,y,yaw)
+        return self.go_goal(mid,x,y,yaw,precise=precise)
 
     def go_departure(self,mid,candidate):
         """One short Nav2 collision-checked exit from a mapped near-obstacle start."""
@@ -282,15 +284,18 @@ class Missions:
         if moved<.15:raise ValueError("Safe departure did not move the chassis")
         return dict(pose=after,moved_m=moved,policy=candidate["policy"])
 
-    def go_goal(self,mid,x,y,yaw,rotation_only=False):
+    def go_goal(self,mid,x,y,yaw,rotation_only=False,precise=False):
         pose=self.maps.pose()
-        if math.hypot(pose["x"]-x,pose["y"]-y)<.03 and abs(math.atan2(math.sin(pose["yaw"]-yaw),math.cos(pose["yaw"]-yaw)))<.05:
+        precise = precise or bool((self.active or {}).get("precise"))
+        if math.hypot(pose["x"]-x,pose["y"]-y)<(.008 if precise else .03) and abs(math.atan2(math.sin(pose["yaw"]-yaw),math.cos(pose["yaw"]-yaw)))<.05:
             self.hold_base(mid)
             return self.maps.pose()
         if not rotation_only:self.maps.preview(x,y)
         self.require_ready()
         if not self.client.wait_for_server(timeout_sec=2):raise ValueError('Navigator unavailable')
         goal=NavigateToPose.Goal();goal.pose.header.frame_id='map';goal.pose.header.stamp=self.node.get_clock().now().to_msg()
+        if precise:
+            goal.behavior_tree = str(ROOT / "config/navigation-approach.xml")
         goal.pose.pose.position.x=float(x);goal.pose.pose.position.y=float(y)
         goal.pose.pose.orientation.z=math.sin(yaw/2);goal.pose.pose.orientation.w=math.cos(yaw/2)
         with self.lock:
@@ -307,7 +312,7 @@ class Missions:
             self.active.update(handle=handle,phase='navigating',target=dict(x=x,y=y,yaw=yaw))
             self.emit('resume_base',mission=mid)
         try:
-            result_future=handle.get_result_async();deadline=time.monotonic()+90
+            result_future=handle.get_result_async();deadline=time.monotonic()+(30 if precise else 90)
             progress_pose=pose;last_progress=time.monotonic();progress_check_due=0.
             self.trace_position(mid,pose)
             while not result_future.done():
@@ -336,6 +341,9 @@ class Missions:
         position_only=position_only_arrival(active.get("kind"),active.get("position_only"),rotation_only)
         if not (navigation_position_attained(pose,x,y) if position_only else navigation_attained(pose,x,y,yaw)):
             raise ValueError('Goal result disagrees with live position/orientation')
+        if precise and (math.hypot(pose["x"]-x,pose["y"]-y) > .02 or
+                abs(math.atan2(math.sin(pose["yaw"]-yaw),math.cos(pose["yaw"]-yaw))) > .12):
+            raise ValueError("Precise approach result disagrees with live pose")
         with self.db() as db:db.execute('INSERT INTO visits(seen,x,y,yaw,frame,provisional) VALUES(?,?,?,?,?,?)',(time.time(),pose['x'],pose['y'],pose['yaw'],'map',1))
         return dict(pose,goal_orientation_verified=not position_only or
             abs(math.atan2(math.sin(pose["yaw"]-yaw),math.cos(pose["yaw"]-yaw)))<=.15)

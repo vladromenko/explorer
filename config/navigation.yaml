@@ -10,19 +10,43 @@ controller_server:
     min_theta_velocity_threshold: 0.001
     failure_tolerance: 0.3
     progress_checker_plugins: [progress_checker]
-    goal_checker_plugins: [goal_checker]
-    controller_plugins: [FollowPath]
+    goal_checker_plugins: [goal_checker, approach_goal_checker]
+    controller_plugins: [FollowPath, ApproachPath]
     progress_checker:
       plugin: nav2_controller::SimpleProgressChecker
       required_movement_radius: 0.08
       movement_time_allowance: 10.0
     goal_checker:
       plugin: nav2_controller::SimpleGoalChecker
-      # Room navigation also serves the final arm approach. A 10 cm early
-      # stop left floor objects beyond reach despite a successful Nav2 result.
-      xy_goal_tolerance: 0.01
+      xy_goal_tolerance: 0.10
       yaw_goal_tolerance: 0.15
       stateful: true
+    approach_goal_checker:
+      plugin: nav2_controller::SimpleGoalChecker
+      xy_goal_tolerance: 0.01
+      yaw_goal_tolerance: 0.10
+      stateful: false
+    ApproachPath:
+      plugin: nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController
+      desired_linear_vel: 0.08
+      lookahead_dist: 0.10
+      min_lookahead_dist: 0.05
+      max_lookahead_dist: 0.15
+      use_velocity_scaled_lookahead_dist: false
+      min_approach_linear_velocity: 0.025
+      approach_velocity_scaling_dist: 0.20
+      use_collision_detection: true
+      max_allowed_time_to_collision_up_to_carrot: 1.5
+      use_regulated_linear_velocity_scaling: true
+      regulated_linear_scaling_min_radius: 0.30
+      regulated_linear_scaling_min_speed: 0.025
+      use_cost_regulated_linear_velocity_scaling: false
+      use_rotate_to_heading: true
+      rotate_to_heading_min_angle: 0.20
+      rotate_to_heading_angular_vel: 0.15
+      max_angular_accel: 0.5
+      allow_reversing: false
+      transform_tolerance: 0.20
     FollowPath:
       plugin: dwb_core::DWBLocalPlanner
       debug_trajectory_details: false
@@ -47,7 +71,7 @@ controller_server:
       linear_granularity: 0.025
       angular_granularity: 0.025
       transform_tolerance: 0.2
-      xy_goal_tolerance: 0.01
+      xy_goal_tolerance: 0.10
       trans_stopped_velocity: 0.015
       short_circuit_trajectory_evaluation: true
       stateful: true

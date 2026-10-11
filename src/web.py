@@ -1259,6 +1259,7 @@ class NavigationTaskRequest(BaseModel):
     max_goals:int=Field(default=20,ge=1,le=20)
     holonomic:bool=False
     position_only:bool=False
+    precise:bool=False
 
 @app.get("/api/navigation/tasks")
 def room_tasks_status():return dict(**navigation_tasks.status(),camera=camera_views.status())
