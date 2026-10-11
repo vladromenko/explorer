@@ -1,6 +1,85 @@
 {
   "date": "2026-10-11",
   "firmware_changed": false,
+  "completion_integration": {
+    "baseline_commit": "f34746d2af00c27cfeeb0dea052dcbc12adbf761",
+    "tested_commit": "55e5ea9",
+    "jetson_tests": {"passed": 811, "skipped": 2, "elapsed_s": 42.58, "real_human_model_forward_enabled": true},
+    "mac_javascript_and_affected_tests": {"passed": 39},
+    "camera_adapter_and_rgbd_tests_mac": {"passed": 7, "commit": "b1bea8f"},
+    "final_code_validation": {
+      "commit": "aafc74a",
+      "jetson_passed": 820,
+      "jetson_skipped": 2,
+      "elapsed_s": 44.15,
+      "javascript_and_camera_tests_mac_passed": 23,
+      "independent_scoped_review_tests_passed": 37,
+      "material_review_findings": 0
+    },
+    "camera_transport_validation": {
+      "journal": "data/onboard-validation/camera-startup-trial-20261011/shm-ros-delivery.json",
+      "sdk_aggregation": "disable",
+      "frame_sync": false,
+      "soft_filter_changed": false,
+      "shm_only_selected_for": ["camera", "perception"],
+      "control_udp_profile_unchanged": true,
+      "sdk_depth_delay_median_before_ms": 108,
+      "sdk_depth_delay_median_after_ms": 2.7,
+      "duration_s": 8.018,
+      "rgb_frames": 119,
+      "depth_frames": 120,
+      "cached_rgb_frames": 119,
+      "cache_frame_gap_max_ms": 70.375,
+      "cache_poll_age_max_ms": 107.835,
+      "udp_receive_buffer_errors_delta": 0,
+      "registration_intrinsics_unchanged": true,
+      "timestamps_modified": false,
+      "freshness_limits_relaxed": false,
+      "temporary_service_overrides_removed": true
+    },
+    "readonly_roi_continuity": {
+      "journal": "data/onboard-validation/1791728750787516239-readonly-roi-continuity/result.json",
+      "outcome": "passed",
+      "stationary_only": true,
+      "samples": 38,
+      "duration_s": 3.972,
+      "frame_gap_max_s": 0.137254,
+      "age_after_processing_max_s": 0.164990,
+      "fresh_semantic_search": false,
+      "hardware_motion_sent": false,
+      "contact_verified": false,
+      "held_verified": false
+    },
+    "agent_memory_live_task": "14c793a38ded41bb92f47a0d588cb225",
+    "instruction_retrieval_live": "succeeded",
+    "view_recovery_live": {
+      "task": "487db6885aec4113827c65cddcb51f52",
+      "state": "succeeded",
+      "found": true,
+      "retreat_count": 0,
+      "physical_contact_executed": false,
+      "gripper_closure_executed": false,
+      "lift_executed": false
+    },
+    "backup": {
+      "path_jetson": "/home/vlad/Explorer-backups/20261011-R1/working-install.tar.gz",
+      "sha256": "3beeda66af78100132566d6b9d0887f4e7fdf03be9d6d27f8518aaaeff8f496d",
+      "archive_fully_read": true,
+      "critical_files_restored_for_validation": true,
+      "sqlite_integrity_checks_passed": 9,
+      "independent_mac_copy_sha_verified": true,
+      "rollback_executed": false
+    },
+    "power_helper": {
+      "installed_by_operator": true,
+      "automatic_shutdown_available": true,
+      "shutdown_executed_for_test": false,
+      "charging_sensor_available": false
+    },
+    "user_demonstrations": 0,
+    "learned_user_policies": 0,
+    "full_autonomous_delivery_verified": false
+  },
   "baseline_commit": "6c2160d",
   "branch": "codex/explorer-onboard-20261010",
   "tests": {
