@@ -14,7 +14,7 @@ class DeliveryRobotTests(unittest.TestCase):
         robot = DeliveryRobot(".", None, SimpleNamespace(reference=lambda: {"servo_deg": [90]*6}),
             None, None, SimpleNamespace(stop=lambda: calls.append("vision_stop")), None)
         robot.mid = "task"
-        robot._detect_current = lambda place: next(found)
+        robot._detect_current = lambda place,inspect_visibility=False: next(found) if inspect_visibility else self.fail("Expected whole-view inspection")
         robot._move = lambda goal: calls.append(tuple(goal))
         robot.hold = lambda: None
         robot.permit = lambda mid: None

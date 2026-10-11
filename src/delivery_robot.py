@@ -12,7 +12,7 @@ import numpy as np
 from grasp_verification import verify_lift, verify_place
 from delivery_vision import FeatureObject, reacquire_candidate
 from mobile_alignment import reachable_correction
-from target_view_recovery import recover_view
+from target_view_recovery import recover_view, visible_target
 from camera_views import VIEWS
 from semantic_world import guarded_closure
 from learning_stack import CandidateScorer
@@ -333,7 +333,7 @@ class DeliveryRobot:
             self._move(self.settings['transport_deg'])
         raise ValueError('В принятых местах не найден доступный носок')
 
-    def _detect_current(self,place):
+    def _detect_current(self,place,inspect_visibility=False):
             arrived=time.time();deadline=time.monotonic()+2
             while float(self.vision.snapshot()['stamp'])<arrived:
                 self.permit(self.mid)
@@ -350,12 +350,18 @@ class DeliveryRobot:
             if found.get('id')!=request['id'] or found.get('phase')!='ready':
                 raise ValueError('Поиск предмета не завершился: '+str(found.get('error','timeout')))
             objects=[o for o in found['result']['objects'] if o.get('position') and o.get('confidence',0)>=.35]
-            if len(objects)>1:raise ValueError('Несколько похожих предметов: выбор для принятого сценария неоднозначен')
+            if len(objects)>1 and not inspect_visibility:raise ValueError('Несколько похожих предметов: выбор для принятого сценария неоднозначен')
             if objects:
+                with np.load(self.root/'data/object-searches'/request['id']/'rgbd.npz',allow_pickle=False) as f:initial=dict(f)
+                if inspect_visibility:
+                    height,width=initial["rgb"].shape[:2]
+                    inspection=visible_target(found["result"]["objects"],width,height)
+                    if not inspection["found"]:
+                        return None
+                    objects=[inspection["target"]]
                 current=np.asarray(self.arm.reference()['servo_deg'],dtype=float);pose=self.missions.maps.pose()
                 if np.max(np.abs(before-current))>.15 or max(abs(pose[k]-base[k]) for k in ('x','y','yaw'))>.003:
                     raise ValueError('Камера сместилась во время распознавания')
-                with np.load(self.root/'data/object-searches'/request['id']/'rgbd.npz',allow_pickle=False) as f:initial=dict(f)
                 fresh=self.vision.snapshot()
                 candidate=reacquire_candidate(initial,fresh,objects[0]['bbox'])
                 tracker=FeatureObject(fresh,candidate['bbox'])
@@ -368,7 +374,7 @@ class DeliveryRobot:
             return None
 
     def find_aligned(self):
-        found=self._detect_current('base_aligned')
+        found=self._detect_current("base_aligned",inspect_visibility=True)
         if found:
             return found
         self.vision.stop()
@@ -379,7 +385,7 @@ class DeliveryRobot:
             self._move(list(VIEWS[view]) + [self.arm.reference()["servo_deg"][5]])
 
         def observe():
-            target = self._detect_current("base_alignment_recovery")
+            target = self._detect_current("base_alignment_recovery",inspect_visibility=True)
             return {"found": target is not None, "target": target}
 
         def retreat(distance):
@@ -388,12 +394,14 @@ class DeliveryRobot:
             self.hold()
             return result
 
+        observations=[]
         result = recover_view(observe, move_view, retreat, lambda: self.permit(self.mid),
-                              lambda phase, details: None)
+                              lambda phase, details: observations.append(dict(phase=phase,at=time.time(),result=details)))
         if not result["found"]:
             raise ValueError("После осмотра и отъезда носок не найден; старые координаты не используются")
         return dict(result["target"], view_recovery={"view": result["view"],
-                    "retreat_count": result["retreat_count"], "identity_verified": False})
+                    "retreat_count": result["retreat_count"], "identity_verified": False,
+                    "observations":observations})
 
     def approach(self, target):
         # The accepted bounded release searches saved base poses with a reachable
