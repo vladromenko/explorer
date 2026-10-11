@@ -336,11 +336,7 @@ class DeliveryRobot:
         raise ValueError('В принятых местах не найден доступный носок')
 
     def _detect_current(self,place,inspect_visibility=False):
-            arrived=time.time();deadline=time.monotonic()+2
-            while float(self.vision.snapshot()['stamp'])<arrived:
-                self.permit(self.mid)
-                if time.monotonic()>deadline:raise ValueError('Нет кадра после достижения поисковой позы')
-                time.sleep(.03)
+            self.vision.wait_snapshot(lambda:self.permit(self.mid), after_stamp=time.time())
             before=np.asarray(self.arm.reference()['servo_deg'],dtype=float);base=self.missions.maps.pose()
             request=self.finder.start('sock');self.search_id=request['id'];end=time.monotonic()+105
             try:self.permit(self.mid)
@@ -364,7 +360,7 @@ class DeliveryRobot:
                 current=np.asarray(self.arm.reference()['servo_deg'],dtype=float);pose=self.missions.maps.pose()
                 if np.max(np.abs(before-current))>.15 or max(abs(pose[k]-base[k]) for k in ('x','y','yaw'))>.003:
                     raise ValueError('Камера сместилась во время распознавания')
-                fresh=self.vision.snapshot()
+                fresh=self.vision.wait_snapshot(lambda:self.permit(self.mid))
                 candidate=reacquire_candidate(initial,fresh,objects[0]['bbox'])
                 tracker=self.vision.make_tracker(fresh,candidate["bbox"])
                 self.vision.start_tracker(tracker,self.settings)

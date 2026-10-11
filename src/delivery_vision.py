@@ -312,6 +312,29 @@ class MeasuredVision:
             tool=np.array(model.state.get_global_link_transform('Gripping'))
         return mount@np.asarray(settings['camera_to_mount']),tool[:3,3],angles
 
+    def wait_snapshot(self, permit, after_stamp=None, timeout_s=3.):
+        """Bounded non-actuating wait after on-demand inference or a view change."""
+        if (type(timeout_s) not in (int, float) or not math.isfinite(timeout_s)
+                or not .05 <= timeout_s <= 5):
+            raise ValueError("Invalid RGB-D waiting budget")
+        if after_stamp is not None and (type(after_stamp) not in (int, float)
+                or not math.isfinite(after_stamp)):
+            raise ValueError("Invalid required RGB-D exposure time")
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            permit()
+            sample = None
+            try:
+                sample = self.snapshot()
+            except ValueError as exc:
+                if str(exc) != "RGB-D frame is stale":
+                    raise
+            if sample is not None and (after_stamp is None or float(sample["stamp"]) > after_stamp):
+                permit()
+                return sample
+            time.sleep(.03)
+        raise ValueError("No fresh RGB-D exposure within the bounded waiting budget")
+
     def preview_visibility(self, point, servo_deg, settings):
         """Nominal view at an IK endpoint; never measured or executed feedback."""
         sample = self.snapshot()

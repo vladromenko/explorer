@@ -42,6 +42,19 @@ class OfflineIntentTests(unittest.TestCase):
 
 
 class ContinualAgentMemoryTests(unittest.TestCase):
+    def test_actuator_cancel_precedes_world_memory_io(self):
+        with tempfile.TemporaryDirectory() as folder:
+            calls = []
+            world = SimpleNamespace(latest_episode=lambda: calls.append("memory") or None,
+                record_action=lambda *args, **kwargs: calls.append("memory_write"))
+            port = SkillPort("move", "move", object_schema(), ("arm",),
+                lambda args, ctx: None, lambda identifier: calls.append("cancel_owner"), physical=True)
+            agent = OnboardAgent(Path(folder), [port], autostart=False, world=world)
+            task = agent.submit("cancel_memory_order", {"steps": [{"skill": "move"}]}, True)
+            agent.executing = (task["id"], "move")
+            self.assertEqual(agent.cancel(task["id"])["state"], "cancelled")
+            self.assertEqual(calls, ["cancel_owner", "memory", "memory_write"])
+
     def test_ready_camera_view_supports_next_inspection_without_measured_joints(self):
         import json
         with tempfile.TemporaryDirectory() as folder:

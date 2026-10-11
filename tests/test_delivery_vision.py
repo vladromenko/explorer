@@ -309,3 +309,43 @@ def test_delivery_snapshot_checks_depth_exposure_and_registered_geometry(tmp_pat
     sample["depth_stamp"] = sample["stamp"]
     np.savez(path,**sample)
     assert float(vision.snapshot()["depth_stamp"]) == sample["stamp"]
+
+
+def test_fresh_frame_wait_recovers_only_transient_staleness_without_actuation():
+    from unittest.mock import Mock, patch
+    vision = MeasuredVision.__new__(MeasuredVision)
+    sample = {"stamp": 4.}
+    vision.snapshot = Mock(side_effect=[ValueError("RGB-D frame is stale"),
+        {"stamp": 2.}, sample])
+    permit = Mock()
+    with patch("delivery_vision.time.sleep"):
+        assert vision.wait_snapshot(permit, after_stamp=3.) is sample
+    assert permit.call_count == 4
+    assert vision.snapshot.call_count == 3
+
+
+def test_frame_wait_does_not_hide_unsynchronized_depth_or_cancel():
+    import pytest
+    from unittest.mock import Mock
+    vision = MeasuredVision.__new__(MeasuredVision)
+    vision.snapshot = Mock(side_effect=ValueError("RGB-D color/depth exposures are not synchronized"))
+    with pytest.raises(ValueError, match="not synchronized"):
+        vision.wait_snapshot(lambda: None)
+    assert vision.snapshot.call_count == 1
+    vision.snapshot.reset_mock()
+    with pytest.raises(ValueError, match="cancelled"):
+        vision.wait_snapshot(Mock(side_effect=ValueError("Task cancelled")))
+    vision.snapshot.assert_not_called()
+    with pytest.raises(ValueError, match="budget"):
+        vision.wait_snapshot(lambda: None, timeout_s=float("nan"))
+
+
+def test_frame_wait_expires_without_reusing_last_stale_frame():
+    import pytest
+    from unittest.mock import Mock, patch
+    vision = MeasuredVision.__new__(MeasuredVision)
+    vision.snapshot = Mock(side_effect=ValueError("RGB-D frame is stale"))
+    with patch("delivery_vision.time.monotonic", side_effect=[0., .01, .06]), patch("delivery_vision.time.sleep"):
+        with pytest.raises(ValueError, match="bounded waiting"):
+            vision.wait_snapshot(lambda: None, timeout_s=.05)
+    vision.snapshot.assert_called_once()

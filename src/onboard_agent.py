@@ -294,12 +294,14 @@ class OnboardAgent:
             execution = self.executing
         if execution and execution[0] == identifier:
             port = self.ports[execution[1]]
-            self.record_memory(identifier, port.name, "cancelled", {"reason": reason, "physical_stop_confirmed": False})
             if port.cancel:
                 try:
                     port.cancel(identifier)
                 except Exception as exc:
                     self.event(identifier, "cancel_error", {"reason": str(exc), "physical_stop_confirmed": False})
+            # Stop the actual owner before any best-effort world DB write,
+            # which may wait for a SQLite lock or a slow storage device.
+            self.record_memory(identifier, port.name, "cancelled", {"reason": reason, "physical_stop_confirmed": False})
         self.wake.set()
         return self.get(identifier)
 
