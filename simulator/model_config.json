@@ -86,7 +86,9 @@
       0.085
     ],
     "height_m": 0.12,
-    "wall_thickness_m": 0.008
+    "wall_thickness_m": 0.008,
+    "floor_collision_backing_m": 0.02,
+    "floor_collision_backing_status": "numerical backing below floor; top surface and delivery thresholds unchanged; not a measured basket thickness"
   },
   "sources": [
     "https://mujoco.readthedocs.io/en/stable/XMLreference.html#body-flexcomp",

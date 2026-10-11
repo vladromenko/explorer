@@ -57,10 +57,10 @@ function showResult(result) {
   const total = result.episodes ?? result.count ?? result.attempts;
   const validation = result.validation;
   if (validation?.mae !== undefined) pieces.push(`Ошибка по независимым записям: ${Number(validation.mae).toFixed(3)}`);
-  if (typeof successes === 'number') pieces.push(`Физических успехов: ${successes}${typeof total === 'number' ? ' / ' + total : ''}`);
+  if (typeof successes === 'number') pieces.push(`Доставок в симуляции: ${successes}${typeof total === 'number' ? ' / ' + total : ''}`);
   if (typeof result.validation_mae === 'number') pieces.push(`Ошибка по записям: ${result.validation_mae.toFixed(3)}`);
   if (result.state || result.status) pieces.push(statusNames[result.state || result.status] || result.state || result.status);
-  if (result.physics_validated === false) pieces.push('Проверка в физике ещё не выполнена');
+  if (result.physics_validated === false) pieces.push('Динамика настоящего робота ещё не идентифицирована');
   if (result.message) pieces.push(result.message);
   return pieces.join(' · ');
 }
@@ -71,11 +71,11 @@ function renderStatus(snapshot) {
   $('contact').textContent = task.grasp_contact ? 'Есть' : 'Нет'; $('lifted').textContent = task.lifted ? 'Да' : 'Нет'; $('placed').textContent = task.placed ? 'Да' : 'Нет'; $('simtime').textContent = `${Number(state.sim_time || 0).toFixed(1)} с`;
   $('pause').textContent = snapshot.paused ? 'Продолжить' : 'Пауза'; recording = snapshot.recording; $('record').textContent = recording ? 'Закончить запись' : 'Начать запись'; $('record-status').textContent = recording ? `● ${snapshot.record_frames} кадров` : ''; $('annotation').disabled = !recording;
   const jobs = snapshot.jobs || []; busy = jobs.some(job => ['running', 'exporting', 'training', 'validating'].includes(job.status));
-  ['trials', 'train', 'validate', 'export'].forEach(id => { $(id).disabled = busy; }); $('cancel-job').classList.toggle('hidden', !busy); $('reset').disabled = busy; $('floor-view').disabled = busy;
+  ['trials', 'train', 'show-policy', 'validate', 'export'].forEach(id => { $(id).disabled = busy; }); $('cancel-job').classList.toggle('hidden', !busy); $('reset').disabled = busy; $('floor-view').disabled = busy;
   const current = jobs.at(-1); $('job-state').firstElementChild.textContent = current ? `${jobNames[current.kind]} · ${current.message || statusNames[current.status] || current.status}` : 'Готов к работе'; $('job-state').querySelector('progress').value = current?.progress || 0;
   if (jobs.length) { $('jobs').replaceChildren(); jobs.slice().reverse().forEach(job => { const row = document.createElement('div'); row.className = 'job'; const title = document.createElement('strong'); title.textContent = jobNames[job.kind]; const status = document.createElement('span'); status.textContent = statusNames[job.status] || job.status; const detail = document.createElement('small'); detail.style.display = 'block'; detail.textContent = showResult(job.result) || job.message || ''; row.append(title, status, detail); $('jobs').append(row); }); }
   $('logs').replaceChildren(); (snapshot.logs || []).slice().reverse().forEach(log => { const row = document.createElement('div'), stamp = document.createElement('time'); stamp.textContent = log.time; row.append(stamp, document.createTextNode(log.message)); $('logs').append(row); });
-  $('download').classList.toggle('hidden', !snapshot.package_available); $('storage').textContent = `Хранилище: ${snapshot.data_root}`; $('connection').textContent = 'Симуляция работает';
+  const model = snapshot.model; $('model-status').textContent = model ? `Модель ${model.id} · ${model.task_validated_simulation ? 'навык проверен на независимых сценах' : 'полная проверка навыка ещё не пройдена'} · доставок ${model.successes}/${model.episodes}` : 'Сначала обучите модель. «Показать навык» запускает её на одной новой сцене.'; $('download').classList.toggle('hidden', !snapshot.package_available); $('storage').textContent = `Хранилище: ${snapshot.data_root}`; $('connection').textContent = 'Симуляция работает';
 }
 let episodeSignature = '';
 async function updateEpisodes() {
@@ -86,13 +86,13 @@ async function updateEpisodes() {
     episodeSignature = signature; $('episode-count').textContent = `(${episodes.length})`;
     if (!episodes.length) return;
     $('episodes').replaceChildren();
-    episodes.forEach(episode => { const label = document.createElement('label'), input = document.createElement('input'); input.type = 'checkbox'; input.value = episode.id; input.checked = known.has(episode.id) ? known.get(episode.id) : true; const title = document.createElement('span'); title.textContent = `${episode.id} · ${episode.frames} кадров · ${episode.physics_verified_success ? 'доставка подтверждена моделью' : 'без подтверждённой доставки'}`; label.append(input, title); $('episodes').append(label); });
+    episodes.forEach(episode => { const label = document.createElement('label'), input = document.createElement('input'); input.type = 'checkbox'; input.value = episode.id; input.checked = known.has(episode.id) ? known.get(episode.id) : episode.physics_verified_success === true; const title = document.createElement('span'); title.textContent = `${episode.id} · ${episode.frames} кадров · ${episode.physics_verified_success ? 'доставка подтверждена моделью' : 'без подтверждённой доставки'}`; label.append(input, title); $('episodes').append(label); });
   } catch (_) {}
 }
 let pollInFlight = false;
 async function poll() { if (pollInFlight) return; pollInFlight = true; try { renderStatus(await api('/api/state')); } catch (_) { $('connection').textContent = 'Связь прервана'; } finally { pollInFlight = false; } }
 function refreshImages() { if (document.hidden) return; for (const camera of ['overview', 'wrist']) { const image = $(camera); if (!image.dataset.loading) { image.dataset.loading = '1'; image.src = `/${camera === 'wrist' && depthView ? 'depth' : camera}.jpg?t=${Date.now()}`; } } }
-function jobs(kind) { return api(`/api/jobs/${kind}`, {count: kind === 'validate' ? 10 : Number($('attempts').value), steps: Number($('steps').value), batch_size: Number($('batch').value), episode_ids: kind === 'train' ? [...document.querySelectorAll('#episodes input:checked')].map(input => input.value) : null, seed: kind === 'validate' ? 10000 : 100}).then(() => { notify('Задание началось'); poll(); }); }
+function jobs(kind, validationCount = 10) { return api(`/api/jobs/${kind}`, {count: kind === 'validate' ? validationCount : Number($('attempts').value), steps: Number($('steps').value), batch_size: Number($('batch').value), episode_ids: kind === 'train' ? [...document.querySelectorAll('#episodes input:checked')].map(input => input.value) : null, seed: kind === 'validate' ? 10000 : 100}).then(() => { notify('Задание началось'); poll(); }); }
 $('rgb-view').addEventListener('click', () => { depthView = false; $('rgb-view').classList.add('selected'); $('depth-view').classList.remove('selected'); $('depth-note').classList.add('hidden'); refreshImages(); });
 $('depth-view').addEventListener('click', () => { depthView = true; $('depth-view').classList.add('selected'); $('rgb-view').classList.remove('selected'); $('depth-note').classList.remove('hidden'); refreshImages(); });
 button('floor-view', async () => { zeroControls(); await api('/api/floor-view', {}); notify('Рука переходит к обзору пола'); });
@@ -102,6 +102,7 @@ button('pause', async () => { zeroControls(); await api('/api/pause', {}); await
 button('stop', async () => { zeroControls(); notify('Движение остановлено'); });
 button('record', async () => { if (recording) await api('/api/record/stop', {annotation: $('annotation').value}); else await api('/api/record/start', {}); await poll(); });
 ['trials', 'train', 'validate', 'export'].forEach(kind => button(kind, () => jobs(kind)));
+button('show-policy', () => jobs('validate', 1));
 $('tab-arm').addEventListener('click', () => { $('arm-controls').classList.remove('hidden'); $('base-controls').classList.add('hidden'); $('tab-arm').classList.add('selected'); $('tab-base').classList.remove('selected'); });
 $('tab-base').addEventListener('click', () => { $('base-controls').classList.remove('hidden'); $('arm-controls').classList.add('hidden'); $('tab-base').classList.add('selected'); $('tab-arm').classList.remove('selected'); });
 $('speed').addEventListener('input', () => { $('speed-value').textContent = `${$('speed').value} °/с`; });

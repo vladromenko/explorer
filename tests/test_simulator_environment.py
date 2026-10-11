@@ -1,5 +1,6 @@
 """Observation boundaries and actual simulated time, independent of hardware."""
 import unittest
+from unittest.mock import MagicMock
 
 try:
     import mujoco
@@ -59,6 +60,41 @@ class SimulatorEnvironmentTests(unittest.TestCase):
         scans = [self.env.lidar_scan(i, rays=16) for i in (0, 1)]
         self.assertEqual(len(scans[0]["ranges"]), 16)
         self.assertNotEqual(scans[0]["frame"], scans[1]["frame"])
+
+    def test_issued_endpoint_stream_is_not_filtered_twice(self):
+        teacher = ExplorerEnv(render=False)
+        try:
+            goal = teacher.command.copy()
+            goal[0] += 12.
+            for _ in range(24):
+                teacher.step(goal)
+                self.env.step(teacher.command.copy(), applied=True)
+                np.testing.assert_allclose(self.env.command, teacher.command, atol=1e-9)
+            # A proposed jump still cannot exceed the finite endpoint speed.
+            previous = self.env.command.copy()
+            goal[0] = 180.
+            self.env.step(goal, applied=True)
+            self.assertLessEqual(self.env.command[0]-previous[0], self.env.velocity_limit[0]*.05+1e-9)
+            self.assertTrue(np.isfinite(self.env.data.qpos).all())
+        finally:
+            teacher.close()
+
+    def test_rgb_reuse_never_carries_a_frame_across_physics_or_reset(self):
+        renderer = MagicMock()
+        renderer.render.return_value = np.zeros((240, 320, 3), np.uint8)
+        self.env.renderer = renderer
+        first = self.env.render_rgb()
+        first[:] = 255
+        self.assertEqual(int(self.env.render_rgb().max()), 0)
+        self.assertEqual(renderer.render.call_count, 1)
+        self.env.step(self.env.command.copy())
+        self.env.render_rgb()
+        self.assertEqual(renderer.render.call_count, 2)
+        self.env.reset(seed=5)
+        renderer.render.return_value[:] = 123
+        self.env.renderer = renderer
+        self.assertEqual(int(self.env.render_rgb().min()), 123)
+        self.assertEqual(renderer.render.call_count, 3)
 
 
 if __name__ == "__main__":

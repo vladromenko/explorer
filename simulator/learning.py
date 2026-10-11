@@ -1,6 +1,6 @@
 """Isolated simulator data export and official LeRobot ACT training.
 
-Actor inputs are the wrist RGB image and Explorer's nine commanded coordinates.
+Actor inputs are wrist RGB, nine commanded coordinates and a declared internal clock.
 Physics diagnostics may describe a trajectory, but never become actor features.
 """
 from __future__ import annotations
@@ -19,7 +19,7 @@ import sys
 import time
 import uuid
 
-from src.mobile_policy_contract import ACTION_ORDER, UNITS, SAMPLE_CONTRACT, CONTRACT_SHA256, read_bundle
+from src.mobile_policy_contract import ACTION_ORDER, UNITS, SAMPLE_CONTRACT, CONTRACT_SHA256, read_bundle, ACTOR_CLOCK, ACTOR_CLOCK_FOURIER, clock_features, ACTOR_ACTION_TRANSFORM, decode_policy_action
 
 
 def write_json(path, value):
@@ -128,6 +128,7 @@ def export_dataset(episode_folders, destination, repo_id="explorer/simulator", t
         "action": {"dtype": "float32", "shape": (9,), "names": ACTION_ORDER},
         "observation.images.wrist": {"dtype": "image", "shape": (240, 320, 3),
                                      "names": ["height", "width", "channels"]},
+        ACTOR_CLOCK["feature"]: {"dtype": "float32", "shape": (14,), "names": ACTOR_CLOCK_FOURIER["components"]},
     }
     fps = next(iter(rates))
     dataset = LeRobotDataset.create(repo_id=repo_id, root=destination, fps=fps,
@@ -139,15 +140,18 @@ def export_dataset(episode_folders, destination, repo_id="explorer/simulator", t
             alignment = episode.get("action_alignment", "pre_action_observation")
             if alignment not in ("pre_action_observation", "same_row_pre_action"):
                 raise ValueError("Expected a pre-action observation and its next applied command")
-            for current in rows:
+            for frame_index, current in enumerate(rows):
                 if cancelled and cancelled():
                     raise InterruptedError("Simulator training cancelled during dataset export")
                 with Image.open(_contained(folder, current["image"])) as image:
                     rgb = np.asarray(image.convert("RGB").resize((320, 240))).copy()
+                observation_state = np.asarray(_vector(current.get("observation_state", current.get("command"))), dtype=np.float32)
+                training_action = np.asarray(_vector(current["applied_action"]), dtype=np.float32)
                 dataset.add_frame({
-                    "observation.state": np.asarray(_vector(current.get("observation_state", current.get("command"))), dtype=np.float32),
-                    "action": np.asarray(_vector(current["applied_action"]), dtype=np.float32),
+                    "observation.state": observation_state,
+                    "action": training_action,
                     "observation.images.wrist": rgb, "task": task or episode.get("name", "pick and place"),
+                    ACTOR_CLOCK["feature"]: np.asarray(clock_features({**ACTOR_CLOCK_FOURIER,"period_s":1/fps},frame_index/fps), dtype=np.float32),
                 })
             dataset.save_episode()
             provenance.append({"episode": episode, "input_sha256": inputs,
@@ -159,7 +163,9 @@ def export_dataset(episode_folders, destination, repo_id="explorer/simulator", t
     result = dict(format="explorer_simulator_dataset_v1", episodes=provenance, dataset_fps=fps,
         training_source="synthetic_only", domain="simulation", joint_state_source="command_estimate",
         sample_contract=SAMPLE_CONTRACT, sample_contract_sha256=CONTRACT_SHA256,
-        actor_inputs=["observation.state", "observation.images.wrist"],
+        actor_inputs=["observation.state", "observation.images.wrist", ACTOR_CLOCK["feature"]],
+        actor_context={**ACTOR_CLOCK_FOURIER, "period_s": 1/fps},
+        action_transform=None,
         original_timestamps="samples.jsonl:at (Unix seconds), simulation_time (simulation seconds)",
         dataset_timebase="fixed_simulation_step",
         privileged_actor_inputs=False, physics_acceptance=False, physical_success_verified=False,
@@ -191,9 +197,10 @@ class LoadedPolicy:
 
         self.torch = torch
         self.device = choose_device(device)
-        _, checkpoint = read_bundle(job_folder)
+        self.bundle, checkpoint = read_bundle(job_folder)
         config = ACTConfig.from_pretrained(checkpoint, local_files_only=True)
         config.device = self.device
+        config.pretrained_backbone_weights = None  # Saved checkpoint includes the entire backbone.
         self.policy = ACTPolicy.from_pretrained(checkpoint, config=config, local_files_only=True)
         self.policy.to(self.device).eval()
         self.pre, self.post = make_pre_post_processors(self.policy.config, pretrained_path=str(checkpoint),
@@ -203,6 +210,7 @@ class LoadedPolicy:
 
     def reset(self):
         self.policy.reset()
+        self.elapsed_s = 0.
 
     def __call__(self, state9, rgb):
         import numpy as np
@@ -212,11 +220,15 @@ class LoadedPolicy:
             raise ValueError("The actor requires a 320x240 RGB uint8 wrist frame")
         batch = {"observation.state": self.torch.tensor([state], dtype=self.torch.float32),
                  "observation.images.wrist": self.torch.from_numpy(image.copy()).permute(2, 0, 1).float().div(255).unsqueeze(0)}
+        context = self.bundle.get("actor_context")
+        if context:
+            batch[context["feature"]] = self.torch.tensor([clock_features(context,self.elapsed_s)], dtype=self.torch.float32)
         with self.torch.no_grad():
             action = self.post(self.policy.select_action(self.pre(batch))).cpu().numpy().reshape(-1)
         if action.shape != (9,) or not np.isfinite(action).all():
             raise ValueError("ACT produced invalid commands")
-        return action
+        self.elapsed_s += context["period_s"] if context else .05
+        return np.asarray(decode_policy_action(state, action, self.bundle), dtype=np.float32)
 
 
 def load_policy(job_folder, device="cpu"):
@@ -232,13 +244,15 @@ def training_config(folder, steps, device, batch_size=16, seed=1000):
         raise ValueError("Training seed must be an unsigned 32-bit integer")
     folder = Path(folder).resolve()
     return dict(dataset=dict(repo_id="explorer/simulator-train", root=str(folder / "train"), video_backend="pyav"),
-        policy=dict(type="act", device=device, push_to_hub=False, chunk_size=20, n_action_steps=1,
-            temporal_ensemble_coeff=.01,
-            pretrained_backbone_weights=None, dim_model=128, n_heads=4, dim_feedforward=512,
+        policy=dict(type="act", device=device, push_to_hub=False, chunk_size=20, n_action_steps=20,
+            temporal_ensemble_coeff=None,
+            pretrained_backbone_weights="ResNet18_Weights.IMAGENET1K_V1", dim_model=128, n_heads=4, dim_feedforward=512,
             n_encoder_layers=2, n_decoder_layers=1, n_vae_encoder_layers=2,
             use_vae=False, dropout=0., optimizer_lr=3e-4, optimizer_lr_backbone=1e-4,
             input_features={"observation.state": {"type": "STATE", "shape": [9]},
-                "observation.images.wrist": {"type": "VISUAL", "shape": [3, 240, 320]}},
+                "observation.images.wrist": {"type": "VISUAL", "shape": [3, 240, 320]},
+                ACTOR_CLOCK["feature"]: {"type": "ENV", "shape": [14]}},
+            normalization_mapping={"VISUAL": "MEAN_STD", "STATE": "MEAN_STD", "ACTION": "MEAN_STD", "ENV": "IDENTITY"},
             output_features={"action": {"type": "ACTION", "shape": [9]}}),
         output_dir=str(folder / "model"), batch_size=batch_size, num_workers=2, steps=steps,
         save_freq=min(100, steps), log_freq=min(10, steps), env_eval_freq=0,
@@ -257,6 +271,7 @@ def validate_checkpoint(folder, device="cpu", maximum_samples=128, cancelled=Non
     checkpoint = folder / "model/checkpoints/last/pretrained_model"
     config = ACTConfig.from_pretrained(checkpoint, local_files_only=True)
     config.device = device
+    config.pretrained_backbone_weights = None
     policy = ACTPolicy.from_pretrained(checkpoint, config=config, local_files_only=True)
     policy.to(device).eval()
     pre, post = make_pre_post_processors(policy.config, pretrained_path=str(checkpoint),
@@ -267,6 +282,7 @@ def validate_checkpoint(folder, device="cpu", maximum_samples=128, cancelled=Non
         raise ValueError("Validation sample limit must be positive")
     indices = np.unique(np.linspace(0, len(dataset) - 1, min(maximum_samples, len(dataset)), dtype=int)).tolist()
     selected = torch.utils.data.Subset(dataset, indices)
+    transform = json.loads((folder / "train/explorer-provenance.json").read_text()).get("action_transform")
     errors, baseline = [], []
     with torch.no_grad():
         for batch in torch.utils.data.DataLoader(selected, batch_size=1, shuffle=False, num_workers=0):
@@ -276,6 +292,9 @@ def validate_checkpoint(folder, device="cpu", maximum_samples=128, cancelled=Non
             previous = batch["observation.state"].cpu().numpy().reshape(-1, 9)
             policy.reset()
             actual = post(policy.select_action(pre(batch))).cpu().numpy().reshape(-1, 9)
+            if transform:
+                expected[:, :6] += previous[:, :6]
+                actual[:, :6] += previous[:, :6]
             errors.extend(np.abs(actual - expected).tolist())
             baseline.extend(np.abs(previous - expected).tolist())
     errors, baseline = np.asarray(errors), np.asarray(baseline)
@@ -311,8 +330,11 @@ def create_bundle(folder, state):
         runtime_versions=state.get("runtime_versions", {}), policy="act", observation_order=ACTION_ORDER,
         action_order=ACTION_ORDER, units=UNITS, joint_state_source="command_estimate",
         sample_contract=SAMPLE_CONTRACT, sample_contract_sha256=CONTRACT_SHA256,
-        camera_feature="observation.images.wrist", chunk_size=config.get("chunk_size", 1), action_steps=1,
+        camera_feature="observation.images.wrist", chunk_size=config.get("chunk_size", 1), action_steps=config.get("n_action_steps",1),
+        inference_execution={"kind":"bounded_action_queue","actions_per_call":1,"queue_steps":config.get("n_action_steps",1)} if config.get("n_action_steps",1)>1 else None,
         temporal_ensemble_coeff=config.get("temporal_ensemble_coeff"),
+        actor_context=json.loads((folder / "train/explorer-provenance.json").read_text()).get("actor_context"),
+        action_transform=json.loads((folder / "train/explorer-provenance.json").read_text()).get("action_transform"),
         dataset_fps=json.loads((folder / "train/explorer-provenance.json").read_text())["dataset_fps"],
         validation=state["validation"], training_source="synthetic_only", domain="simulation",
         training_goal=state.get("training_goal", "successful_simulation_imitation"),
@@ -353,10 +375,12 @@ def stage_warm_start(source_folder, destination, target_policy):
     bundle, checkpoint = read_bundle(source_folder)
     source_config = ACTConfig.from_pretrained(checkpoint, local_files_only=True)
     source_config.device = "cpu"
+    source_config.pretrained_backbone_weights = None
     source = ACTPolicy.from_pretrained(checkpoint, config=source_config, local_files_only=True)
     config_values = dict(target_policy)
     config_values.pop("type")
     config_values["device"] = "cpu"
+    config_values["pretrained_backbone_weights"] = None
     # Typed feature objects are already verified by the existing bundle reader.
     config_values["input_features"] = source_config.input_features
     config_values["output_features"] = source_config.output_features
@@ -407,7 +431,7 @@ def train_job(job_folder, episode_folders, steps=3000, python_executable=None, d
         framework="lerobot", policy="act", dataset_kind="mobile_manipulation_9dof",
         training_source="synthetic_only", domain="simulation", physics_acceptance=False,
         training_goal="diagnostic_pipeline_smoke" if diagnostic_only else "successful_simulation_imitation",
-        training_profile="temporal_compact_act_v3",
+        training_profile="fourier_timed_visual_act_v6",
         physical_success_verified=False, automatic_execution=False, executed=False)
     child = None
 
@@ -437,7 +461,14 @@ def train_job(job_folder, episode_folders, steps=3000, python_executable=None, d
         if not diagnostic_only and any(item[0].get("physics_verified_success", item[0].get("success")) is not True for item in provenance):
             raise ValueError("ACT task training requires successful simulator demonstrations; failed attempts remain diagnostic data")
         state["dataset_fingerprint"] = hashlib.sha256(json.dumps([item[3] for item in provenance], sort_keys=True).encode()).hexdigest()
+        # Reuse the verified Torch cache across jobs on the external volume.
+        # Keep LeRobot's job-local environment and dataset provenance intact.
+        shared_backbone = Path(os.environ.get("EXPLORER_SIM_VOLUME", "/Volumes/ExplorerSim")) / "cache/torch/hub/checkpoints/resnet18-f37072fd.pth"
         environment = configure(folder)
+        if shared_backbone.is_file():
+            backbone_cache = Path(environment["TORCH_HOME"]) / "hub/checkpoints"
+            backbone_cache.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(shared_backbone, backbone_cache / shared_backbone.name)
         state["device"] = choose_device(device)
         check_cancelled()
         training, validation, heldout = split_episodes(folders, [item[0] for item in provenance])
@@ -453,6 +484,11 @@ def train_job(job_folder, episode_folders, steps=3000, python_executable=None, d
             source_bundle, _ = read_bundle(warm_start)
             if source_bundle.get("dataset_fingerprint") != state["dataset_fingerprint"]:
                 raise ValueError("Warm start requires the same verified dataset fingerprint and normalization source")
+            context = json.loads((folder / "train/explorer-provenance.json").read_text()).get("actor_context")
+            if source_bundle.get("actor_context") != context:
+                raise ValueError("Warm start requires the same actor time context")
+            if source_bundle.get("action_transform") is not None:
+                raise ValueError("Warm start requires the same action transformation")
             state["warm_start"] = stage_warm_start(warm_start, folder / "initial-policy", config["policy"])
             config["policy"]["pretrained_path"] = str(folder / "initial-policy")
         write_json(folder / "train-config.json", config)

@@ -10,7 +10,7 @@ import tempfile
 import time
 import uuid
 
-from src.mobile_policy_contract import read_bundle, CONTRACT_SHA256
+from src.mobile_policy_contract import read_bundle, CONTRACT_SHA256, ACTOR_CLOCK
 from simulator.learning import sha256, write_json
 
 MAX_PACKAGE_BYTES = 2 * 1024 ** 3
@@ -65,6 +65,8 @@ def export_package(job_folder, destination, inference_device="cuda"):
             raise ValueError("Teacher diagnostics are not a trained policy validation report")
         if report.get("model_weights_sha256") != bundle["checkpoint_sha256"]["model.safetensors"]:
             raise ValueError("Physics validation report refers to a different or unidentified checkpoint")
+        if report.get("model_checkpoint_sha256",bundle.get("validation_checkpoint_sha256",bundle["checkpoint_sha256"])) != bundle.get("validation_checkpoint_sha256",bundle["checkpoint_sha256"]):
+            raise ValueError("Physics validation report refers to different execution settings or processors")
         if report.get("real_hardware_accepted") is not False or report.get("physics_validated") is not False:
             raise ValueError("Simulation rollout reports cannot grant hardware or dynamics acceptance")
     destination = Path(destination).resolve()
@@ -92,8 +94,9 @@ def export_package(job_folder, destination, inference_device="cuda"):
                     # policy factory away from this verified checkpoint.
                     value["pretrained_path"] = None
                     value["pretrained_revision"] = None
+                    value["pretrained_backbone_weights"] = None
                 write_json(copied, value)
-        for name in ("job.json", "validation.json", "split.json", "physics-validation.json"):
+        for name in ("job.json", "validation.json", "split.json", "physics-validation.json", "preview-validation.json"):
             source = folder / name
             if source.is_file():
                 shutil.copyfile(source, stage / name)
@@ -101,11 +104,21 @@ def export_package(job_folder, destination, inference_device="cuda"):
             source = folder / split / "explorer-provenance.json"
             if source.is_file():
                 write_json(stage / (split + "-provenance.json"), json.loads(source.read_text()))
-        bundle = dict(bundle, checkpoint_sha256={str(path.relative_to(target)): sha256(path)
+        source_digests = bundle.get("validation_checkpoint_sha256",bundle["checkpoint_sha256"])
+        bundle = dict(bundle, validation_checkpoint_sha256=source_digests,
+                      checkpoint_sha256={str(path.relative_to(target)): sha256(path)
                       for path in target.rglob("*") if path.is_file()},
                       transfer_inference_device=inference_device, physics_acceptance=False,
                       autonomous_motion_on_registration=False, physical_success_verified=False)
         write_json(stage / "bundle.json", bundle)
+        packaged_report = stage / "physics-validation.json"
+        if packaged_report.is_file():
+            report = json.loads(packaged_report.read_text())
+            if "model_checkpoint_sha256" in report:
+                # Record the device-only retargeting separately from the
+                # complete checkpoint actually exercised in simulation.
+                report["transfer_checkpoint_sha256"] = bundle["checkpoint_sha256"]
+                write_json(packaged_report,report)
         read_bundle(stage)
         files = {str(path.relative_to(stage)): sha256(path) for path in stage.rglob("*") if path.is_file()}
         manifest = dict(format="explorer_simulator_transfer_v1", created=time.time(), files=files,
@@ -174,6 +187,10 @@ def _extract_verified(archive_path, destination):
         if (report.get("validation_kind") != "closed_loop_policy" or
                 report.get("model_weights_sha256") != bundle["checkpoint_sha256"]["model.safetensors"]):
             raise ValueError("Physics validation report does not match this policy checkpoint")
+        if report.get("model_checkpoint_sha256",bundle.get("validation_checkpoint_sha256",bundle["checkpoint_sha256"])) != bundle.get("validation_checkpoint_sha256",bundle["checkpoint_sha256"]):
+            raise ValueError("Physics validation report does not match execution settings or processors")
+        if report.get("transfer_checkpoint_sha256",bundle["checkpoint_sha256"]) != bundle["checkpoint_sha256"]:
+            raise ValueError("Retargeted checkpoint differs from the transfer report")
         if report.get("real_hardware_accepted") is not False or report.get("physics_validated") is not False:
             raise ValueError("Simulation rollout reports cannot grant hardware or dynamics acceptance")
     required = {"policy_preprocessor.json", "policy_postprocessor.json"}
@@ -181,12 +198,16 @@ def _extract_verified(archive_path, destination):
         raise ValueError("ACT normalization processors are missing")
     _validate_processors(checkpoint, bundle["checkpoint_sha256"])
     config = json.loads((checkpoint / "config.json").read_text())
-    if set(config.get("input_features", {})) != {"observation.state", "observation.images.wrist"} or set(config.get("output_features", {})) != {"action"}:
-        raise ValueError("Simulator actor features must contain only commanded state and wrist RGB")
+    features = {"observation.state", "observation.images.wrist"}
+    if bundle.get("actor_context"):
+        features.add(ACTOR_CLOCK["feature"])
+    if set(config.get("input_features", {})) != features or set(config.get("output_features", {})) != {"action"}:
+        raise ValueError("Simulator actor features differ from its verified observation contract")
     horizon = config.get("chunk_size", 1)
-    if type(horizon) is not int or horizon not in (1, 20, 50) or config.get("n_action_steps") != 1:
+    steps = config.get("n_action_steps")
+    if type(horizon) is not int or horizon not in (1, 20, 50) or steps not in (1, 20) or steps>horizon:
         raise ValueError("Simulator transfer requires bounded ACT chunks and exactly one applied action per call")
-    if horizon > 1 and config.get("temporal_ensemble_coeff") != .01:
+    if horizon > 1 and steps==1 and config.get("temporal_ensemble_coeff") != .01:
         raise ValueError("Bounded simulator ACT chunks require the tested temporal ensemble")
     return manifest, bundle, checkpoint
 

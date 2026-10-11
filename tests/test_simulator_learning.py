@@ -9,9 +9,9 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from simulator.learning import inspect_episode, training_config, train_job, create_bundle, write_json, split_episodes
+from simulator.learning import inspect_episode, training_config, train_job, create_bundle, write_json, split_episodes, export_dataset
 from simulator.transfer import export_package, import_package
-from src.mobile_policy_contract import CONTRACT_SHA256, read_bundle
+from src.mobile_policy_contract import CONTRACT_SHA256, read_bundle, ACTOR_CLOCK, ACTOR_ACTION_TRANSFORM, decode_policy_action
 
 
 class SimulatorLearningTests(unittest.TestCase):
@@ -57,10 +57,10 @@ class SimulatorLearningTests(unittest.TestCase):
         self.assertEqual(fps, 20)
         self.assertEqual(rows[0]["observation_state"], [90] * 6 + [0] * 3)
         config = training_config(self.root, 3, "cpu", batch_size=1)
-        self.assertEqual(set(config["policy"]["input_features"]), {"observation.state", "observation.images.wrist"})
-        self.assertEqual(config["policy"]["n_action_steps"], 1)
+        self.assertEqual(set(config["policy"]["input_features"]), {"observation.state", "observation.images.wrist", "observation.environment_state"})
+        self.assertEqual(config["policy"]["n_action_steps"], 20)
         self.assertEqual(config["policy"]["chunk_size"], 20)
-        self.assertEqual(config["policy"]["temporal_ensemble_coeff"], .01)
+        self.assertIsNone(config["policy"]["temporal_ensemble_coeff"])
         self.assertIn("samples.jsonl", inputs)
 
     def test_scene_seed_duplicates_never_leak_into_holdout(self):
@@ -79,6 +79,45 @@ class SimulatorLearningTests(unittest.TestCase):
         (second / "samples.jsonl").write_bytes((first / "samples.jsonl").read_bytes())
         _, _, independent = split_episodes([first, second], [dict(source="simulator_manual")] * 2)
         self.assertFalse(independent)
+
+    def test_optional_clock_transfers_and_mismatched_context_is_rejected(self):
+        model = self.model()
+        config_path = model / "model/checkpoints/last/pretrained_model/config.json"
+        config = json.loads(config_path.read_text())
+        config["input_features"][ACTOR_CLOCK["feature"]] = {"type": "ENV", "shape": [2]}
+        config["pretrained_backbone_weights"] = "ResNet18_Weights.IMAGENET1K_V1"
+        write_json(config_path, config)
+        write_json(model / "train/explorer-provenance.json", {"dataset_fps":20, "actor_context":{**ACTOR_CLOCK, "period_s":.05}, "action_transform":ACTOR_ACTION_TRANSFORM})
+        create_bundle(model, json.loads((model / "job.json").read_text()))
+        archive = export_package(model, self.root / "clock.tar.gz")
+        imported = import_package(archive["path"], self.root / "robot")
+        bundle, checkpoint = read_bundle(imported["path"])
+        self.assertEqual(bundle["actor_context"]["input_source"], "internal_elapsed_time")
+        state = [90.]*6+[0.]*3
+        delta = [1.]*6+[.1, .02, -.05]
+        self.assertEqual(decode_policy_action(state, delta, bundle), [91.]*6+[.1, .02, -.05])
+        self.assertEqual(decode_policy_action(state, delta, {}), delta)
+        self.assertIsNone(json.loads((checkpoint / "config.json").read_text())["pretrained_backbone_weights"])
+        bundle["actor_context"]["period_s"] = 0.
+        write_json(Path(imported["path"]) / "bundle.json", bundle)
+        with self.assertRaisesRegex(ValueError, "контекст времени"):
+            read_bundle(imported["path"])
+
+    def test_clock_remains_a_batched_vector_in_real_lerobot_dataset(self):
+        import torch
+        from PIL import Image
+        from lerobot.datasets import LeRobotDataset
+        episode = self.episode()
+        for index in range(4):
+            Image.new("RGB", (320, 240), (100, index, 50)).save(episode / f"{index}.jpg")
+        export_dataset([episode], self.root / "dataset", "explorer/clock-test", "pick sock")
+        dataset = LeRobotDataset("explorer/clock-test", root=self.root / "dataset", video_backend="pyav")
+        batch = next(iter(torch.utils.data.DataLoader(dataset, batch_size=2)))
+        self.assertEqual(tuple(batch[ACTOR_CLOCK["feature"]].shape), (2, 14))
+        self.assertAlmostEqual(float(batch[ACTOR_CLOCK["feature"]][1, 0]), .05/80.)
+        self.assertAlmostEqual(float(batch[ACTOR_CLOCK["feature"]][1, 1]), .05/80.)
+        torch.testing.assert_close(batch["action"][:, :6], torch.full((2, 6),90.))
+        self.assertAlmostEqual(float(batch["action"][0, 6]), .05)
 
     def test_bounded_temporal_chunks_transfer_with_one_action(self):
         model = self.model()
@@ -99,6 +138,22 @@ class SimulatorLearningTests(unittest.TestCase):
         archive = export_package(model, self.root / "unbounded.tar.gz")
         with self.assertRaisesRegex(ValueError, "bounded"):
             import_package(archive["path"], self.root / "unbounded")
+
+    def test_short_action_queue_is_declared_and_transfers_one_action_per_call(self):
+        model = self.model()
+        config_path = model / "model/checkpoints/last/pretrained_model/config.json"
+        config = json.loads(config_path.read_text())
+        config.update(chunk_size=20,n_action_steps=20,temporal_ensemble_coeff=None)
+        write_json(config_path,config)
+        create_bundle(model,json.loads((model / "job.json").read_text()))
+        package = export_package(model,self.root / "queue.tar.gz")
+        imported = import_package(package["path"],self.root / "robot")
+        bundle, _ = read_bundle(imported["path"])
+        self.assertEqual(bundle["inference_execution"]["actions_per_call"],1)
+        bundle["inference_execution"]["actions_per_call"]=20
+        write_json(Path(imported["path"]) / "bundle.json",bundle)
+        with self.assertRaisesRegex(ValueError,"выполнение"):
+            read_bundle(imported["path"])
 
     def test_incompatible_contract_and_unbounded_commands_rejected(self):
         folder = self.episode()
@@ -162,6 +217,27 @@ class SimulatorLearningTests(unittest.TestCase):
         self.assertTrue(registered["registered"])
         self.assertEqual(registered["job"]["state"], "imported_simulation")
         self.assertFalse(registered["job"]["executed"])
+
+    def test_validation_binds_execution_settings_through_device_retargeting(self):
+        model = self.model()
+        source, _ = read_bundle(model)
+        report = dict(validation_kind="closed_loop_policy", successes=10, episodes=10,
+            heldout_independent=True, model_weights_sha256=source["checkpoint_sha256"]["model.safetensors"],
+            model_checkpoint_sha256=source["checkpoint_sha256"], real_hardware_accepted=False,
+            physics_validated=False)
+        write_json(model / "physics-validation.json", report)
+        result = export_package(model, self.root / "bound-report.tar.gz")
+        imported = import_package(result["path"], self.root / "robot")
+        bundle, _ = read_bundle(imported["path"])
+        saved = json.loads((Path(imported["path"]) / "physics-validation.json").read_text())
+        self.assertEqual(saved["model_checkpoint_sha256"], source["checkpoint_sha256"])
+        self.assertEqual(bundle["validation_checkpoint_sha256"], source["checkpoint_sha256"])
+        self.assertEqual(saved["transfer_checkpoint_sha256"], bundle["checkpoint_sha256"])
+        self.assertNotEqual(saved["model_checkpoint_sha256"]["config.json"], saved["transfer_checkpoint_sha256"]["config.json"])
+        report["model_checkpoint_sha256"] = {**source["checkpoint_sha256"], "config.json": "different execution"}
+        write_json(model / "physics-validation.json", report)
+        with self.assertRaisesRegex(ValueError, "execution settings"):
+            export_package(model, self.root / "mismatched-execution.tar.gz")
 
     def test_failed_attempts_are_not_default_task_training(self):
         with patch("importlib.metadata.version", return_value="0.6.1"), \

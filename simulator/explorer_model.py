@@ -272,8 +272,11 @@ def build_mjcf(mesh_dir=None, *, scene="sock", sock_position=(.33, 0., .015), bi
         c = config["bin"]
         hx, hy = c["inner_half_size_m"]
         thick, height = c["wall_thickness_m"], c["height_m"]
+        backing = c.get("floor_collision_backing_m", 0.)
         bin_body = ET.SubElement(world, "body", name="bin", pos=_s(bin_position))
-        specs = [("bottom", [0,0,thick/2], [hx+thick,hy+thick,thick/2]),
+        # Preserve the visible top surface. Numerical backing below the ground
+        # prevents a soft flex contact switching to the underside of a thin box.
+        specs = [("bottom", [0,0,(thick-backing)/2], [hx+thick,hy+thick,(thick+backing)/2]),
                  ("left", [0,hy+thick/2,height/2], [hx+thick,thick/2,height/2]),
                  ("right", [0,-hy-thick/2,height/2], [hx+thick,thick/2,height/2]),
                  ("front", [hx+thick/2,0,height/2], [thick/2,hy,height/2]),

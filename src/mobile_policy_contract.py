@@ -17,6 +17,40 @@ SAMPLE_CONTRACT={"schema":"explorer_mobile_sample_v3","action_order":ACTION_ORDE
     "clock":"unix_seconds","frame":"base_footprint","image":"wrist_rgb"}
 CONTRACT_SHA256=hashlib.sha256(json.dumps(SAMPLE_CONTRACT,sort_keys=True).encode()).hexdigest()
 
+# Optional ACT context disambiguates pauses from transitions. It is an internal
+# clock, never privileged object coordinates or a replacement for state9.
+ACTOR_CLOCK={"feature":"observation.environment_state","kind":"elapsed_policy_time",
+    "scale_s":80.,"input_source":"internal_elapsed_time",
+    "components":["elapsed_scaled","period_scaled"]}
+ACTOR_CLOCK_FOURIER={**ACTOR_CLOCK,"periods_s":[2.,4.,8.,16.,32.,64.],
+    "components":ACTOR_CLOCK["components"]+[f"{kind}_{period:g}s" for period in (2.,4.,8.,16.,32.,64.) for kind in ("sin","cos")]}
+ACTOR_ACTION_TRANSFORM={"kind":"servo_delta_from_command_estimate",
+    "relative_channels":list(range(6)),"base_channels":"absolute_body_velocity"}
+
+
+def clock_features(context, elapsed_s):
+    elapsed_s=float(elapsed_s)
+    if not math.isfinite(elapsed_s) or elapsed_s<0:raise ValueError("Неверное время политики")
+    result=[elapsed_s/context["scale_s"],context["period_s"]/context["scale_s"]]
+    for period in context.get("periods_s",[]):
+        phase=2*math.pi*elapsed_s/period
+        result.extend((math.sin(phase),math.cos(phase)))
+    return result
+
+
+def decode_policy_action(state, action, bundle):
+    """Reconstruct issued endpoints from declared training-space outputs."""
+    reference=[float(value) for value in state]
+    result=[float(value) for value in action]
+    if len(reference)!=9 or len(result)!=9 or not all(math.isfinite(value) for value in reference+result):
+        raise ValueError("Неверное действие политики")
+    transform=bundle.get("action_transform")
+    if transform is not None:
+        if transform!=ACTOR_ACTION_TRANSFORM:raise ValueError("Неподдерживаемое преобразование действий")
+        for index in transform["relative_channels"]:
+            result[index]+=reference[index]
+    return result
+
 
 def read_bundle(job_folder):
     folder=Path(job_folder).resolve()
@@ -41,11 +75,29 @@ def read_bundle(job_folder):
         if not path.is_relative_to(checkpoint) or not path.is_file():raise ValueError("Файл модели отсутствует")
         if hashlib.sha256(path.read_bytes()).hexdigest()!=digest:raise ValueError("Контрольная сумма модели не совпала")
     model=json.loads((checkpoint/"config.json").read_text())
+    if bundle.get("action_transform") is not None and bundle["action_transform"]!=ACTOR_ACTION_TRANSFORM:
+        raise ValueError("Неподдерживаемое преобразование действий политики")
+    context=bundle.get("actor_context")
+    extras=set(model.get("input_features",{}))-{"observation.state","observation.images.wrist"}
+    if extras:
+        if extras!={ACTOR_CLOCK["feature"]} or not isinstance(context,dict):
+            raise ValueError("Неподдерживаемый дополнительный вход политики")
+        spec=ACTOR_CLOCK_FOURIER if "periods_s" in context else ACTOR_CLOCK
+        if any(context.get(key)!=value for key,value in spec.items()) or not .016<=float(context.get("period_s",0))<=.5:
+            raise ValueError("Неверный внутренний контекст времени политики")
+        if model["input_features"][ACTOR_CLOCK["feature"]].get("shape")!=[len(spec["components"])]:
+            raise ValueError("Неверная размерность времени политики")
+    elif context:
+        raise ValueError("Контекст времени не соответствует входам модели")
     if (model.get("type")!="act" or model.get("input_features",{}).get("observation.state",{}).get("shape")!=[9] or
         model.get("input_features",{}).get("observation.images.wrist",{}).get("shape")!=[3,240,320] or
-        model.get("output_features",{}).get("action",{}).get("shape")!=[9] or
-        model.get("n_action_steps")!=1):
+        model.get("output_features",{}).get("action",{}).get("shape")!=[9]):
         raise ValueError("Конфигурация модели не соответствует девяти командам Explorer")
+    steps=model.get("n_action_steps")
+    if steps!=1 and not (type(steps) is int and 1<steps<=20 and steps==model.get("chunk_size") and
+            model.get("temporal_ensemble_coeff") is None and bundle.get("inference_execution")==
+            {"kind":"bounded_action_queue","actions_per_call":1,"queue_steps":steps}):
+        raise ValueError("Неподдерживаемое выполнение действий политики")
     return bundle,checkpoint
 
 

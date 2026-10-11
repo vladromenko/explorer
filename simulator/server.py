@@ -211,6 +211,7 @@ class Runtime:
         self.log_file = (self.data_root / 'logs' / f"session-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}-{secrets.token_hex(3)}.jsonl").open('a', encoding='utf8')
         self.latest_package = None
         self.latest_job_folder = None
+        self.model_info = None
         self.latest_model()
         packages = sorted((self.data_root / 'exports').glob('*.tar.gz'), key=lambda path: path.stat().st_mtime, reverse=True)
         self.latest_package = packages[0] if packages else None
@@ -227,13 +228,31 @@ class Runtime:
             try:
                 job = json.loads(file.read_text(encoding='utf8'))
                 if isinstance(job, dict) and job.get('state') in {'validated_simulation', 'trained_simulation_unvalidated'} and (file.parent / 'bundle.json').is_file():
-                    module.read_bundle(file.parent)
+                    bundle, _ = module.read_bundle(file.parent)
                     self.latest_job_folder = file.parent
+                    self.refresh_model_info(bundle)
                     return file.parent
             except (ValueError, OSError, KeyError, TypeError, AttributeError):
                 pass
         self.latest_job_folder = None
+        self.model_info = None
         return None
+
+    def refresh_model_info(self, bundle):
+        """Restore task evidence without mistaking offline error for delivery."""
+        report_path = self.latest_job_folder / 'physics-validation.json'
+        if not report_path.is_file():
+            report_path = self.latest_job_folder / 'preview-validation.json'
+        report = json.loads(report_path.read_text()) if report_path.is_file() else {}
+        matches = (report.get('validation_kind') == 'closed_loop_policy' and
+                   report.get('model_weights_sha256') == bundle['checkpoint_sha256']['model.safetensors'] and
+                   report.get('model_checkpoint_sha256',bundle['checkpoint_sha256']) == bundle['checkpoint_sha256'])
+        checked = report if matches else {}
+        passed = (checked.get('heldout_independent') is True and checked.get('episodes', 0) >= 10 and
+                  checked.get('successes', 0) == checked.get('episodes'))
+        self.model_info = {'id': self.latest_job_folder.name, 'task_validated_simulation': passed,
+                           'episodes': checked.get('episodes', 0), 'successes': checked.get('successes', 0),
+                           'hardware_accepted': False}
 
     def arm_limits(self):
         space = getattr(self.env, 'action_space', None)
@@ -466,7 +485,7 @@ class Runtime:
 
     def snapshot(self):
         with self.lock:
-            return jsonable({'state': self.cached_state, 'reward': self.reward, 'info': self.info, 'done': self.done, 'paused': self.paused, 'error': self.error, 'recording': bool(self.record_file), 'record_frames': self.record_frames, 'jobs': self.jobs[-20:], 'logs': self.logs[-40:], 'package_available': self.latest_package is not None, 'data_root': self.data_root, 'depth_available': 'depth' in self.images, 'frame_age': round(time.monotonic() - self.frame_at, 2) if self.frame_at else None})
+            return jsonable({'state': self.cached_state, 'reward': self.reward, 'info': self.info, 'done': self.done, 'paused': self.paused, 'error': self.error, 'recording': bool(self.record_file), 'record_frames': self.record_frames, 'jobs': self.jobs[-20:], 'logs': self.logs[-40:], 'model': self.model_info, 'package_available': self.latest_package is not None, 'data_root': self.data_root, 'depth_available': 'depth' in self.images, 'frame_age': round(time.monotonic() - self.frame_at, 2) if self.frame_at else None})
 
     def episodes(self):
         output = []
@@ -565,15 +584,16 @@ class Runtime:
                     raise InterruptedError(result.get('error') or 'Задание остановлено')
                 if result.get('state') == 'failed':
                     raise ValueError(result.get('error') or result.get('message') or 'Обучение завершилось с ошибкой')
-                module.read_bundle(folder)
+                bundle, _ = module.read_bundle(folder)
                 self.latest_job_folder = folder
+                self.refresh_model_info(bundle)
             elif job['kind'] == 'validate':
                 folder = self.latest_model()
                 if folder is None:
                     raise ValueError('Сначала обучите политику ACT; законченный проверенный файл модели не найден')
                 bundle, _ = module.read_bundle(folder)
                 model_weights_sha256 = bundle['checkpoint_sha256']['model.safetensors']
-                actor = module.load_policy(folder, device='cpu')
+                actor = module.load_policy(folder, device=module.choose_device('auto'))
                 provenance = json.loads((folder / 'train' / 'explorer-provenance.json').read_text(encoding='utf8'))
                 seed_plan = heldout_seed_plan(provenance, request.count)
                 output = self.data_root / 'runs' / f"validation-{job['id']}"
@@ -586,12 +606,16 @@ class Runtime:
                         progress(f'Проверка сцены {index + 1} из {request.count}', progress=100 * index / request.count)
                         summary = self.env.make_episode_trial(output / f'heldout-{index:04d}', seed=seed, policy=actor, progress=physics_progress)
                         results.append({key: summary.get(key) for key in ('id', 'success', 'error', 'outcome')})
-                    report = {'validation_kind': 'closed_loop_policy', 'episodes': len(results), 'successes': sum(bool(item['success']) for item in results), 'physics_validated': False, 'real_hardware_accepted': False, 'results': results, **seed_plan}
+                    from simulator.explorer_model import model_metadata
+                    report = {'validation_kind': 'closed_loop_policy', 'episodes': len(results), 'successes': sum(bool(item['success']) for item in results), 'physics_validated': False, 'real_hardware_accepted': False, 'results': results, 'environment_provenance': model_metadata(), **seed_plan}
                     (output / 'validation.json').write_text(json.dumps(jsonable(report), ensure_ascii=False, indent=2), encoding='utf8')
                     return report
                 result = self.on_owner(lambda: self.physics_task(validate_rollouts))
-                result.update(model_job=folder.name, model_weights_sha256=model_weights_sha256, validation_kind='closed_loop_policy')
-                (folder / 'physics-validation.json').write_text(json.dumps(jsonable(result), ensure_ascii=False, indent=2), encoding='utf8')
+                result.update(model_job=folder.name, model_weights_sha256=model_weights_sha256,
+                              model_checkpoint_sha256=bundle['checkpoint_sha256'],validation_kind='closed_loop_policy')
+                report_name = 'preview-validation.json' if request.count==1 else 'physics-validation.json'
+                (folder / report_name).write_text(json.dumps(jsonable(result), ensure_ascii=False, indent=2), encoding='utf8')
+                self.refresh_model_info(bundle)
             elif job['kind'] == 'export':
                 folder = self.latest_model()
                 if folder is None:

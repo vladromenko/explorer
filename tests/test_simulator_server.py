@@ -64,6 +64,31 @@ def test_local_authenticated_mutations_only(tmp_path):
         assert connection.get('/').headers['content-security-policy'].endswith("frame-ancestors 'none'")
 
 
+def test_only_current_policy_independent_rollouts_grant_simulation_task_status(tmp_path):
+    runtime = Runtime.__new__(Runtime)
+    runtime.latest_job_folder = tmp_path
+    bundle = {'checkpoint_sha256': {'model.safetensors': 'current'}}
+    report = {'validation_kind': 'closed_loop_policy', 'model_weights_sha256': 'current',
+              'heldout_independent': True, 'episodes': 10, 'successes': 10}
+    path = tmp_path / 'physics-validation.json'
+    path.write_text(json.dumps(report))
+    runtime.refresh_model_info(bundle)
+    assert runtime.model_info['task_validated_simulation'] is True
+    assert runtime.model_info['hardware_accepted'] is False
+    for values in ({'successes': 9}, {'episodes': 1, 'successes': 1},
+                   {'validation_kind': 'teacher_physics_diagnostics'},
+                   {'model_weights_sha256': 'other'}, {'heldout_independent': False},
+                   {'model_checkpoint_sha256': {'config.json': 'changed'}}):
+        path.write_text(json.dumps({**report, **values}))
+        runtime.refresh_model_info(bundle)
+        assert runtime.model_info['task_validated_simulation'] is False
+
+    path.write_text(json.dumps(report))
+    (tmp_path / 'preview-validation.json').write_text(json.dumps({**report, 'episodes': 1, 'successes': 0}))
+    runtime.refresh_model_info(bundle)
+    assert runtime.model_info['task_validated_simulation'] is True
+
+
 def test_exact_nine_command_contract(tmp_path):
     with client(tmp_path) as connection:
         headers = auth(connection)

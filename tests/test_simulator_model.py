@@ -129,6 +129,17 @@ class SimulatorModelTests(unittest.TestCase):
             mujoco.mj_step(model, data)
         self.assertGreater(data.qpos[1]-initial[1], .015)
 
+    def test_bin_backing_preserves_top_surface_and_supports_released_cloth(self):
+        model, data = load_model(mesh_dir=self.mesh_dir, sock_position=(.60,.25,.10), bin_position=(.60,.25,0.))
+        bottom = model.geom("bin_bottom")
+        thick = model_config()["bin"]["wall_thickness_m"]
+        self.assertAlmostEqual(float(bottom.pos[2]+bottom.size[2]), thick)
+        self.assertLess(float(bottom.pos[2]-bottom.size[2]), 0.)
+        for _ in range(700):
+            mujoco.mj_step(model, data)
+        self.assertGreater(float(data.flexvert_xpos[:,2].min()), .003)
+        self.assertFalse(np.any(data.warning.number))
+
     def test_six_servo_endpoints_move_through_finite_force_dynamics(self):
         model, data = load_model(mesh_dir=self.mesh_dir, scene="empty")
         target = servo_to_joint([60, 65, 110, 85, 130, 160])

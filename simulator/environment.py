@@ -44,6 +44,7 @@ class ExplorerEnv(gym.Env):
         self.jerk_limit = np.array(motion["streaming"]["jerk_deg_s3"], float)
         self.renderer = None
         self.overview_renderer = None
+        self._rgb_cache = {}
         self.render_options = mujoco.MjvOption()
         self.render_options.flags[mujoco.mjtVisFlag.mjVIS_FLEXFACE] = True
         self.render_options.flags[mujoco.mjtVisFlag.mjVIS_FLEXEDGE] = False
@@ -53,6 +54,7 @@ class ExplorerEnv(gym.Env):
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
         options = options or {}
+        self._rgb_cache.clear()
         if self.renderer is not None:
             self.renderer.close()
             self.renderer = None
@@ -129,12 +131,29 @@ class ExplorerEnv(gym.Env):
         self.data.ctrl[self.servo_ids] = servo_to_joint(self.command[:6])
         self.data.ctrl[self.wheel_ids] = wheel_targets(*self.command[6:])
 
-    def step(self, action):
+    def step(self, action, *, applied=False):
         self.set_manual(action)
         substeps = max(1, round(PERIOD / self.model.opt.timestep))
-        for _ in range(substeps):
-            self._advance_commands(self.model.opt.timestep)
+        start = self.command.copy()
+        # Recorded actions are the endpoints already issued by the host profile.
+        # Running that profile a second time changes the demonstrated path.
+        # Interpolate issued endpoints with the existing speed limits; never
+        # write qpos or attach the object. Manual/teacher goals retain the planner.
+        endpoint = start.copy()
+        endpoint[:6] += np.clip(self.pending_command[:6]-start[:6],
+                                -self.velocity_limit*PERIOD, self.velocity_limit*PERIOD)
+        endpoint[6:] += np.clip(self.pending_command[6:]-start[6:], -.5*PERIOD, .5*PERIOD)
+        for index in range(substeps):
+            if applied:
+                self.command = start + (endpoint-start)*(index+1)/substeps
+                self.data.ctrl[self.servo_ids] = servo_to_joint(self.command[:6])
+                self.data.ctrl[self.wheel_ids] = wheel_targets(*self.command[6:])
+            else:
+                self._advance_commands(self.model.opt.timestep)
             mujoco.mj_step(self.model, self.data)
+        if applied:
+            self.arm_velocity = (self.command[:6]-start[:6])/PERIOD
+            self.arm_acceleration[:] = 0.
         self.steps += 1
         self._evaluate_contact(PERIOD)
         if not np.isfinite(self.data.qpos).all() or any(w.number for w in self.data.warning):
@@ -215,16 +234,23 @@ class ExplorerEnv(gym.Env):
                 "real_hardware_accepted": False}}
 
     def render_rgb(self, camera="wrist"):
+        cached = self._rgb_cache.get(camera)
+        if cached is not None and cached[0] == self.data.time:
+            return cached[1].copy()
         if camera == "overview":
             if self.overview_renderer is None:
                 self.overview_renderer = mujoco.Renderer(self.model, height=600, width=800)
             self.overview_renderer.update_scene(self.data, camera=camera, scene_option=self.render_options)
-            return self.overview_renderer.render().copy()
+            image = self.overview_renderer.render().copy()
+            self._rgb_cache[camera] = (self.data.time, image)
+            return image.copy()
         if self.renderer is None:
             self.renderer = mujoco.Renderer(self.model, height=240, width=320)
         self.renderer.disable_depth_rendering()
         self.renderer.update_scene(self.data, camera=camera, scene_option=self.render_options)
-        return self.renderer.render().copy()
+        image = self.renderer.render().copy()
+        self._rgb_cache[camera] = (self.data.time, image)
+        return image.copy()
 
     def render_depth(self):
         if self.renderer is None:
@@ -326,7 +352,7 @@ class ExplorerEnv(gym.Env):
             row["simulator_diagnostics"]["placement"] = getattr(self, "placement_diagnostics", {})
             Image.fromarray(self.render_rgb()).save(folder / row["wrist_rgb"], quality=92)
             row["requested_action"] = np.asarray(action, float).tolist()
-            self.step(action)
+            self.step(action, applied=policy is not None)
             # The learner's target is the endpoint actually applied after the
             # host's bounded motion profile, paired with pre-action observation.
             row["action"] = self.command.tolist()
