@@ -91,6 +91,15 @@ def sample(root,now):
         # simultaneous.  Larger gaps are rejected rather than relabelled.
         if abs(camera_state_offset)>1.5:raise ValueError('Камера и состояние слишком далеко разнесены по времени')
         image=frame['rgb'].copy()
+    recognized=None
+    try:
+        grounded=json.loads((root/"data/grounded-targets.json").read_text())
+        if (abs(stamp-grounded.get("image_stamp",0))<1e-6
+                and 0<=now-grounded.get("at",0)<.7 and grounded.get("objects")):
+            recognized={"image_stamp":stamp,"objects":grounded["objects"],
+                "request_id":grounded.get("request_id"),"identity_verified":False,
+                "coordinate_frame":"camera_optical_frame"}
+    except (OSError,ValueError,TypeError):pass
     try:manual=json.loads((root/'data/manual-teleop.json').read_text())
     except (OSError,ValueError,TypeError):manual={}
     if now-manual.get('at',0)>1:manual={}
@@ -118,7 +127,7 @@ def sample(root,now):
                 q_estimated=arm.get('q_estimated'),state_source=arm.get('state_source','command_estimate'),
                 lidar=state.get('lidar'),sensor_age=state.get('sensor_age'),
                 measured_arm_angles=False,velocity_source='commanded_body_velocity',
-                manual_control=manual or None),image
+                manual_control=manual or None,recognized_targets=recognized),image
 
 
 class MobileDemonstrations:

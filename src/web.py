@@ -74,6 +74,11 @@ def semantic_world_loop():
             runtime=json.loads((ROOT/'config/research-runtime.json').read_text())
             if runtime.get('continual_memory') is True:
                 perception=json.loads((ROOT/'data/perception.json').read_text())
+                try:
+                    grounded=json.loads((ROOT/"data/grounded-targets.json").read_text())
+                    if 0<=time.time()-grounded.get("image_stamp",0)<.7 and grounded.get("objects"):
+                        perception=dict(grounded,world_coordinates_validated=False)
+                except (OSError,ValueError):pass
                 if 0<=time.time()-perception.get('image_stamp',0)<3:
                     try:pose=maps.pose()
                     except (OSError,ValueError,KeyError):pose=None
@@ -570,6 +575,12 @@ def status():
     s['appearance']=read_appearance(ROOT)
     s['controller']=read_state('controller-state.json',2)
     s['perception']=read_state('perception.json',2)
+    grounded=read_state("grounded-targets.json",.7)
+    s["grounded_targets"]=grounded
+    if not grounded["stale"] and grounded.get("objects"):
+        s["perception_baseline"]=s["perception"]
+        s["perception"]=dict(grounded,world_coordinates_validated=False,
+            model="GroundingDINO + RGB-D tracking")
     s['mapping']=read_state('map.json',15)
     s['lidar_geometry']=read_state('lidar_geometry.json',2)
     s['missions']=missions.status()
@@ -635,6 +646,15 @@ def control(c:Command):
 
 @app.get('/api/frame')
 def frame(raw:bool=False):
+    if not raw:
+        observation=read_state("grounded-targets.json",.7)
+        if not observation["stale"] and observation.get("objects"):
+            try:
+                content=(ROOT/"data/frame-grounded.jpg").read_bytes()
+                if hashlib.sha256(content).hexdigest()==observation.get("jpeg_sha256"):
+                    return Response(content,media_type="image/jpeg",headers={"Cache-Control":"no-store",
+                        "X-Image-Stamp":str(observation["image_stamp"]),"X-Label-Source":"grounded-tracking-hypothesis"})
+            except OSError:pass
     path=ROOT/'data'/('frame-raw.jpg' if raw else 'frame.jpg')
     try:fresh=0<=time.time()-path.stat().st_mtime<2
     except OSError:fresh=False

@@ -30,6 +30,12 @@ class ObjectFinder:
 
     def status(self):return dict(self.state,busy=self.lock.locked())
 
+    def publish_tracking_request(self, identifier, phase):
+        path=self.root/"data/grounded-target-request.json"
+        temporary=path.with_suffix(".tmp")
+        temporary.write_text(json.dumps({"id":identifier,"phase":phase,"at":time.time()}))
+        temporary.replace(path)
+
     def start(self,label):
         translated=english_label(label)
         if not self.lock.acquire(blocking=False):raise ValueError('Поиск предмета уже идёт')
@@ -44,6 +50,7 @@ class ObjectFinder:
             shutil.copyfile(source,self.folder/'rgbd.npz')
             (self.folder/'request.json').write_text(json.dumps(dict(label=label,english_label=translated)))
             self.state=dict(phase='searching',label=label,executed=False,id=self.folder.name)
+            self.publish_tracking_request(self.folder.name,"searching")
             threading.Thread(target=self.run,args=(self.folder,),daemon=True).start()
             return self.status()
         except Exception:self.lock.release();raise
@@ -53,6 +60,7 @@ class ObjectFinder:
             return dict(cancelled=False)
         if not self.lock.locked():return dict(cancelled=False)
         self.state.update(phase='cancelled')
+        self.publish_tracking_request(request_id,"cancelled")
         subprocess.run(['systemctl','--user','stop','explorer-grounding-'+request_id],
                        check=False,timeout=3,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         return dict(cancelled=True)
@@ -67,7 +75,9 @@ class ObjectFinder:
                     check=True,timeout=100,stdout=log,stderr=log)
             if self.state.get('id')==folder.name and self.state.get('phase')!='cancelled':
                 self.state.update(phase='ready',result=json.loads((folder/'result.json').read_text()))
+                self.publish_tracking_request(folder.name,"ready")
         except (OSError,ValueError,subprocess.SubprocessError) as exc:
             if self.state.get('id')==folder.name and self.state.get('phase')!='cancelled':
                 self.state.update(phase='error',error=str(exc))
+                self.publish_tracking_request(folder.name,"error")
         finally:self.lock.release()

@@ -20,6 +20,7 @@ from sensor_msgs.msg import Image, CameraInfo
 from cv_bridge import CvBridge
 import tensorrt as trt
 from rgbd_snapshot import registered_pair, save_snapshot
+from grounded_targets import GroundedTargets
 
 ROOT=Path('/home/vlad/Explorer')
 LABELS='person,bicycle,car,motorcycle,airplane,bus,train,truck,boat,traffic light,fire hydrant,stop sign,parking meter,bench,bird,cat,dog,horse,sheep,cow,elephant,bear,zebra,giraffe,backpack,umbrella,handbag,tie,suitcase,frisbee,skis,snowboard,sports ball,kite,baseball bat,baseball glove,skateboard,surfboard,tennis racket,bottle,wine glass,cup,fork,knife,spoon,bowl,banana,apple,sandwich,orange,broccoli,carrot,hot dog,pizza,donut,cake,chair,couch,potted plant,bed,dining table,toilet,tv,laptop,mouse,remote,keyboard,cell phone,microwave,oven,toaster,sink,refrigerator,book,clock,vase,scissors,teddy bear,hair drier,toothbrush'.split(',')
@@ -138,11 +139,51 @@ class Perception(Node):
 
 def cache_rgbd(node):
     previous=0
+    targets=GroundedTargets()
+    last_request=None
     while rclpy.ok():
         with node.lock:rgbs,depths,info=list(node.rgb),list(node.depth),node.info
         pair=registered_pair(rgbs,depths,info,previous=previous)
         if pair is not None:
-            try:previous=save_snapshot(ROOT/"data/rgbd-snapshot.npz",pair)
+            try:
+                previous=save_snapshot(ROOT/"data/rgbd-snapshot.npz",pair)
+                with np.load(ROOT/"data/rgbd-snapshot.npz",allow_pickle=False) as raw:
+                    sample=dict(raw)
+                installed=False
+                request_path=ROOT/"data/grounded-target-request.json"
+                if request_path.exists():
+                    request=json.loads(request_path.read_text())
+                    identity=(request.get("id"),request.get("phase"))
+                    if identity!=last_request:
+                        targets.clear(request.get("phase","idle"))
+                        last_request=identity
+                        identifier=str(request.get("id",""))
+                        if (request.get("phase")=="ready" and len(identifier)==32
+                                and all(c in "0123456789abcdef" for c in identifier)
+                                and 0<=time.time()-request.get("at",0)<5):
+                            folder=ROOT/"data/object-searches"/identifier
+                            result=json.loads((folder/"result.json").read_text())
+                            with np.load(folder/"rgbd.npz",allow_pickle=False) as raw:
+                                reference=dict(raw)
+                            targets.install(identifier,reference,sample,result["objects"])
+                            installed=True
+                if not installed:
+                    observation=targets.update(sample)
+                    frame=sample["rgb"].copy()
+                    for item in observation["objects"]:
+                        x1,y1,x2,y2=map(int,item["bbox"])
+                        cv2.rectangle(frame,(x1,y1),(x2,y2),(255,190,70),2)
+                        text=item["label"]+" ? "+str(round(item["confidence"],2))
+                        cv2.putText(frame,text,(x1,max(16,y1-5)),cv2.FONT_HERSHEY_SIMPLEX,.5,(255,190,70),1)
+                    ok,jpg=cv2.imencode(".jpg",frame,[cv2.IMWRITE_JPEG_QUALITY,82])
+                    if ok:
+                        temporary=ROOT/"data/frame-grounded.tmp"
+                        temporary.write_bytes(jpg.tobytes())
+                        temporary.replace(ROOT/"data/frame-grounded.jpg")
+                        observation["jpeg_sha256"]=hashlib.sha256(jpg.tobytes()).hexdigest()
+                    temporary=ROOT/"data/grounded-targets.tmp"
+                    temporary.write_text(json.dumps(observation,allow_nan=False))
+                    temporary.replace(ROOT/"data/grounded-targets.json")
             except (OSError,ValueError) as exc:node.get_logger().warning("RGB-D cache: "+str(exc))
         time.sleep(.10)
 

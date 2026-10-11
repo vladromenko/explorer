@@ -5,6 +5,18 @@ import numpy as np
 from mobile_demonstrations import MobileDemonstrations,sample
 
 class MobileTests(unittest.TestCase):
+    def test_recognition_metadata_requires_the_recorded_camera_exposure(self):
+        with tempfile.TemporaryDirectory() as path:
+            root=Path(path);state,now=self.setup_files(root)
+            target={"at":now,"image_stamp":now,"objects":[{"label":"sock","identity_verified":False}]}
+            (root/"data/grounded-targets.json").write_text(json.dumps(target))
+            row,_=sample(root,now)
+            self.assertEqual(row["recognized_targets"]["objects"][0]["label"],"sock")
+            self.assertFalse(row["recognized_targets"]["identity_verified"])
+            target["image_stamp"]=now-.1
+            (root/"data/grounded-targets.json").write_text(json.dumps(target))
+            row,_=sample(root,now)
+            self.assertIsNone(row["recognized_targets"])
     def setup_files(self,root):
         now=time.time();(root/'data').mkdir();state=dict(at=now,mode='MANUAL',velocity=[0,0,0],power={'state':'IDLE'},sensor_age=dict(odom=0,battery=0,scan0=0,scan1=0),arm_command_state=dict(at=now,phase='command_elapsed_observation_required',servo_deg=[90,125,3,0,90,30]))
         (root/'data/status.json').write_text(json.dumps(state))
