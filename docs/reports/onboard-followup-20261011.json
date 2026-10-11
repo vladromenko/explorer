@@ -49,8 +49,8 @@
     "journal": "data/onboard-validation/1791670051294445180-local-grasp"
   },
   "local_grasp": {
-    "physical_contact_executed": false,
-    "lift_verified": false,
+    "physical_contact_executed": true,
+    "lift_verified": true,
     "last_detection_journal": "data/onboard-validation/1791671603262072696-local-grasp-trial",
     "preflight_journal": "data/onboard-validation/1791672118851753444-grasp-preflight-readonly",
     "object_base_m": [
@@ -76,7 +76,6 @@
     "current_blocker": "view_unavailable",
     "projection_is_nominal_not_hardware_measurement": true,
     "sdk_minimum_depth_source": "https://orbbec.com.cn/index.php/index/Product/info.html?cate=38&id=55",
-    "actual_grasp_success_not_claimed": true,
     "contact_view_operator_check": {
       "operator_report": "Метка у кончиков не видна",
       "stationary_marker_test": true,
@@ -86,7 +85,7 @@
       "near_depth_measured": false
     },
     "preflight_diagnostics_persist_after_restart": true,
-    "supervised_grasp_executed": false,
+    "supervised_grasp_executed": true,
     "supervised_above_object_checkpoint": {
       "journal": "data/onboard-validation/1791675820592533976-observed-above-sock",
       "operator_permission_scope": "open_then_10cm_above_object_only",
@@ -139,9 +138,44 @@
       "nominal_linkage_paths_checked": 3,
       "full_moveit_path_retained": true,
       "duration_s": 1.507143746,
-      "executed": false,
-      "separate_permission_pending": true,
-      "contact_closure_lift_allowed": false
+      "executed": true,
+      "separate_permission_pending": false,
+      "contact_closure_lift_allowed": false,
+      "execution_journal": "data/onboard-validation/1791676298161013822-observed-descent",
+      "operator_confirmed_alignment_and_floor_clearance": true
+    },
+    "lift_verification_source": "operator_visual_observation",
+    "autonomous_grasp_success_not_claimed": true,
+    "supervised_sock_cycle": {
+      "journal": "data/onboard-validation/1791677029536102099-observed-sock-cycle",
+      "scope": "one_stationary_operator_observed_pick_lift_return_cycle",
+      "outcome": "operator_verified_success",
+      "physical_contact_operator_verified": true,
+      "lift_operator_verified": true,
+      "stable_hold_operator_verified": true,
+      "release_operator_verified": true,
+      "smooth_motion_operator_verified": true,
+      "lift_nominal_m": 0.065,
+      "lift_height_measured": false,
+      "camera_frames_recorded": 160,
+      "command_intervals_completed": 9,
+      "transport_verified": false,
+      "automatic_contact_and_hold_verification": false,
+      "measured_joint_positions": false,
+      "force_measured": false,
+      "training_episode_created": false,
+      "learning_success_counter_incremented": false,
+      "autonomous_success_claimed": false,
+      "final_commanded_deg": [
+        102,
+        66,
+        14,
+        40,
+        90,
+        30
+      ],
+      "stop_latched": true,
+      "base_velocity_and_odometry_zero": true
     }
   },
   "rgbd_cache_benchmark_ms": {
