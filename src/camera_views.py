@@ -10,7 +10,9 @@ import numpy as np
 from lerobot_bridge import write_json
 
 VIEWS={"forward":[90,90,60,15,90],"left":[60,90,60,15,90],"right":[120,90,60,15,90],
-    "down":[90,90,30,0,90]}
+    "down":[90,90,30,0,90], "down_near":[90,90,10,0,90],
+    "down_left":[60,90,30,0,90], "down_right":[120,90,30,0,90],
+    "down_near_left":[60,90,10,0,90], "down_near_right":[120,90,10,0,90]}
 
 
 class CameraViews:
@@ -39,8 +41,8 @@ class CameraViews:
             model.set_state(pose[:5],0.)
             transform=np.asarray(model.state.get_global_link_transform("arm4"))@np.asarray(accepted["camera_to_mount_reference"])
             if model.collision() or transform[2,3]<.22:raise ValueError("Обзорная поза пересекает корпус/пол")
-        if pose[:5] == VIEWS["down"]:
-            if transform[2,2]>-.65 or transform[0,2]<.15:
+        if any(pose[:5] == value for name,value in VIEWS.items() if name.startswith("down")):
+            if transform[2,2]>-.65 or transform[0,2]<.05:
                 raise ValueError("Камера не направлена вниз в область перед рукой")
         elif transform[2,2]>=0 or transform[0,2]<.65:
             raise ValueError("Камера не направлена вперёд и немного вниз")

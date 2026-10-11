@@ -75,7 +75,9 @@ function renderFields() {
     const input = schema.enum ? document.createElement("select") : document.createElement("input");
     input.dataset.argument = name;
     if (schema.enum) schema.enum.forEach((value) => { const option = document.createElement("option"); option.value = value;
-      const views = {forward: "Вперёд", left: "Налево", right: "Направо", down: "Вниз перед захватом"};
+      const views = {forward: "Вперёд", left: "Налево", right: "Направо", down: "Вниз перед захватом",
+        down_near: "На пол ближе к базе", down_left: "На пол слева", down_right: "На пол справа",
+        down_near_left: "Ближе к базе слева", down_near_right: "Ближе к базе справа"};
       option.textContent = name === "view" ? (views[value] || value) : value; input.append(option); });
     else { input.type = schema.type === "boolean" ? "checkbox" : schema.type === "integer" || schema.type === "number" ? "number" : "text";
       if (schema.minimum !== undefined) input.min = schema.minimum;

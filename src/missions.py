@@ -3,7 +3,7 @@ import json, math, threading, time, uuid, sqlite3, re
 from pathlib import Path
 import numpy as np
 from std_msgs.msg import String
-from nav2_msgs.action import NavigateToPose, DriveOnHeading
+from nav2_msgs.action import NavigateToPose, DriveOnHeading, BackUp
 from rclpy.action import ActionClient
 from navigation_scope import scope_blockers
 from frontiers import candidates, departure_candidate
@@ -49,6 +49,7 @@ class Missions:
         self.node=node;self.maps=maps;self.lock=threading.RLock();self.active=None;self.last=None
         self.client=ActionClient(node,NavigateToPose,'/navigate_to_pose')
         self.departure_client=ActionClient(node,DriveOnHeading,"/drive_on_heading")
+        self.backup_client=ActionClient(node,BackUp,"/backup")
         self.pub=node.create_publisher(String,'/explorer/request',10)
         self.timer=node.create_timer(.1,self.monitor)
         with self.db() as db:
@@ -155,7 +156,9 @@ class Missions:
         return self.start('navigate',p['x'],p['y'],p['yaw'])
 
     def start(self,kind,x=None,y=None,yaw=0.,scope=None,max_goals=20,position_only=False,holonomic=False,precise=False):
-        if kind not in ("navigate","explore"):raise ValueError("Unsupported mission")
+        if kind not in ("navigate","explore","view_retreat"):raise ValueError("Unsupported mission")
+        if kind == "view_retreat" and (type(x) not in (int,float) or not .03 <= x <= .12):
+            raise ValueError("Inspection retreat must be 3 to 12 cm")
         scope=scope or ("mapping" if kind=="explore" else "localized")
         if kind=='navigate' and (not all(isinstance(v,(float,int)) and math.isfinite(v) for v in (x,y,yaw)) or max(abs(x),abs(y))>100):raise ValueError('Invalid target')
         if type(max_goals) is not int or not 1<=max_goals<=20:raise ValueError("Exploration goal budget: 1..20")
@@ -284,6 +287,62 @@ class Missions:
         if moved<.15:raise ValueError("Safe departure did not move the chassis")
         return dict(pose=after,moved_m=moved,policy=candidate["policy"])
 
+    def back_off(self, mid, distance):
+        """Small Nav2 BackUp with costmap collision checks and normal ownership."""
+        if type(distance) not in (int,float) or not .03 <= distance <= .12:
+            raise ValueError("Inspection retreat must be 3 to 12 cm")
+        self.survey_permit(mid)
+        before = self.maps.pose()
+        x = before["x"] - distance * math.cos(before["yaw"])
+        y = before["y"] - distance * math.sin(before["yaw"])
+        self.maps.preview(x, y)
+        if not self.backup_client.wait_for_server(timeout_sec=2):
+            raise ValueError("Nav2 BackUp unavailable")
+        goal = BackUp.Goal()
+        goal.target.x = -float(distance)
+        goal.speed = .04
+        goal.time_allowance.sec = 8
+        future = self.backup_client.send_goal_async(goal)
+        try:
+            handle = wait(future, 3)
+        except TimeoutError:
+            future.add_done_callback(lambda done: done.result().cancel_goal_async() if done.result().accepted else None)
+            raise
+        if not handle.accepted:
+            raise ValueError("Inspection retreat rejected by Nav2")
+        with self.lock:
+            if not self.active or self.active["id"] != mid:
+                handle.cancel_goal_async()
+                raise ValueError("Inspection retreat cancelled")
+            self.active.update(handle=handle, phase="view_retreat")
+            self.emit("resume_base", mission=mid)
+        try:
+            result_future = handle.get_result_async()
+            deadline = time.monotonic() + 9
+            while not result_future.done():
+                self.survey_permit(mid)
+                if time.monotonic() > deadline:
+                    raise TimeoutError("Inspection retreat timed out")
+                time.sleep(.05)
+            self.survey_permit(mid)
+            result = result_future.result()
+        except Exception:
+            try:
+                handle.cancel_goal_async()
+            finally:
+                self.emit("hold_base", mission=mid)
+            raise
+        self.hold_base(mid)
+        if result.status != 4 or result.result.error_code:
+            raise ValueError("Inspection retreat stopped: " + str(result.result.error_code))
+        after = self.maps.pose()
+        angle = abs(math.atan2(math.sin(after["yaw"]-before["yaw"]), math.cos(after["yaw"]-before["yaw"])))
+        residual = math.hypot(after["x"]-x, after["y"]-y)
+        if residual > .025 or angle > .12:
+            raise ValueError("Inspection retreat arrival not confirmed")
+        return {"pose": after, "requested_distance_m": distance,
+                "map_residual_m": residual, "physical_accuracy_measured": False}
+
     def go_goal(self,mid,x,y,yaw,rotation_only=False,precise=False):
         pose=self.maps.pose()
         precise = precise or bool((self.active or {}).get("precise"))
@@ -374,6 +433,10 @@ class Missions:
 
     def worker(self,mid,kind,x,y,yaw):
         try:
+            if kind == "view_retreat":
+                result = self.back_off(mid, x)
+                self.finish(mid, "succeeded", result)
+                return
             if kind=='navigate':
                 result=self.go(mid,x,y,yaw);self.finish(mid,'succeeded',result);return
             visited=[];failed=[];failed_attempts=[];observations=[]

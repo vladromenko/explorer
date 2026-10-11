@@ -12,6 +12,8 @@ import numpy as np
 from grasp_verification import verify_lift, verify_place
 from delivery_vision import FeatureObject, reacquire_candidate
 from mobile_alignment import reachable_correction
+from target_view_recovery import recover_view
+from camera_views import VIEWS
 from semantic_world import guarded_closure
 from learning_stack import CandidateScorer
 from factory_delivery import load_factory_settings, factory_reference, elapsed_reference
@@ -367,8 +369,31 @@ class DeliveryRobot:
 
     def find_aligned(self):
         found=self._detect_current('base_aligned')
-        if not found:raise ValueError('После коррекции базы носок не найден; движение к старой координате запрещено')
-        return found
+        if found:
+            return found
+        self.vision.stop()
+        self.tracking = False
+
+        def move_view(view):
+            self.hold()
+            self._move(list(VIEWS[view]) + [self.arm.reference()["servo_deg"][5]])
+
+        def observe():
+            target = self._detect_current("base_alignment_recovery")
+            return {"found": target is not None, "target": target}
+
+        def retreat(distance):
+            self._move(self.settings["transport_deg"][:5] + [self.arm.reference()["servo_deg"][5]])
+            result = self.missions.back_off(self.mid, distance)
+            self.hold()
+            return result
+
+        result = recover_view(observe, move_view, retreat, lambda: self.permit(self.mid),
+                              lambda phase, details: None)
+        if not result["found"]:
+            raise ValueError("После осмотра и отъезда носок не найден; старые координаты не используются")
+        return dict(result["target"], view_recovery={"view": result["view"],
+                    "retreat_count": result["retreat_count"], "identity_verified": False})
 
     def approach(self, target):
         # The accepted bounded release searches saved base poses with a reachable

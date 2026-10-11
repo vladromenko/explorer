@@ -8,6 +8,21 @@ from delivery_robot import DeliveryRobot, placement_zone, validated_places
 
 
 class DeliveryRobotTests(unittest.TestCase):
+    def test_lost_target_uses_active_views_before_retreat(self):
+        calls = []
+        found = iter([None, None, {"target": {"grasp_xyz": [.24, 0, .03]}}])
+        robot = DeliveryRobot(".", None, SimpleNamespace(reference=lambda: {"servo_deg": [90]*6}),
+            None, None, SimpleNamespace(stop=lambda: calls.append("vision_stop")), None)
+        robot.mid = "task"
+        robot._detect_current = lambda place: next(found)
+        robot._move = lambda goal: calls.append(tuple(goal))
+        robot.hold = lambda: None
+        robot.permit = lambda mid: None
+        result = robot.find_aligned()
+        self.assertEqual(result["target"]["grasp_xyz"], [.24, 0, .03])
+        self.assertEqual(result["view_recovery"]["retreat_count"], 0)
+        self.assertEqual(result["view_recovery"]["view"], "down_near")
+
     def test_contact_failure_rejects_grasp_before_any_motion(self):
         model = SimpleNamespace(ik=Mock(side_effect=[
             {"solved": True, "collision": False, "servo_deg": [90] * 5},

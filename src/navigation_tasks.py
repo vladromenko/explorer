@@ -7,15 +7,18 @@ import re
 import threading
 import time
 import uuid
+import numpy as np
 from lerobot_bridge import write_json
 from stored_records import records
+from target_view_recovery import recover_view
 
 CATALOG=[
  {"id":"map_room","name":"Медленно построить карту","description":"Исследовать доступные границы, вернуться к старту и сохранить карту. Бортовая камера смотрит вперёд при поездке и осматривается на остановках.","parameters":["map_name"]},
  {"id":"survey_room","name":"Осмотреть комнату","description":"Исследовать доступные границы и сохранять наблюдения камеры в достигнутых точках; вернуться к старту.","parameters":[]},
  {"id":"navigate_current","name":"Поехать к точке текущей карты","description":"Медленно проехать по безопасному пути к указанным x/y. Использует непрерывный SLAM.","parameters":["x","y","yaw"]},
  {"id":"patrol","name":"Обойти сохранённые места","description":"Поехать по выбранным местам этой карты, остановиться и сохранить наблюдение в каждом.","parameters":["places"]},
- {"id":"find_object","name":"Найти предмет без захвата","description":"Проверить камеру здесь и в выбранных сохранённых местах. Остановиться при обнаружении; захват не запускается.","parameters":["object_query","places"]}]
+ {"id":"find_object","name":"Найти предмет без захвата","description":"Проверить камеру здесь и в выбранных сохранённых местах. Остановиться при обнаружении; захват не запускается.","parameters":["object_query","places"]},
+ {"id":"recover_object_view","name":"Восстановить обзор предмета у пола","description":"Осмотреть пол камерой; если предмет не виден целиком, отъехать на 6 см и повторить. Не более двух отъездов; захват не запускается.","parameters":["object_query"]}]
 
 
 def return_waypoints(trace,current,start,limit=4):
@@ -75,6 +78,8 @@ class NavigationTasks:
             if any(name not in accepted or not accepted[name]["compatible_map"] for name in places):raise ValueError("Место не принадлежит текущей карте")
             if kind=="patrol" and not places:raise ValueError("Выберите места маршрута")
             if kind=="find_object" and (not self.finder or not str(spec.get("object_query","")).strip()):raise ValueError("Укажите предмет для поиска")
+        if kind == "recover_object_view" and (not self.finder or not self.view or not str(spec.get("object_query", "")).strip()):
+            raise ValueError("Нужны бортовая камера и название предмета")
         if type(spec.get("max_goals",20)) is not int or not 1<=spec.get("max_goals",20)<=20:raise ValueError("Goal budget: 1..20")
         with self.lock:
             if self.worker is not None or self.missions.status().get("active"):raise ValueError("Другая поездка ещё выполняется")
@@ -128,6 +133,39 @@ class NavigationTasks:
         if self.view:self.view.move("forward",lambda:self.permit(identifier))
         return found
 
+    def recover_object_view(self, identifier, query):
+        def observe():
+            request = self.finder.start(query)
+            deadline = time.monotonic() + 110
+            try:
+                while self.finder.status().get("busy"):
+                    self.permit(identifier)
+                    if time.monotonic() > deadline:
+                        raise ValueError("Inspection search timed out")
+                    self.cancelled.wait(.1)
+            except Exception:
+                self.finder.cancel(request["id"])
+                raise
+            result = self.finder.status()
+            if result.get("id") != request["id"] or result.get("phase") != "ready":
+                raise ValueError("Inspection search failed: " + str(result.get("error")))
+            objects = (result.get("result") or {}).get("objects", [])
+            with np.load(self.root / "data/object-searches" / request["id"] / "rgbd.npz", allow_pickle=False) as sample:
+                height, width = sample["rgb"].shape[:2]
+            usable = [item for item in objects if item.get("position") and item.get("confidence", 0) >= .35
+                      and len(item.get("bbox", [])) == 4 and item["bbox"][0] >= 3 and item["bbox"][1] >= 3
+                      and item["bbox"][2] <= width-3 and item["bbox"][3] <= height-3]
+            return {"found": len(usable) == 1 and len(objects) == 1, "search_id": request["id"],
+                    "objects": objects, "image_stamp": (result.get("result") or {}).get("image_stamp"),
+                    "reason": None if len(usable) == 1 and len(objects) == 1 else "missing_clipped_or_ambiguous_target"}
+
+        def retreat(distance):
+            self.view.move("forward", lambda: self.permit(identifier))
+            return self.await_mission(identifier, self.missions.start("view_retreat", x=distance, scope="mapping"))
+
+        return recover_view(observe, lambda view: self.view.move(view, lambda: self.permit(identifier)),
+            retreat, lambda: self.permit(identifier), lambda phase, details: self.event(identifier, phase, details))
+
     def run(self,identifier):
         outcome="failed";reason=None;result={}
         try:
@@ -164,6 +202,8 @@ class NavigationTasks:
                 result["navigation_executed"]=bool((navigation.get("details") or {}).get("visited",0) or staging or
                     (navigation.get("details") or {}).get("physical_motion_m",0)>.05)
                 result["return_target_was_safe_departure"]=bool(staging)
+            elif kind == "recover_object_view":
+                result = self.recover_object_view(identifier, spec["object_query"])
             elif kind=="navigate_current":
                 options={"precise":True} if spec.get("precise",False) else {}
                 result=self.await_mission(identifier,self.missions.start("navigate",spec["x"],spec["y"],spec["yaw"],scope="mapping",

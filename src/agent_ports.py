@@ -5,6 +5,7 @@ from pathlib import Path
 import threading
 import time
 from onboard_agent import SkillPort
+from camera_views import VIEWS
 
 
 def object_schema(properties=None, required=()):
@@ -300,7 +301,7 @@ class ExplorerPorts:
             port("list_places", "Сохранённые места и совместимость с текущей картой", object_schema(), self.places),
             port("save_place", "Сохранить текущую остановленную позу как именованное место", object_schema({"name": TEXT}, ("name",)), self.save_place, ("map",)),
             port("inventory_report", "Отчёт по реальным сохранённым осмотрам без выдуманного подсчёта", object_schema(), self.report),
-            port("look_direction", "Плавный обзор вперёд, в стороны или вниз перед захватом; база остановлена", object_schema({"view": {"type": "string", "enum": ["forward", "left", "right", "down"]}}, ("view",)), self.look, ("arm", "camera"), True, "servo degrees", "base", ("arm_reference", "accepted_handeye", "stationary_base")),
+            port("look_direction", "Плавный обзор вперёд, в стороны или вниз перед захватом; база остановлена", object_schema({"view": {"type": "string", "enum": list(VIEWS)}}, ("view",)), self.look, ("arm", "camera"), True, "servo degrees", "base", ("arm_reference", "accepted_handeye", "stationary_base")),
             port("move_arm", "Конечный MoveIt-путь; расчётная поза не выдаётся за измеренную", object_schema({"goal_deg": {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 270}, "minItems": 6, "maxItems": 6}}, ("goal_deg",)), self.move, ("arm",), True, "servo degrees", "servo", ("arm_reference", "MoveIt_path", "stationary_base")),
             port("execute_trajectory", "Исполнить ранее рассчитанный свежий MoveIt plan_id", object_schema({"plan_id": {"type": "string", "pattern": r"[0-9a-f]{32}", "maxLength": 32}}, ("plan_id",)), self.execute_trajectory, ("arm",), True, "radians and seconds", "joint", ("fresh_validated_plan",)),
             port("open_gripper", "Плавно раскрыть пальцы по принятому профилю без сброса других суставов", object_schema(), lambda args, context: self.gripper(args, context, True), ("arm",), True, "servo degrees", "J6", ("accepted_gripper_profile",)),
@@ -309,5 +310,6 @@ class ExplorerPorts:
             port("follow_route", "Осмотреть явную последовательность сохранённых мест", object_schema({"places": PLACES}, ("places",)), self.route, ("base", "arm", "camera", "navigation"), True, "metres and radians", "map", ("live_navigation_readiness",)),
             port("explore_area", "Достижимые frontier, осмотры, возврат; необязательно сохранить новую карту", object_schema({"max_goals": {"type": "integer", "minimum": 1, "maximum": 20}, "map_name": {"type": "string", "pattern": r"[a-zA-Z0-9_-]{1,48}", "maxLength": 48}}), self.explore, ("base", "arm", "camera", "navigation"), True, "metres and radians", "map", ("mapping_readiness",)),
             port("find_object", "Проверить виды камеры и выбранные места; остановиться при находке, не хватать", object_schema({"label": TEXT, "places": {**PLACES, "minItems": 0}}, ("label",)), self.find, ("base", "arm", "camera", "vision_inference", "navigation"), True, "metres", "map", ("mapping_readiness", "fresh_RGBD")),
+            port("recover_object_view", "Самостоятельно осмотреть пол, при необходимости отъехать и заново найти предмет; без захвата", object_schema({"label": TEXT}, ("label",)), lambda args, context: self.navigation_skill({"kind": "recover_object_view", "object_query": args["label"]}, context), ("base", "arm", "camera", "vision_inference", "navigation"), True, "metres", "map/base", ("mapping_readiness", "fresh_RGBD")),
             port("deliver_object", "Принятая доставка носка с проверкой удержания и размещения; остальные предметы отклоняются исполнителем", object_schema({"label": TEXT, "destination": TEXT}, ("label", "destination")), self.deliver, ("base", "arm", "camera", "navigation", "vision_inference"), True, "metres and servo degrees", "map/base", ("accepted_delivery", "accepted_destination")),
         ]
