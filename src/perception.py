@@ -97,6 +97,7 @@ class Perception(Node):
         self.info_version=None
         self.lock=threading.Lock()
         self.preview_lock=threading.Lock()
+        self.rgbd_updated = threading.Event()
         self.preview_at=0.
         self.create_subscription(Image,'/camera/color/image_raw',self.color_cb,qos_profile_sensor_data)
         self.create_subscription(Image,'/camera/depth/image_raw',self.depth_cb,qos_profile_sensor_data)
@@ -107,6 +108,7 @@ class Perception(Node):
             self.rgb.append((frame,stamp(msg),msg.header.frame_id))
             camera_info=self.info
             info_version=self.info_version
+        self.rgbd_updated.set()
         now=time.monotonic()
         if now-self.preview_at>=.12 and self.preview_lock.acquire(False):
             try:
@@ -131,12 +133,14 @@ class Perception(Node):
     def depth_cb(self,msg):
         scale=.001 if msg.encoding in ('16UC1','mono16') else 1.
         with self.lock:self.depth.append((self.bridge.imgmsg_to_cv2(msg),stamp(msg),msg.header.frame_id,scale))
+        self.rgbd_updated.set()
     def info_cb(self,msg):
         signature=json.dumps({"k":list(msg.k),"d":list(msg.d),"width":msg.width,"height":msg.height,
                               "frame":msg.header.frame_id,"distortion_model":msg.distortion_model},sort_keys=True)
         with self.lock:
             self.info=msg
             self.info_version=hashlib.sha256(signature.encode()).hexdigest()
+        self.rgbd_updated.set()
 
 def cache_rgbd(node):
     previous=0
@@ -146,7 +150,11 @@ def cache_rgbd(node):
         if pair is not None:
             try:previous=save_snapshot(ROOT/"data/rgbd-snapshot.npz",pair)
             except (OSError,ValueError) as exc:node.get_logger().warning("RGB-D cache: "+str(exc))
-        time.sleep(.10)
+        # Publish an already received registered pair without a polling delay.
+        # Inference stays on its own thread; the pair's exposure/skew checks stay
+        # in registered_pair, and an idle camera does not create a busy loop.
+        node.rgbd_updated.wait(.10)
+        node.rgbd_updated.clear()
 
 
 def track_grounded(node):

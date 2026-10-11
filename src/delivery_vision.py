@@ -80,7 +80,31 @@ class CommandHistory:
             return list(rows[-1][1])
 
 
-def reacquire_candidate(reference, current, bbox):
+class _PreparedForeground:
+    """Internal geometry bound to one exact in-memory exposure and box."""
+    def __init__(self, sample, bbox):
+        self.sample = sample
+        self.bbox = tuple(bbox)
+        self.stamp = float(sample["stamp"])
+        self.frame = str(sample["frame"])
+        self.intrinsic = np.asarray(sample["k"]).copy()
+        self.distortion = np.asarray(sample["d"]).copy()
+        self.geometry = locate(sample, bbox, include_mask=True)
+
+
+def _foreground_geometry(sample, bbox, prepared=None):
+    if prepared is None:
+        return locate(sample, bbox, include_mask=True)
+    if (not isinstance(prepared, _PreparedForeground) or prepared.sample is not sample
+            or prepared.bbox != tuple(bbox) or prepared.stamp != float(sample["stamp"])
+            or prepared.frame != str(sample["frame"])
+            or not np.array_equal(prepared.intrinsic, sample["k"])
+            or not np.array_equal(prepared.distortion, sample["d"])):
+        raise ValueError("Prepared foreground belongs to another exposure or box")
+    return prepared.geometry
+
+
+def reacquire_candidate(reference, current, bbox, _reference_prepared=None, _current_prepared=None):
     """New object hypothesis in a verified static view, NOT a continued track.
 
     A slow semantic model names an old image. Require matching appearance and
@@ -92,7 +116,8 @@ def reacquire_candidate(reference, current, bbox):
         raise ValueError('Semantic observation too old or camera frame changed')
     if not np.array_equal(reference['k'],current['k']) or not np.array_equal(reference['d'],current['d']):
         raise ValueError('Camera calibration changed during recognition')
-    old,new=locate(reference,bbox,include_mask=True),locate(current,bbox,include_mask=True)
+    old = _foreground_geometry(reference, bbox, _reference_prepared)
+    new = _foreground_geometry(current, bbox, _current_prepared)
     if old['outcome']!='candidate' or new['outcome']!='candidate':
         raise ValueError('No fresh separated object at the candidate location')
     points=[np.array([v['position'][k] for k in ('x','y','z')]) for v in (old,new)]
@@ -136,14 +161,17 @@ class StationaryDepthObject:
     stationary_only = True
     association_kind = "stationary_depth_and_appearance"
 
-    def __init__(self, sample, bbox, stationary_context):
+    def __init__(self, sample, bbox, stationary_context, _prepared=None):
         self.context = stationary_context
         context = stationary_context(sample)
         self.anchor = {"epoch": tuple(context["epoch"]), "servo_deg": list(context["servo_deg"]),
             "odom_xyyaw": list(context["odom_xyyaw"])}
         self.bbox = list(bbox)
         self.reference = sample
-        self.geometry = locate(sample, bbox, include_mask=True)
+        self.geometry = _foreground_geometry(sample, bbox, _prepared)
+        context_after = stationary_context(sample)
+        if context_after != context:
+            raise ValueError("Static context changed during foreground preparation")
         if self.geometry["outcome"] != "candidate":
             raise ValueError("No resolved stationary foreground")
         self.object_id = uuid.uuid4().hex
@@ -179,10 +207,7 @@ class StationaryDepthObject:
             if np.linalg.norm(centre-anchor) > .008:
                 raise ValueError("Static foreground depth position changed")
             mask = geometry["foreground_mask"]
-            pixels = np.argwhere(mask)
-            depth = sample["depth"][mask]
-            rays = cv2.undistortPoints(pixels[:, ::-1].astype(float).reshape(-1, 1, 2), sample["k"], sample["d"])[:, 0]
-            xyz = np.column_stack([rays*depth[:, None], depth])
+            xyz = geometry["foreground_points_camera"]
             low, high = np.percentile(xyz, [5, 95], axis=0)
             self.stamp = stamp
             return {"object_id": self.object_id, "point_camera": centre,
@@ -200,18 +225,14 @@ class StationaryDepthObject:
 
 
 class FeatureObject:
-    def __init__(self, sample, bbox):
-        geometry=locate(sample,bbox)
+    def __init__(self, sample, bbox, _prepared=None):
+        geometry = _foreground_geometry(sample, bbox, _prepared)
         if geometry['outcome']!='candidate':raise ValueError('Object depth not separated: '+geometry.get('reason','unknown'))
         rgb=sample['rgb'];h,w=rgb.shape[:2];x1,y1,x2,y2=np.rint(bbox).astype(int)
         if not (0<=x1<x2<=w and 0<=y1<y2<=h):raise ValueError('Invalid detection box')
-        # Select texture on the separated foreground only, not the entire box.
-        v,u=np.mgrid[:h,:w];z=sample['depth'];k=sample['k']
-        rays=cv2.undistortPoints(np.stack([u,v],axis=-1).astype(float).reshape(-1,1,2),k,sample['d']).reshape(h,w,2)
-        xyz=np.concatenate([rays*z[:,:,None],z[:,:,None]],axis=-1)
-        plane=np.asarray(geometry['evidence']['plane_camera']);height=xyz@plane[:3]+plane[3]
-        mask=((u>=x1)&(u<x2)&(v>=y1)&(v<y2)&np.isfinite(z)&(z>.15)&(z<2)&
-              (height>geometry['evidence']['min_separation_m'])&(height<.25)).astype(np.uint8)*255
+        # Reuse the resolved component; full-image undistortion and a second
+        # plane fit delay the same exposure past its freshness budget.
+        mask = geometry["foreground_mask"].astype(np.uint8)*255
         self.gray=cv2.cvtColor(rgb,cv2.COLOR_BGR2GRAY)
         self.points=cv2.goodFeaturesToTrack(self.gray,100,.02,3,mask=mask)
         if self.points is None or len(self.points)<10:raise ValueError('Object has insufficient visible tracking texture')
@@ -387,14 +408,29 @@ class MeasuredVision:
         return {"epoch": (self.arm.boot, arm["at"], arm.get("trajectory_sha256")),
             "servo_deg": arm["servo_deg"], "odom_xyyaw": values}
 
-    def make_tracker(self, sample, bbox):
+    def make_tracker(self, sample, bbox, _prepared=None):
         """Prefer moving optical correspondence; cloth fallback is static only."""
+        if _prepared is None:
+            _prepared = _PreparedForeground(sample, bbox)
         try:
-            return FeatureObject(sample, bbox)
+            return FeatureObject(sample, bbox, _prepared)
         except ValueError as exc:
             if str(exc) != "Object has insufficient visible tracking texture" or not self.factory_mode:
                 raise
-            return StationaryDepthObject(sample, bbox, self.stationary_context)
+            return StationaryDepthObject(sample, bbox, self.stationary_context, _prepared)
+    def reacquire_tracker(self, reference, current, bbox):
+        """Prepare old geometry before sampling fresh; candidate is JSON-safe."""
+        before = _PreparedForeground(reference, bbox)
+        current = current() if callable(current) else current
+        if self.factory_mode:
+            context = self.stationary_context(current)
+        fresh = _PreparedForeground(current, bbox)
+        candidate = reacquire_candidate(reference, current, bbox, before, fresh)
+        if self.factory_mode and self.stationary_context(current) != context:
+            raise ValueError("Camera context changed during target reacquisition")
+        tracker = self.make_tracker(current, bbox, fresh)
+        return current, candidate, tracker
+
     def start_tracker(self, tracker, settings):
         with self.lock:
             self.generation+=1;self.settings=settings;self.track=tracker

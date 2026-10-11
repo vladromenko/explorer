@@ -46,3 +46,16 @@ class ForegroundTests(unittest.TestCase):
         self.assertLess(grasp["clearance_px"], 5.)
         with self.assertRaises(ValueError):
             interior_surface_point(xyz, np.zeros_like(mask))
+
+
+def test_cached_rays_depend_on_exact_calibration_and_crop_only():
+    from surface_foreground import _camera_rays
+    import numpy as np
+    _camera_rays.cache_clear()
+    k = (200.,0,80,0,200.,60,0,0,1.)
+    rays = _camera_rays(k,(0.,)*5,(50,30,90,70))
+    assert _camera_rays(k,(0.,)*5,(50,30,90,70)) is rays
+    changed = _camera_rays((300.,*k[1:]),(0.,)*5,(50,30,90,70))
+    assert not np.array_equal(changed,rays)
+    assert not rays.flags.writeable
+    assert _camera_rays(k,(0.,)*5,(51,30,91,70)) is not rays

@@ -16,7 +16,8 @@ class DeliveryRobotTests(unittest.TestCase):
             status=Mock(return_value={"id": "search", "phase": "ready", "busy": False,
                 "result": {"objects": [part], "raw_objects": [part, whole]}}))
         sample = {"rgb": np.zeros((120,160,3), dtype=np.uint8)}
-        vision = SimpleNamespace(wait_snapshot=Mock(return_value=sample), make_tracker=Mock(),
+        vision = SimpleNamespace(wait_snapshot=Mock(return_value=sample),
+            reacquire_tracker=Mock(return_value=(sample,{"bbox":whole["bbox"]},object())),
             start_tracker=Mock(), frames=[{}], latest=Mock(return_value={"grasp_xyz": [.24,0,.03]}))
         arm = SimpleNamespace(reference=lambda: {"servo_deg": [90]*6})
         missions = SimpleNamespace(maps=SimpleNamespace(pose=lambda: {"x":0.,"y":0.,"yaw":0.}))
@@ -24,15 +25,18 @@ class DeliveryRobotTests(unittest.TestCase):
         robot.mid = "task"; robot.settings = {}; robot.permit = lambda mid: None
         archive = MagicMock()
         archive.__enter__.return_value = sample
-        with patch("delivery_robot.np.load", return_value=archive), patch(
-                "delivery_robot.reacquire_candidate", return_value={"bbox": whole["bbox"]}):
+        with patch("delivery_robot.np.load", return_value=archive):
             found = robot._detect_current("here", inspect_visibility=True)
         self.assertIsNotNone(found)
-        vision.make_tracker.assert_called_once_with(sample, whole["bbox"])
+        vision.reacquire_tracker.assert_called_once()
+        args = vision.reacquire_tracker.call_args.args
+        self.assertIs(args[0]["rgb"],sample["rgb"])
+        self.assertTrue(callable(args[1]))
+        self.assertEqual(args[2],whole["bbox"])
         self.assertFalse(found["semantic_identity_verified"])
-        vision.make_tracker.reset_mock()
+        vision.reacquire_tracker.reset_mock()
         self.assertIsNone(robot._detect_current("here"))
-        vision.make_tracker.assert_not_called()
+        vision.reacquire_tracker.assert_not_called()
 
     def test_lost_target_uses_active_views_before_retreat(self):
         calls = []

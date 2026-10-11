@@ -10,7 +10,6 @@ import time
 from pathlib import Path
 import numpy as np
 from grasp_verification import verify_lift, verify_place
-from delivery_vision import reacquire_candidate
 from mobile_alignment import reachable_correction
 from target_view_recovery import recover_view, visible_search_target
 from camera_views import VIEWS
@@ -360,9 +359,9 @@ class DeliveryRobot:
                 current=np.asarray(self.arm.reference()['servo_deg'],dtype=float);pose=self.missions.maps.pose()
                 if np.max(np.abs(before-current))>.15 or max(abs(pose[k]-base[k]) for k in ('x','y','yaw'))>.003:
                     raise ValueError('Камера сместилась во время распознавания')
-                fresh=self.vision.wait_snapshot(lambda:self.permit(self.mid))
-                candidate=reacquire_candidate(initial,fresh,objects[0]['bbox'])
-                tracker=self.vision.make_tracker(fresh,candidate["bbox"])
+                fresh,candidate,tracker=self.vision.reacquire_tracker(initial,
+                    lambda:self.vision.wait_snapshot(lambda:self.permit(self.mid),after_stamp=time.time()),
+                    objects[0]["bbox"])
                 self.vision.start_tracker(tracker,self.settings)
                 end=time.monotonic()+2
                 while not self.vision.frames and time.monotonic()<end:

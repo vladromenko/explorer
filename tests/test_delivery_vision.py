@@ -349,3 +349,75 @@ def test_frame_wait_expires_without_reusing_last_stale_frame():
         with pytest.raises(ValueError, match="bounded waiting"):
             vision.wait_snapshot(lambda: None, timeout_s=.05)
     vision.snapshot.assert_called_once()
+
+
+def test_reacquisition_reuses_exact_foreground_for_tracker_without_refitting_plane(monkeypatch):
+    import delivery_vision
+    from unittest.mock import Mock
+    original = delivery_vision.locate
+    calls = Mock(side_effect=original)
+    monkeypatch.setattr(delivery_vision,"locate",calls)
+    vision = MeasuredVision.__new__(MeasuredVision)
+    vision.factory_mode = True
+    context = {"epoch":("boot",1,"path"),"servo_deg":[90]*6,"odom_xyyaw":[0,0,0]}
+    vision.stationary_context = lambda sample:dict(context)
+    old, fresh = cloth_sample(1), cloth_sample(1.1)
+    received, candidate, tracker = vision.reacquire_tracker(old,fresh,[59,39,101,81])
+    assert received is fresh
+    assert calls.call_count == 2
+    assert candidate["continuous_from_previous_image"] is False
+    assert tracker.stationary_only is True
+    import json
+    json.dumps(candidate,allow_nan=False)
+    current = cloth_sample(1.2)
+    tracker.update(current)
+    assert calls.call_count == 3
+
+
+def test_prepared_geometry_cannot_be_substituted_for_another_exposure_or_box():
+    import pytest
+    from delivery_vision import _PreparedForeground, _foreground_geometry
+    sample = cloth_sample(1)
+    prepared = _PreparedForeground(sample,[59,39,101,81])
+    assert _foreground_geometry(sample,[59,39,101,81],prepared)["outcome"] == "candidate"
+    for other, box in ((cloth_sample(1),[59,39,101,81]),(sample,[60,40,100,80])):
+        with pytest.raises(ValueError,match="another exposure or box"):
+            _foreground_geometry(other,box,prepared)
+    with pytest.raises(ValueError,match="another exposure or box"):
+        _foreground_geometry(sample,[59,39,101,81],prepared.geometry)
+    sample["stamp"] = 1.1
+    with pytest.raises(ValueError,match="another exposure or box"):
+        _foreground_geometry(sample,[59,39,101,81],prepared)
+
+
+def test_reacquisition_does_not_weaken_postprocessing_stationarity_check(monkeypatch):
+    import pytest
+    import delivery_vision
+    vision = MeasuredVision.__new__(MeasuredVision)
+    vision.factory_mode = True
+    contexts = iter([{"epoch":("boot",1,"path"),"servo_deg":[90]*6,"odom_xyyaw":[0,0,0]},
+        {"epoch":("boot",2,"new-path"),"servo_deg":[90]*6,"odom_xyyaw":[0,0,0]}])
+    vision.stationary_context = lambda sample:next(contexts)
+    with pytest.raises(ValueError,match="context changed"):
+        vision.reacquire_tracker(cloth_sample(1),cloth_sample(1.1),[59,39,101,81])
+
+
+def test_old_geometry_is_prepared_before_sampling_fresh_exposure(monkeypatch):
+    import delivery_vision
+    events = []
+    original = delivery_vision.locate
+    def locate(sample,*args,**kwargs):
+        events.append(float(sample["stamp"]))
+        return original(sample,*args,**kwargs)
+    monkeypatch.setattr(delivery_vision,"locate",locate)
+    old,fresh = cloth_sample(1),cloth_sample(1.1)
+    def capture():
+        events.append("capture")
+        return fresh
+    vision = MeasuredVision.__new__(MeasuredVision)
+    vision.factory_mode = True
+    vision.stationary_context = lambda sample:{"epoch":("boot",1,"path"),"servo_deg":[90]*6,"odom_xyyaw":[0,0,0]}
+    received,candidate,tracker = vision.reacquire_tracker(old,capture,[59,39,101,81])
+    assert events == [1.,"capture",1.1]
+    assert received is fresh
+    assert tracker.stationary_only

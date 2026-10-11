@@ -4,7 +4,6 @@ from pathlib import Path
 import threading
 import time
 import numpy as np
-from delivery_vision import reacquire_candidate
 from grasp_verification import verify_lift,verify_place
 from learning_stack import CandidateScorer
 from semantic_world import guarded_closure
@@ -97,19 +96,9 @@ class LocalGraspExperiment:
         objects=[item for item in result['result'].get('objects',[]) if item.get('position') and item.get('confidence',0)>=.35]
         if len(objects)!=1:raise ValueError('geometry_unknown: expected exactly one depth-localized target')
         with np.load(self.root/'data/object-searches'/request['id']/'rgbd.npz',allow_pickle=False) as raw:initial=dict(raw)
-        fresh = None
-        deadline = time.monotonic() + 3
-        while fresh is None and time.monotonic() < deadline:
-            self.permit(waiting_for_inference=True)
-            try:
-                self.permit()
-                fresh = self.vision.snapshot()
-            except ValueError:
-                time.sleep(.05)
-        if fresh is None:
-            raise ValueError("No fresh RGB-D frame after detection; no arm motion started")
-        candidate=reacquire_candidate(initial,fresh,objects[0]['bbox'])
-        tracker=self.vision.make_tracker(fresh,candidate["bbox"])
+        fresh,candidate,tracker=self.vision.reacquire_tracker(initial,
+            lambda:self.vision.wait_snapshot(lambda:self.permit(waiting_for_inference=True),after_stamp=time.time()),
+            objects[0]["bbox"])
         transform,_,_=self.vision.geometry(fresh,settings)
         plane=np.asarray(objects[0]['depth_evidence']['evidence']['plane_camera'],dtype=float)
         plane_base=np.linalg.inv(transform).T@plane;plane_base/=np.linalg.norm(plane_base[:3])

@@ -5,6 +5,18 @@ and a connected depth component is not a verified semantic object or grasp.
 """
 import cv2
 import numpy as np
+from functools import lru_cache
+
+
+@lru_cache(maxsize=4)
+def _camera_rays(intrinsic, distortion, bounds):
+    """Calibration-only cache; measured depth and masks are never cached."""
+    xa, ya, xb, yb = bounds
+    v, u = np.mgrid[ya:yb, xa:xb]
+    rays = cv2.undistortPoints(np.stack([u, v], axis=-1).astype(float).reshape(-1, 1, 2),
+        np.asarray(intrinsic).reshape(3, 3), np.asarray(distortion)).reshape(yb-ya, xb-xa, 2)
+    rays.setflags(write=False)
+    return rays
 
 def interior_surface_point(xyz, mask):
     """Choose an observed pixel inside the component, rather than its centroid.
@@ -44,7 +56,7 @@ def locate(sample,box,include_mask=False):
     k=np.asarray(sample['k'],dtype=float);d=np.asarray(sample['d'],dtype=float)
     if k.shape!=(3,3) or not np.isfinite(k).all() or min(k[0,0],k[1,1])<=0:
         return unknown('INVALID_INTRINSICS')
-    rays=cv2.undistortPoints(np.stack([u,v],axis=-1).astype(float).reshape(-1,1,2),k,d).reshape(*z.shape,2)
+    rays = _camera_rays(tuple(k.ravel()), tuple(d.ravel()), (xa, ya, xb, yb))
     xyz=np.concatenate([rays*z[:,:,None],z[:,:,None]],axis=-1)
     cloud=xyz[ring];cloud=cloud[::max(1,len(cloud)//2500)]
     rng=np.random.default_rng(17);best=np.zeros(len(cloud),dtype=bool)
@@ -87,4 +99,5 @@ def locate(sample,box,include_mask=False):
         mask = np.zeros((h, w), dtype=bool)
         mask[ya:yb, xa:xb] = selected
         result["foreground_mask"] = mask
+        result["foreground_points_camera"] = points
     return result
