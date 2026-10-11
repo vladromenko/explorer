@@ -1,0 +1,113 @@
+'use strict';
+const $ = id => document.getElementById(id);
+let depthView = false;
+let token = '', session = null, latest = null, selectedJoint = 0, arm = Array(6).fill(0), keys = new Set(), held = {arm: Array(6).fill(0), base: [0, 0, 0]}, recording = false, busy = false, gamepadButtons = [];
+const jointNames = ['Поворот основания', 'Подъём плеча', 'Локоть', 'Наклон кисти', 'Поворот кисти', 'Захват'];
+const jobNames = {trials: 'Попытки', train: 'Обучение ACT', validate: 'Проверка', export: 'Пакет переноса'};
+const statusNames = {running: 'в работе', complete: 'готово', failed: 'ошибка', exporting: 'подготовка данных', training: 'обучение', validating: 'проверка', validated_simulation: 'проверено по записям', trained_simulation_unvalidated: 'обучено; успешность задачи не подтверждена', cancelled: 'остановлено'};
+const phases = {approach: 'Подведите захват к носку', reach: 'Подведите захват к носку', grasp: 'Замкните захват', lift: 'Поднимите носок', transport: 'Перенесите к корзине', place: 'Отпустите в корзину', success: 'Объект доставлен', idle: 'Готов к вашему показу', align_base: 'Подъезжает к объекту', lower: 'Опускает захват', close: 'Замыкает захват', policy: 'Обученная политика пробует выполнить задачу'};
+function notify(text, error = false) { $('notice').textContent = text; $('notice').classList.toggle('error', error); $('notice').classList.remove('hidden'); clearTimeout(notify.timer); notify.timer = setTimeout(() => $('notice').classList.add('hidden'), 4500); }
+async function api(path, body) {
+  const options = body === undefined ? {} : {method: 'POST', headers: {'Content-Type': 'application/json', 'X-Explorer-Sim-Token': token}, body: JSON.stringify(body)};
+  const response = await fetch(path, options);
+  if (!response.ok) { let detail; try { detail = (await response.json()).detail; } catch (_) { detail = response.statusText; } throw new Error(typeof detail === 'string' ? detail : 'Проверьте параметры задания'); }
+  return response.json();
+}
+function button(id, action) { $(id).addEventListener('click', async () => { const element = $(id); element.disabled = true; try { await action(); } catch (error) { notify(error.message, true); } finally { element.disabled = false; } }); }
+function makeJoints() {
+  jointNames.forEach((name, index) => {
+    const row = document.createElement('div'); row.className = 'joint-row'; row.tabIndex = 0;
+    const label = document.createElement('span'); label.textContent = name; row.append(label);
+    const value = document.createElement('output'); value.id = `joint-${index}`; value.textContent = '—'; row.append(value);
+    [-1, 1].forEach(direction => { const key = document.createElement('button'); key.textContent = direction < 0 ? '−' : '+'; key.setAttribute('aria-label', `${name}: ${direction < 0 ? 'уменьшить' : 'увеличить'}`); holdButton(key, () => { selectedJoint = index; held.arm[index] = direction; selectJoint(); }, () => { held.arm[index] = 0; }); row.append(key); });
+    row.addEventListener('click', () => { selectedJoint = index; selectJoint(); }); row.addEventListener('keydown', event => { if (event.code === 'Enter') { selectedJoint = index; selectJoint(); } }); $('joints').append(row);
+  }); selectJoint();
+}
+function selectJoint() { [...$('joints').children].forEach((row, index) => row.classList.toggle('selected', index === selectedJoint)); }
+function holdButton(element, start, end) { element.addEventListener('pointerdown', event => { event.preventDefault(); element.setPointerCapture(event.pointerId); start(); }); ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(name => element.addEventListener(name, end)); }
+function zeroControls() { keys.clear(); held = {arm: Array(6).fill(0), base: [0, 0, 0]}; if (token) api('/api/stop', {}).catch(() => {}); }
+function deadzone(number) { return Math.abs(number || 0) < .15 ? 0 : number; }
+function padControl() {
+  const pad = navigator.getGamepads ? [...navigator.getGamepads()].find(Boolean) : null;
+  $('gamepad').textContent = pad ? 'Геймпад подключён' : 'Геймпад не подключён';
+  if (!pad) { gamepadButtons = []; return {arm: 0, base: [0, 0, 0], grip: 0}; }
+  const buttons = pad.buttons.map(item => item.pressed);
+  if (buttons[4] && !gamepadButtons[4]) selectedJoint = (selectedJoint + 5) % 6;
+  if (buttons[5] && !gamepadButtons[5]) selectedJoint = (selectedJoint + 1) % 6;
+  gamepadButtons = buttons; selectJoint();
+  return {arm: -deadzone(pad.axes[3]), base: [-deadzone(pad.axes[1]) * .2, -deadzone(pad.axes[0]) * .2, ((pad.buttons[6]?.value || 0) - (pad.buttons[7]?.value || 0)) * .6], grip: Number(buttons[0]) - Number(buttons[1])};
+}
+let controlInFlight = false, inputEnabled = true;
+async function sendControls() {
+  if (!token || controlInFlight || !latest || document.hidden || !inputEnabled) return;
+  const activeInput = ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName);
+  const is = key => !activeInput && keys.has(key) ? 1 : 0;
+  const pad = padControl(), speed = Number($('speed').value);
+  const velocity = held.arm.map(value => value * speed);
+  velocity[selectedJoint] += (is('ArrowUp') - is('ArrowDown') + pad.arm) * speed;
+  velocity[5] += (is('BracketRight') - is('BracketLeft') + pad.grip) * speed;
+  const base = [(is('KeyW') - is('KeyS')) * .2, (is('KeyA') - is('KeyD')) * .2, (is('KeyQ') - is('KeyE')) * .6].map((value, index) => value + held.base[index] + pad.base[index]);
+  controlInFlight = true;
+  try { await api('/api/control', {arm_velocity: velocity, base}); } catch (_) {} finally { controlInFlight = false; }
+}
+function showResult(result) {
+  if (!result || typeof result !== 'object') return '';
+  const pieces = [];
+  const successes = result.physics_verified_successes ?? result.successes;
+  const total = result.episodes ?? result.count ?? result.attempts;
+  const validation = result.validation;
+  if (validation?.mae !== undefined) pieces.push(`Ошибка по независимым записям: ${Number(validation.mae).toFixed(3)}`);
+  if (typeof successes === 'number') pieces.push(`Физических успехов: ${successes}${typeof total === 'number' ? ' / ' + total : ''}`);
+  if (typeof result.validation_mae === 'number') pieces.push(`Ошибка по записям: ${result.validation_mae.toFixed(3)}`);
+  if (result.state || result.status) pieces.push(statusNames[result.state || result.status] || result.state || result.status);
+  if (result.physics_validated === false) pieces.push('Проверка в физике ещё не выполнена');
+  if (result.message) pieces.push(result.message);
+  return pieces.join(' · ');
+}
+function renderStatus(snapshot) {
+  latest = snapshot; $('depth-view').disabled = !snapshot.depth_available; const state = snapshot.state || {}, task = state.task || {}, command = state.command || state.command9_deg || [];
+  arm = command.slice(0, 6); jointNames.forEach((_, index) => { $(`joint-${index}`).textContent = Number.isFinite(arm[index]) ? `${arm[index].toFixed(0)}°` : '—'; });
+  $('phase').textContent = snapshot.error ? snapshot.error : snapshot.paused ? 'Сцена на паузе' : task.success ? 'Объект доставлен · подтверждено моделью' : phases[task.phase] || 'Управляйте рукой и платформой';
+  $('contact').textContent = task.grasp_contact ? 'Есть' : 'Нет'; $('lifted').textContent = task.lifted ? 'Да' : 'Нет'; $('placed').textContent = task.placed ? 'Да' : 'Нет'; $('simtime').textContent = `${Number(state.sim_time || 0).toFixed(1)} с`;
+  $('pause').textContent = snapshot.paused ? 'Продолжить' : 'Пауза'; recording = snapshot.recording; $('record').textContent = recording ? 'Закончить запись' : 'Начать запись'; $('record-status').textContent = recording ? `● ${snapshot.record_frames} кадров` : ''; $('annotation').disabled = !recording;
+  const jobs = snapshot.jobs || []; busy = jobs.some(job => ['running', 'exporting', 'training', 'validating'].includes(job.status));
+  ['trials', 'train', 'validate', 'export'].forEach(id => { $(id).disabled = busy; }); $('cancel-job').classList.toggle('hidden', !busy); $('reset').disabled = busy; $('floor-view').disabled = busy;
+  const current = jobs.at(-1); $('job-state').firstElementChild.textContent = current ? `${jobNames[current.kind]} · ${current.message || statusNames[current.status] || current.status}` : 'Готов к работе'; $('job-state').querySelector('progress').value = current?.progress || 0;
+  if (jobs.length) { $('jobs').replaceChildren(); jobs.slice().reverse().forEach(job => { const row = document.createElement('div'); row.className = 'job'; const title = document.createElement('strong'); title.textContent = jobNames[job.kind]; const status = document.createElement('span'); status.textContent = statusNames[job.status] || job.status; const detail = document.createElement('small'); detail.style.display = 'block'; detail.textContent = showResult(job.result) || job.message || ''; row.append(title, status, detail); $('jobs').append(row); }); }
+  $('logs').replaceChildren(); (snapshot.logs || []).slice().reverse().forEach(log => { const row = document.createElement('div'), stamp = document.createElement('time'); stamp.textContent = log.time; row.append(stamp, document.createTextNode(log.message)); $('logs').append(row); });
+  $('download').classList.toggle('hidden', !snapshot.package_available); $('storage').textContent = `Хранилище: ${snapshot.data_root}`; $('connection').textContent = 'Симуляция работает';
+}
+let episodeSignature = '';
+async function updateEpisodes() {
+  try {
+    const episodes = await api('/api/episodes'); const signature = JSON.stringify(episodes);
+    if (signature === episodeSignature) return;
+    const known = new Map([...document.querySelectorAll('#episodes input')].map(input => [input.value, input.checked]));
+    episodeSignature = signature; $('episode-count').textContent = `(${episodes.length})`;
+    if (!episodes.length) return;
+    $('episodes').replaceChildren();
+    episodes.forEach(episode => { const label = document.createElement('label'), input = document.createElement('input'); input.type = 'checkbox'; input.value = episode.id; input.checked = known.has(episode.id) ? known.get(episode.id) : true; const title = document.createElement('span'); title.textContent = `${episode.id} · ${episode.frames} кадров · ${episode.physics_verified_success ? 'доставка подтверждена моделью' : 'без подтверждённой доставки'}`; label.append(input, title); $('episodes').append(label); });
+  } catch (_) {}
+}
+let pollInFlight = false;
+async function poll() { if (pollInFlight) return; pollInFlight = true; try { renderStatus(await api('/api/state')); } catch (_) { $('connection').textContent = 'Связь прервана'; } finally { pollInFlight = false; } }
+function refreshImages() { if (document.hidden) return; for (const camera of ['overview', 'wrist']) { const image = $(camera); if (!image.dataset.loading) { image.dataset.loading = '1'; image.src = `/${camera === 'wrist' && depthView ? 'depth' : camera}.jpg?t=${Date.now()}`; } } }
+function jobs(kind) { return api(`/api/jobs/${kind}`, {count: kind === 'validate' ? 10 : Number($('attempts').value), steps: Number($('steps').value), batch_size: Number($('batch').value), episode_ids: kind === 'train' ? [...document.querySelectorAll('#episodes input:checked')].map(input => input.value) : null, seed: kind === 'validate' ? 10000 : 100}).then(() => { notify('Задание началось'); poll(); }); }
+$('rgb-view').addEventListener('click', () => { depthView = false; $('rgb-view').classList.add('selected'); $('depth-view').classList.remove('selected'); $('depth-note').classList.add('hidden'); refreshImages(); });
+$('depth-view').addEventListener('click', () => { depthView = true; $('depth-view').classList.add('selected'); $('rgb-view').classList.remove('selected'); $('depth-note').classList.remove('hidden'); refreshImages(); });
+button('floor-view', async () => { zeroControls(); await api('/api/floor-view', {}); notify('Рука переходит к обзору пола'); });
+button('cancel-job', async () => { await api('/api/cancel', {}); notify('Задание останавливается'); });
+button('reset', async () => { zeroControls(); await api('/api/reset', {seed: Math.floor(Math.random() * 1000000), difficulty: $('difficulty').value}); await poll(); });
+button('pause', async () => { zeroControls(); await api('/api/pause', {}); await poll(); });
+button('stop', async () => { zeroControls(); notify('Движение остановлено'); });
+button('record', async () => { if (recording) await api('/api/record/stop', {annotation: $('annotation').value}); else await api('/api/record/start', {}); await poll(); });
+['trials', 'train', 'validate', 'export'].forEach(kind => button(kind, () => jobs(kind)));
+$('tab-arm').addEventListener('click', () => { $('arm-controls').classList.remove('hidden'); $('base-controls').classList.add('hidden'); $('tab-arm').classList.add('selected'); $('tab-base').classList.remove('selected'); });
+$('tab-base').addEventListener('click', () => { $('base-controls').classList.remove('hidden'); $('arm-controls').classList.add('hidden'); $('tab-base').classList.add('selected'); $('tab-arm').classList.remove('selected'); });
+$('speed').addEventListener('input', () => { $('speed-value').textContent = `${$('speed').value} °/с`; });
+document.querySelectorAll('[data-drive]').forEach(element => { const direction = element.dataset.drive.split(',').map(Number); holdButton(element, () => { held.base = direction.map((value, index) => value * (index === 2 ? .6 : .2)); }, () => { held.base = [0, 0, 0]; }); });
+window.addEventListener('keydown', event => { if (['INPUT', 'SELECT', 'TEXTAREA'].includes(event.target.tagName)) return; if (event.code === 'Space') { event.preventDefault(); zeroControls(); return; } if (['ArrowUp', 'ArrowDown', 'BracketLeft', 'BracketRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE'].includes(event.code)) { event.preventDefault(); keys.add(event.code); } if (/^Digit[1-6]$/.test(event.code)) { selectedJoint = Number(event.code.slice(-1)) - 1; selectJoint(); } });
+window.addEventListener('keyup', event => keys.delete(event.code)); window.addEventListener('blur', () => { inputEnabled = false; zeroControls(); }); window.addEventListener('focus', () => { inputEnabled = true; }); window.addEventListener('pagehide', zeroControls); document.addEventListener('visibilitychange', () => { if (document.hidden) zeroControls(); });
+for (const camera of ['overview', 'wrist']) { $(camera).addEventListener('load', () => delete $(camera).dataset.loading); $(camera).addEventListener('error', () => delete $(camera).dataset.loading); }
+makeJoints();
+(async () => { try { session = await api('/api/session'); token = session.token; await poll(); refreshImages(); setInterval(sendControls, 50); setInterval(poll, 500); setInterval(refreshImages, 200); updateEpisodes(); setInterval(updateEpisodes, 2500); } catch (error) { notify(`Не удалось запустить: ${error.message}`, true); } })();

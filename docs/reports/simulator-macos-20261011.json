@@ -1,0 +1,122 @@
+{
+  "date": "2026-10-11",
+  "scope": "isolated Mac simulator and learning tools; no robot connection or firmware mutation",
+  "hardware": {
+    "platform": "Apple M4 Pro, arm64, 24 GB RAM",
+    "learning_device": "MPS"
+  },
+  "storage": {
+    "volume": "/Volumes/ExplorerSim",
+    "filesystem": "APFS",
+    "uuid": "1B222F24-62C3-4E85-A85B-452FCEE04106",
+    "formatting": "explicitly authorized and completed",
+    "free_bytes": 988618375168
+  },
+  "installed": {
+    "app": "/Users/vladromenko/Applications/Explorer Simulator.app",
+    "url": "http://127.0.0.1:8766/",
+    "source_snapshot": "/Users/vladromenko/Library/Application Support/ExplorerSimulator/source",
+    "standalone_interpreter": "/Users/vladromenko/Library/Application Support/ExplorerSimulator/python/cpython-3.12.14-macos-aarch64-none",
+    "packages": "/Volumes/ExplorerSim/env",
+    "startup": "user application; no launch-at-login service",
+    "server_health": "ready; RGB/depth/state available",
+    "native_viewer": "/Volumes/ExplorerSim/Explorer 3D.command"
+  },
+  "geometry": {
+    "mesh_count": 20,
+    "all_sha256_verified": true,
+    "source": "https://github.com/dimwael/yahboom_m3pro_description",
+    "revision": "bdac682e57a8eeaf7b18eece44bfbfc54de98e8a",
+    "calibrations": "existing Explorer arm, hand-eye and dual-lidar geometry"
+  },
+  "dynamics": {
+    "status": "estimated, not identified digital twin",
+    "finite_actuator_torques": true,
+    "physical_sock_contacts": true,
+    "object_attachment_or_teleport": false,
+    "chassis_pose_forcing": false,
+    "unknowns": [
+      "servo dynamics",
+      "friction",
+      "fabric properties",
+      "payload distribution",
+      "real suspension and backlash"
+    ]
+  },
+  "verification": {
+    "simulator_tests_passed": 45,
+    "existing_learning_boundary_tests_passed": 18,
+    "existing_subtests_passed": 2,
+    "dependency_check": true,
+    "javascript_syntax": true,
+    "shell_syntax": true,
+    "native_viewer_8_second_smoke": "passed before final interpreter relocation",
+    "final_native_UI_check": "Mac locked; unlock requested; server separately verified"
+  },
+  "teacher": {
+    "camera_first_episodes": 3,
+    "successes": 3,
+    "uses_simulator_ground_truth_for_teacher_planning": true,
+    "success_does_not_validate_actor": true
+  },
+  "learned_policy": {
+    "job": "/Volumes/ExplorerSim/ExplorerSim/runs/963fb82d43a1",
+    "state": "trained_simulation_unvalidated",
+    "initial_steps": 3000,
+    "warm_start_steps": 1500,
+    "input": "wrist RGB + 9D command estimate, no object ground truth",
+    "joint_mae_deg": 7.577329535289512,
+    "closed_loop": {
+      "validation_kind": "closed_loop_policy",
+      "episodes": 1,
+      "successes": 0,
+      "physics_validated": false,
+      "real_hardware_accepted": false,
+      "results": [
+        {
+          "id": "heldout-0000",
+          "success": false,
+          "error": null,
+          "outcome": {
+            "phase": "policy",
+            "grasp_contact": false,
+            "finger_contacts": [
+              false,
+              false
+            ],
+            "lifted": false,
+            "placed": false,
+            "success": false,
+            "lift_hold_s": 0.0
+          }
+        }
+      ],
+      "model_job": "963fb82d43a1",
+      "model_weights_sha256": "e1e30dee0af5b71ad17cbbacc3b548b73375643a9bafeee161357a43fb9ba96b",
+      "heldout_independent": true,
+      "heldout_seeds": [
+        10000
+      ],
+      "training_seeds": [
+        0,
+        10002
+      ],
+      "evaluated_at": 1791739660.526887
+    },
+    "transfer_roundtrip_max_abs_difference": 0.0
+  },
+  "portable_package": {
+    "path": "/Volumes/ExplorerSim/ExplorerSim/exports/explorer-963fb82d43a1-final.tar.gz",
+    "archive": "/Volumes/ExplorerSim/ExplorerSim/exports/explorer-963fb82d43a1-final.tar.gz",
+    "sha256": "43acd12d66a7f72c5e5f656fbdb072f8e1c93fb37770e69594021fe0424bad34",
+    "bytes": 44324055,
+    "inference_device": "cuda",
+    "training_source": "synthetic_only",
+    "physics_acceptance": false,
+    "automatic_execution_allowed": false
+  },
+  "real_hardware_accepted": false,
+  "automatic_execution_allowed": false,
+  "rollback_tag": "explorer-before-simulator-20261011",
+  "evidence": "/Volumes/ExplorerSim/ExplorerSim/logs/temporal-act-pipeline-summary.json"
+}
