@@ -140,16 +140,27 @@ class Perception(Node):
 
 def cache_rgbd(node):
     previous=0
-    targets=GroundedTargets()
-    last_request=None
     while rclpy.ok():
         with node.lock:rgbs,depths,info=list(node.rgb),list(node.depth),node.info
         pair=registered_pair(rgbs,depths,info,previous=previous)
         if pair is not None:
-            try:
-                previous=save_snapshot(ROOT/"data/rgbd-snapshot.npz",pair)
-                with np.load(ROOT/"data/rgbd-snapshot.npz",allow_pickle=False) as raw:
-                    sample=dict(raw)
+            try:previous=save_snapshot(ROOT/"data/rgbd-snapshot.npz",pair)
+            except (OSError,ValueError) as exc:node.get_logger().warning("RGB-D cache: "+str(exc))
+        time.sleep(.10)
+
+
+def track_grounded(node):
+    # Recognition/association never delays the camera's shared RGB-D cache.
+    targets=GroundedTargets()
+    last_request=None
+    previous=0
+    while rclpy.ok():
+        try:
+            with np.load(ROOT/"data/rgbd-snapshot.npz",allow_pickle=False) as raw:
+                sample=dict(raw)
+            image_stamp=float(sample["stamp"])
+            if image_stamp>previous and 0<=time.time()-image_stamp<.4:
+                previous=image_stamp
                 sample["observer_key"]=None
                 try:
                     base=json.loads((ROOT/"data/status.json").read_text())
@@ -193,8 +204,10 @@ def cache_rgbd(node):
                     temporary=ROOT/"data/grounded-targets.tmp"
                     temporary.write_text(json.dumps(observation,allow_nan=False))
                     temporary.replace(ROOT/"data/grounded-targets.json")
-            except (OSError,ValueError) as exc:node.get_logger().warning("RGB-D cache: "+str(exc))
-        time.sleep(.10)
+        except (OSError,ValueError,KeyError,TypeError) as exc:
+            targets.clear("unavailable",str(exc))
+            node.get_logger().warning("Grounded targets: "+str(exc))
+        time.sleep(.06)
 
 def run():
     rclpy.init()
@@ -202,6 +215,7 @@ def run():
     thread=threading.Thread(target=rclpy.spin,args=(node,),daemon=True)
     thread.start()
     threading.Thread(target=cache_rgbd,args=(node,),daemon=True,name="rgbd-cache").start()
+    threading.Thread(target=track_grounded,args=(node,),daemon=True,name="grounded-targets").start()
     engine=Engine()
     db=sqlite3.connect(ROOT/'data/world.sqlite3')
     db.execute('PRAGMA journal_mode=WAL')

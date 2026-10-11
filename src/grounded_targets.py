@@ -4,30 +4,74 @@ Recognition names never constitute verified identity or permission to move.
 Lost targets cannot inherit a new object's label without a new recognition.
 """
 import time
+import cv2
 import numpy as np
 from delivery_vision import FeatureObject, reacquire_candidate
 
 
 class StationaryDepthTarget:
     """Re-observe a texture-poor target only while the observer remains settled."""
-    def __init__(self, sample, box):
+    def __init__(self, sample, box, geometry=None):
         if sample.get("observer_key") is None:
             raise ValueError("Texture-poor target requires a stationary observer")
         self.sample, self.box = sample, list(box)
         self.object_id = "depth-" + str(time.time_ns())
+        if geometry is None:
+            from surface_foreground import locate
+            geometry=locate(sample,box)
+        evidence=geometry.get("depth_evidence",geometry.get("evidence"))
+        if evidence is None:
+            raise ValueError("Stationary depth target lacks a separated support plane")
+        self.plane=np.array(evidence["plane_camera"])
+        self.separation=evidence["min_separation_m"]
+        x1,y1,x2,y2=np.rint(box).astype(int)
+        h,w=sample["depth"].shape
+        self.region=(max(0,x1-12),max(0,y1-12),min(w,x2+12),min(h,y2+12))
+        a,b,c,d=self.region
+        v,u=np.mgrid[b:d,a:c]
+        self.inside=(u>=x1)&(u<x2)&(v>=y1)&(v<y2)
+        self.rays=cv2.undistortPoints(np.stack([u,v],axis=-1).astype(float).reshape(-1,1,2),
+            sample["k"],sample["d"]).reshape(*u.shape,2)
+        self.mask,self.point=self.segment(sample)
+        self.gray=cv2.cvtColor(sample["rgb"],cv2.COLOR_BGR2GRAY)[y1:y2,x1:x2].astype(float).ravel()
+        if np.std(self.gray)<8:
+            raise ValueError("Stationary target appearance lacks contrast")
+
+    def segment(self,sample):
+        a,b,c,d=self.region
+        z=sample["depth"][b:d,a:c]
+        valid=np.isfinite(z)&(z>.15)&(z<2)
+        xyz=np.concatenate([self.rays*z[:,:,None],z[:,:,None]],axis=-1)
+        height=xyz@self.plane[:3]+self.plane[3]
+        ring=valid&~self.inside
+        if ring.sum()<80 or np.mean(np.abs(height[ring])<.004)<.7:
+            raise ValueError("Stationary target support plane changed")
+        mask=valid&self.inside&(height>self.separation)&(height<.25)
+        if mask.sum()<20:
+            raise ValueError("No separated object in stationary target region")
+        return mask,np.median(xyz[mask],axis=0)
 
     def update(self, sample):
         if not float(self.sample["stamp"]) < float(sample["stamp"]) <= float(self.sample["stamp"]) + .4:
             raise ValueError("Stationary depth target frame gap")
         if sample.get("observer_key") != self.sample.get("observer_key"):
             raise ValueError("Observer moved; texture-poor target needs new recognition")
-        evidence = reacquire_candidate(self.sample, sample, self.box)
+        mask,point=self.segment(sample)
+        if np.count_nonzero(mask&self.mask)/max(1,np.count_nonzero(mask|self.mask))<.7:
+            raise ValueError("Stationary object depth silhouette changed")
+        if np.linalg.norm(point-self.point)>.01:
+            raise ValueError("Stationary object moved")
+        x1,y1,x2,y2=np.rint(self.box).astype(int)
+        gray=cv2.cvtColor(sample["rgb"],cv2.COLOR_BGR2GRAY)[y1:y2,x1:x2].astype(float).ravel()
+        correlation=float(np.corrcoef(self.gray,gray)[0,1]) if np.std(gray)>=8 else 0.
+        if not np.isfinite(correlation) or correlation<.92:
+            raise ValueError("Stationary object appearance changed")
         self.sample = sample
-        position = evidence["position_camera"]
-        return {"point_camera": np.array([position[k] for k in ("x","y","z")]),
+        self.mask,self.point,self.gray=mask,point,gray
+        return {"point_camera": point,
             "association_fraction": None, "object_position_uncertainty_m": None,
             "association_method": "stationary_RGBD_dense_appearance",
-            "appearance_correlation": evidence["appearance_correlation"]}
+            "appearance_correlation": correlation}
 
 
 class GroundedTargets:
@@ -57,7 +101,7 @@ class GroundedTargets:
                     except ValueError as exc:
                         if "insufficient visible tracking texture" not in str(exc):
                             raise
-                        tracker = StationaryDepthTarget(sample, association["bbox"])
+                        tracker = StationaryDepthTarget(sample, association["bbox"],association)
                     self.targets.append({"tracker": tracker, "box": np.array(item["bbox"], dtype=float),
                         "label": item.get("requested_label", item["label"]),
                         "model_label": item["label"], "confidence": item["confidence"],
