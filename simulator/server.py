@@ -889,6 +889,13 @@ def create_app(env_factory=None, data_root=DATA_ROOT, learning_module=None, star
         runtime.control(Control(arm_target=jsonable(angles)))
         return {'ok': True}
 
+    @app.post('/api/stop-manual')
+    def stop_manual(request: Request):
+        # Loss of browser focus releases teleoperation only. Background
+        # generation, learning and validation belong to the durable queue.
+        request.app.state.runtime.stop_control()
+        return {'ok': True}
+
     @app.post('/api/stop')
     def stop(request: Request):
         runtime = request.app.state.runtime

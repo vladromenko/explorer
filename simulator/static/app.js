@@ -25,7 +25,7 @@ function makeJoints() {
 }
 function selectJoint() { [...$('joints').children].forEach((row, index) => row.classList.toggle('selected', index === selectedJoint)); }
 function holdButton(element, start, end) { element.addEventListener('pointerdown', event => { event.preventDefault(); element.setPointerCapture(event.pointerId); start(); }); ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(name => element.addEventListener(name, end)); }
-function zeroControls() { keys.clear(); held = {arm: Array(6).fill(0), base: [0, 0, 0]}; if (token) api('/api/stop', {}).catch(() => {}); }
+function zeroControls(cancelTask = false) { keys.clear(); held = {arm: Array(6).fill(0), base: [0, 0, 0]}; if (token) api(cancelTask === true ? '/api/stop' : '/api/stop-manual', {}).catch(() => {}); }
 function deadzone(number) { return Math.abs(number || 0) < .15 ? 0 : number; }
 function padControl() {
   const pad = navigator.getGamepads ? [...navigator.getGamepads()].find(Boolean) : null;
@@ -170,7 +170,7 @@ button('floor-view', async () => { zeroControls(); await api('/api/floor-view', 
 button('cancel-job', async () => { await api('/api/cancel', {}); notify('Задание останавливается'); });
 button('reset', async () => { zeroControls(); await api('/api/reset', {seed: Math.floor(Math.random() * 1000000), difficulty: $('difficulty').value, task_id: $('task-select').value}); await poll(); });
 button('pause', async () => { zeroControls(); await api('/api/pause', {}); await poll(); });
-button('stop', async () => { zeroControls(); notify('Движение остановлено'); });
+button('stop', async () => { zeroControls(true); notify('Движение остановлено'); });
 button('record', async () => { if (recording) await api('/api/record/stop', {annotation: $('annotation').value}); else await api('/api/record/start', {}); await poll(); });
 ['trials', 'train', 'validate', 'export'].forEach(kind => button(kind, () => jobs(kind)));
 button('show-policy', () => jobs('validate', 1));
@@ -178,8 +178,8 @@ $('tab-arm').addEventListener('click', () => { $('arm-controls').classList.remov
 $('tab-base').addEventListener('click', () => { $('base-controls').classList.remove('hidden'); $('arm-controls').classList.add('hidden'); $('tab-base').classList.add('selected'); $('tab-arm').classList.remove('selected'); });
 $('speed').addEventListener('input', () => { $('speed-value').textContent = `${$('speed').value} °/с`; });
 document.querySelectorAll('[data-drive]').forEach(element => { const direction = element.dataset.drive.split(',').map(Number); holdButton(element, () => { held.base = direction.map((value, index) => value * (index === 2 ? .6 : .2)); }, () => { held.base = [0, 0, 0]; }); });
-window.addEventListener('keydown', event => { if (['INPUT', 'SELECT', 'TEXTAREA'].includes(event.target.tagName)) return; if (event.code === 'Space') { event.preventDefault(); zeroControls(); return; } if (['ArrowUp', 'ArrowDown', 'BracketLeft', 'BracketRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE'].includes(event.code)) { event.preventDefault(); keys.add(event.code); } if (/^Digit[1-6]$/.test(event.code)) { selectedJoint = Number(event.code.slice(-1)) - 1; selectJoint(); } });
-window.addEventListener('keyup', event => keys.delete(event.code)); window.addEventListener('blur', () => { inputEnabled = false; zeroControls(); }); window.addEventListener('focus', () => { inputEnabled = true; }); window.addEventListener('pagehide', zeroControls); document.addEventListener('visibilitychange', () => { if (document.hidden) zeroControls(); });
+window.addEventListener('keydown', event => { if (['INPUT', 'SELECT', 'TEXTAREA'].includes(event.target.tagName)) return; if (event.code === 'Space') { event.preventDefault(); zeroControls(true); return; } if (['ArrowUp', 'ArrowDown', 'BracketLeft', 'BracketRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE'].includes(event.code)) { event.preventDefault(); keys.add(event.code); } if (/^Digit[1-6]$/.test(event.code)) { selectedJoint = Number(event.code.slice(-1)) - 1; selectJoint(); } });
+window.addEventListener('keyup', event => keys.delete(event.code)); window.addEventListener('blur', () => { inputEnabled = false; zeroControls(); }); window.addEventListener('focus', () => { inputEnabled = true; }); window.addEventListener('pagehide', () => zeroControls()); document.addEventListener('visibilitychange', () => { if (document.hidden) zeroControls(); });
 for (const camera of ['overview', 'wrist']) { $(camera).addEventListener('load', () => delete $(camera).dataset.loading); $(camera).addEventListener('error', () => delete $(camera).dataset.loading); }
 makeJoints();
 (async () => { try { session = await api('/api/session'); token = session.token; await poll(); refreshImages(); setInterval(sendControls, 50); setInterval(poll, 500); setInterval(refreshImages, 200); updateEpisodes(); setInterval(updateEpisodes, 2500); } catch (error) { notify(`Не удалось запустить: ${error.message}`, true); } })();

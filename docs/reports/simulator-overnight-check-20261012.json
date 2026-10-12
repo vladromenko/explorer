@@ -1,0 +1,44 @@
+{
+  "checked_at_unix": 1791786130.145769,
+  "night_queue_id": "0a859bcd5239",
+  "original_stop_after_s": 46,
+  "original_stopped_during": "first simulation demonstration; no new trained checkpoint",
+  "defect": {
+    "file": "simulator/static/app.js",
+    "function": "zeroControls",
+    "old_endpoint": "/api/stop",
+    "effect": "blur, visibilitychange and pagehide could cancel trials or policy validation",
+    "fix": "passive browser events release manual inputs through /api/stop-manual; explicit STOP/Space retain cancellation"
+  },
+  "tests_passed": 66,
+  "browser_leave_test": {
+    "action": "Navigate from simulator to guide during trial generation",
+    "queue_state": "running",
+    "jobs": [
+      {
+        "id": "8033e038ba88",
+        "kind": "night",
+        "status": "running",
+        "progress": 0,
+        "message": "Носок → корзина · раунд 1 · trials"
+      },
+      {
+        "id": "8fac8312b259",
+        "kind": "trials",
+        "status": "running",
+        "progress": 4.0,
+        "message": "Попытка 5 из 100"
+      }
+    ]
+  },
+  "jetson": {
+    "ssh_reachable": true,
+    "git_commit": "f58fe5c",
+    "failed_services": 0,
+    "camera_age_s": 0.08,
+    "battery_v_approx": 12.2,
+    "new_simulation_model_registered": false,
+    "motion_sent": false
+  },
+  "learned_model_ready": false
+}

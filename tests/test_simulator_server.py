@@ -404,3 +404,17 @@ def test_combined_base_inputs_clamp_to_the_actual_environment(tmp_path):
         assert any(step[6:] == [.2, -.2, .6] for step in runtime.env.steps)
     finally:
         runtime.close()
+
+
+def test_browser_focus_release_does_not_cancel_background_trial(tmp_path):
+    with client(tmp_path) as connection:
+        runtime = connection.app.state.runtime
+        runtime.jobs.append(dict(kind='trials', status='running'))
+        runtime.control(Control(base=[.1, 0., 0.], arm_velocity=[1.,0.,0.,0.,0.,0.]))
+        assert connection.post('/api/stop-manual', json={}, headers=auth(connection)).status_code == 200
+        assert not runtime.cancel_job.is_set()
+        assert runtime.command.base == [0.,0.,0.]
+        assert runtime.command.arm_velocity == [0.,0.,0.,0.,0.,0.]
+        # The explicit STOP action must still cancel a moving simulation trial.
+        assert connection.post('/api/stop', json={}, headers=auth(connection)).status_code == 200
+        assert runtime.cancel_job.is_set()
