@@ -88,7 +88,7 @@ class NightQueue:
                 output.append(dict(id=path.stem,created=path.stat().st_mtime,state='corrupt',tasks=[],reason='Повреждён файл очереди; данные сохранены: '+str(path)))
         return sorted(output,key=lambda item:item['created'],reverse=True)
 
-    def create(self, tasks, count, steps, batch_size, hours, seed, rounds=3, scene_profile='baseline'):
+    def create(self, tasks, count, steps, batch_size, hours, seed, rounds=3, scene_profile='baseline',workers=1):
         if scene_profile not in ('baseline', 'sock_variants_v1'):
             raise ValueError('Неизвестный профиль сцен')
         if not tasks or len(tasks) != len(set(tasks)):
@@ -97,8 +97,10 @@ class NightQueue:
             task_spec(task)
         if not 2 <= count <= 1000 or not 1 <= steps <= 200000 or not 8 <= batch_size <= 32 or not 0 < hours <= 24 or not 1<=rounds<=5:
             raise ValueError('Параметры ночного задания вне диапазона')
+        if type(workers) is not int or workers not in (1,4):
+            raise ValueError('Выберите один или четыре исполнителя')
         value = dict(id=secrets.token_hex(6), created=time.time(), state='queued', hours=hours,
-                     options=dict(count=count, steps=steps, batch_size=batch_size, seed=seed, rounds=rounds, scene_profile=scene_profile),
+                     options=dict(count=count, steps=steps, batch_size=batch_size, seed=seed, rounds=rounds, scene_profile=scene_profile,workers=workers),
                      tasks=[dict(task_id=task, stages={}, history=[], round=1, state='queued') for task in tasks],
                      automatic_hardware_execution=False)
         save_json(self.folder / (value['id']+'.json'), value)

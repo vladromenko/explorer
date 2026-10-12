@@ -169,6 +169,7 @@ class JobRequest(BaseModel):
     count: int = Field(default=10, ge=1, le=1000)
     steps: int = Field(default=3000, ge=1, le=10000000)
     minimum_epochs: int = Field(default=0, ge=0, le=20)
+    workers: int = Field(default=1, ge=1, le=4)
     batch_size: int = Field(default=16, ge=8, le=1024)
     seed: int = Field(default=100, ge=0, le=2**31 - 1)
     episode_ids: list[str] | None = Field(default=None, max_length=1000)
@@ -186,6 +187,12 @@ class JobRequest(BaseModel):
     auto_train: bool = True
     allow_partial: bool = False
     scene_profile: str = Field(default='baseline', pattern='^(baseline|sock_variants_v1)$')
+
+    @field_validator('workers')
+    @classmethod
+    def valid_workers(cls,value):
+        if value not in (1,4):raise ValueError('Выберите один или четыре исполнителя')
+        return value
 
     @field_validator('episode_ids')
     @classmethod
@@ -612,7 +619,7 @@ class Runtime:
                     plan = grounded_plan(text, parsed, provenance)
                     goal = self.learning_goals.create(plan,dict(count=request.count,
                         steps=request.steps,batch_size=min(32,request.batch_size),hours=request.hours,
-                        seed=request.seed,rounds=request.rounds,scene_profile=request.scene_profile))
+                        seed=request.seed,rounds=request.rounds,scene_profile=request.scene_profile,workers=request.workers))
                     if previous:
                         goal['parent_id'] = previous['id']
                         self.learning_goals.save(goal)
@@ -643,7 +650,7 @@ class Runtime:
                 if request.plan_id:
                     plan = self.night_queue.get(request.plan_id)
                 else:
-                    plan = self.night_queue.create(request.task_ids,request.count,request.steps,request.batch_size,request.hours,request.seed,request.rounds,request.scene_profile)
+                    plan = self.night_queue.create(request.task_ids,request.count,request.steps,request.batch_size,request.hours,request.seed,request.rounds,request.scene_profile,request.workers)
                 job['plan_id'] = plan['id']
                 if request.goal_id:
                     goal = self.learning_goals.get(request.goal_id)
@@ -686,7 +693,22 @@ class Runtime:
                 if recovered:
                     progress(f'Продолжение: сохранено {len(recovered)} из {request.count} попыток',
                              progress=100 * len(recovered) / request.count)
-                for index in range(request.count):
+                indices=range(request.count)
+                if request.workers==4:
+                    capacity_path=self.data_root/'parallel-capacity.json'
+                    capacity=json.loads(capacity_path.read_text()) if capacity_path.is_file() else {}
+                    if capacity.get('assessment',{}).get('fits') is not True:
+                        raise ValueError('Четыре исполнителя ещё не прошли проверку скорости, памяти и одинаковой физики')
+                    from .parallel_trials import collect
+                    def parallel_progress(status):
+                        progress(f"4 исполнителя · завершено {status['completed']} из {status['total']}",
+                                 progress=100*status['completed']/status['total'],details=status)
+                    parallel_result=collect(self.data_root,job['id'],request.count,request.seed,
+                        task_id=request.task_id,scene_profile=request.scene_profile,workers=4,
+                        recovered=recovered,cancelled=is_cancelled,progress=parallel_progress)
+                    summaries=parallel_result['episodes']
+                    indices=()
+                for index in indices:
                     if is_cancelled():
                         raise InterruptedError('Задание остановлено')
                     if shutil.disk_usage(self.data_root).free < 8*1024**3:
@@ -705,6 +727,7 @@ class Runtime:
                             self.command = Control()
                             self.command_at = 0.
                 result = {'episodes': len(summaries), 'reused_episodes': len(recovered), 'physics_verified_successes': sum(bool(item.get('physics_verified_success', item.get('success', False))) for item in summaries), 'summaries': [{key: item.get(key) for key in ('id', 'success', 'physics_verified_success', 'frames', 'error', 'outcome')} for item in summaries]}
+                result['workers']=request.workers
                 if request.scene_profile == 'sock_variants_v1' and request.task_id in ('sock_basket', 'cloth_basket'):
                     from .domain_randomization import scene_coverage
                     result['scene_coverage'] = scene_coverage(summaries)
