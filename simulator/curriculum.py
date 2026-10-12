@@ -97,8 +97,8 @@ class NightQueue:
             task_spec(task)
         if not 2 <= count <= 1000 or not 1 <= steps <= 200000 or not 8 <= batch_size <= 32 or not 0 < hours <= 24 or not 1<=rounds<=5:
             raise ValueError('Параметры ночного задания вне диапазона')
-        if type(workers) is not int or workers not in (1,4):
-            raise ValueError('Выберите один или четыре исполнителя')
+        if type(workers) is not int or workers not in (1,4,8):
+            raise ValueError('Выберите один, четыре или восемь исполнителей')
         value = dict(id=secrets.token_hex(6), created=time.time(), state='queued', hours=hours,
                      options=dict(count=count, steps=steps, batch_size=batch_size, seed=seed, rounds=rounds, scene_profile=scene_profile,workers=workers),
                      tasks=[dict(task_id=task, stages={}, history=[], round=1, state='queued') for task in tasks],

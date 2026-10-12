@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Benchmark and start four workers only after the existing Mac queue is idle."""
+"""Measure four/eight workers and start only after the existing queue is idle."""
 import argparse
 import json
 import os
@@ -51,7 +51,7 @@ def run(plan_id,dry_run=False):
             return saved
         next_plan=next((p for p in snapshot.get('night_batches',[]) if p['id']==saved.get('next_plan_id')),None)
         if next_plan and next_plan.get('state') in ('running','complete','paused'):
-            result=dict(saved,state='launched',recovered=True,workers=4)
+            result=dict(saved,state='launched',recovered=True,workers=next_plan.get('options',{}).get('workers',4))
             if not dry_run:save(marker,result)
             return result
     if not ready:return dict(state='waiting',original_plan=plan_id,message='Current round and final evaluation remain active')
@@ -72,6 +72,7 @@ def run(plan_id,dry_run=False):
         outcome=dict(state='capacity_failed',original_plan=plan_id,assessment=report['assessment'])
         save(marker,outcome)
         return outcome
+    workers=report['assessment']['workers']
     ready,_=transition_ready(get('/api/state'),plan_id)
     if not ready:return dict(state='waiting',message='New work was started during benchmark; no restart')
     # Atomically install just simulator source/contract/docs. Never run the app
@@ -120,16 +121,16 @@ def run(plan_id,dry_run=False):
     if not intent.get('next_plan_id'):
         next_plan=NightQueue(DATA).create([t['task_id'] for t in plan['tasks']],
             count=100,steps=30000,batch_size=16,hours=24,seed=plan['options']['seed']+10000000,
-            rounds=1,scene_profile=plan['options'].get('scene_profile','baseline'),workers=4)
+            rounds=1,scene_profile=plan['options'].get('scene_profile','baseline'),workers=workers)
         intent['next_plan_id']=next_plan['id']
         save(marker,intent)
     token=get('/api/session')['token']
     request=urllib.request.Request(URL+'/api/jobs/night',method='POST',
-        data=json.dumps({'plan_id':intent['next_plan_id'],'workers':4}).encode(),
+        data=json.dumps({'plan_id':intent['next_plan_id'],'workers':workers}).encode(),
         headers={'Content-Type':'application/json','X-Explorer-Sim-Token':token})
     with urllib.request.urlopen(request,timeout=15) as stream:job=json.load(stream)
     result=dict(state='launched',original_plan=plan_id,next_plan_id=intent['next_plan_id'],
-                job_id=job['id'],workers=4,assessment=report['assessment'])
+                job_id=job['id'],workers=workers,assessment=report['assessment'])
     save(marker,result)
     return result
 

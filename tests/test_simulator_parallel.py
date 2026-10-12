@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from simulator.parallel_trials import assess,collect
+from simulator.parallel_trials import assess,collect,eight_projection,choose_workers
 from simulator.curriculum import NightQueue
 from simulator.server import JobRequest
 
@@ -38,6 +38,31 @@ def test_saved_queue_retains_worker_count_on_resume(tmp_path):
     assert queue.get(plan['id'])['options']['workers']==4
     assert JobRequest().workers==1
     with pytest.raises(ValueError):JobRequest(workers=3)
+    assert JobRequest(workers=8).workers==8
+
+
+def test_eight_requires_extra_speed_and_sufficient_projected_headroom():
+    four={'fits':True,'workers':4,'speedup':2.5,'minimum_free_percent':30}
+    assert eight_projection(four,45,45,14)['can_probe']
+    assert not eight_projection({**four,'minimum_free_percent':21},45,45,14)['can_probe']
+    assert not eight_projection(four,45,45,4)['can_probe']
+    eight={'fits':True,'workers':8,'speedup':2.7}
+    assert choose_workers(four,eight)['workers']==4
+    assert choose_workers(four,{**eight,'speedup':3.2})['workers']==8
+    assert choose_workers(four,{**eight,'fits':False,'speedup':4.})['workers']==4
+
+
+def test_memory_counts_simultaneous_processes_instead_of_both_waves():
+    serial=measurements(160)
+    parallel=measurements(60,1024**3)
+    for result in (serial,parallel):
+        result['episodes'] += [dict(seed=i,success=i%2==0,frames=800,error=None)for i in range(4,8)]
+        for i in range(4,8):result['measurements'][str(i)]={'peak_rss_bytes':1024**3,'trajectory_sha256':str(i)}
+    four=assess(serial,parallel,24*1024**3,14,30,workers=4)
+    eight=assess(serial,parallel,24*1024**3,14,20,workers=8)
+    assert four['worker_peak_rss_sum_bytes']==4*1024**3
+    assert eight['worker_peak_rss_sum_bytes']==8*1024**3
+    assert four['fits'] and eight['fits']
 
 
 def test_parallel_cancellation_stops_only_children_started_by_this_job(tmp_path):

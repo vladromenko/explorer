@@ -1,4 +1,4 @@
-"""Four independent full-fidelity teacher processes; no hardware interfaces."""
+"""Independent full-fidelity teacher processes; no hardware interfaces."""
 from __future__ import annotations
 
 import argparse
@@ -74,8 +74,8 @@ def stop_children(active):
 
 def collect(root, job_id, count, first_seed, task_id='sock_basket', scene_profile='sock_variants_v1',
             workers=4, recovered=None, cancelled=None, progress=None, attempt_timeout_s=900):
-    if type(workers) is not int or workers not in (1,4):
-        raise ValueError('Choose one or four independent workers')
+    if type(workers) is not int or workers not in (1,4,8):
+        raise ValueError('Choose one, four or eight independent workers')
     if type(count) is not int or not 1<=count<=1000 or type(first_seed) is not int or first_seed<0:
         raise ValueError('Invalid parallel attempt range')
     if not job_id or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_' for c in job_id):
@@ -160,27 +160,46 @@ def memory_free_percent():
     return int(match.group(1))
 
 
-def assess(serial, parallel, total_memory, cpu_count, minimum_free_percent):
+def assess(serial, parallel, total_memory, cpu_count, minimum_free_percent,workers=4):
     serial_rows,parallel_rows=serial['episodes'],parallel['episodes']
-    matched=(len(serial_rows)==len(parallel_rows)==4 and all(
+    matched=(len(serial_rows)==len(parallel_rows)>=workers and all(
         a['seed']==b['seed'] and a['success']==b['success'] and a.get('error')==b.get('error')
         and a['frames']==b['frames'] and serial['measurements'][str(index)]['trajectory_sha256']==
             parallel['measurements'][str(index)]['trajectory_sha256']
         for index,(a,b) in enumerate(zip(serial_rows,parallel_rows))))
-    peak_sum=sum(item['peak_rss_bytes'] for item in parallel['measurements'].values())
+    # Count only simultaneous workers; eight attempts on four workers have two
+    # waves, not eight simultaneous resident processes.
+    peaks=sorted((item['peak_rss_bytes'] for item in parallel['measurements'].values()),reverse=True)
+    peak_sum=sum(peaks[:workers])
     speedup=serial['wall_s']/parallel['wall_s']
     reasons=[]
     if not matched:reasons.append('Physical trajectories differ between serial and parallel execution')
     if any(row.get('error') and 'Численная нестабильность' in row['error'] for row in parallel_rows):
         reasons.append('Physics instability')
-    if cpu_count<4:reasons.append('Fewer than four processor cores')
-    if peak_sum>total_memory*.35:reasons.append('Workers consume more than 35% of system RAM')
+    if cpu_count<workers:reasons.append('Fewer processor cores than workers')
+    share=.35 if workers==4 else .55
+    if peak_sum>total_memory*share:reasons.append('Workers exceed their RAM budget')
     if minimum_free_percent<15:reasons.append('Insufficient memory headroom during benchmark')
     if speedup<1.3:reasons.append('Less than 1.3x measured generation speedup')
-    return dict(fits=not reasons,reasons=reasons,workers=4,trajectory_equivalence=matched,
+    return dict(fits=not reasons,reasons=reasons,workers=workers,trajectory_equivalence=matched,
                 speedup=speedup,worker_peak_rss_sum_bytes=peak_sum,
                 total_memory_bytes=total_memory,cpu_count=cpu_count,
                 minimum_free_percent=minimum_free_percent)
+
+
+def eight_projection(four, baseline_free_percent, current_free_percent, cpu_count):
+    # Doubling the measured loss of headroom is conservative when mesh pages
+    # are shared, and prevents starting eight processes into known pressure.
+    projected=min(current_free_percent,baseline_free_percent)-2*max(0,baseline_free_percent-four['minimum_free_percent'])
+    return dict(projected_free_percent=projected,
+                can_probe=four['fits'] and projected>=15 and cpu_count>=8)
+
+
+def choose_workers(four,eight):
+    if (eight and eight.get('fits') is True and four['fits'] and
+            eight['speedup']/four['speedup']>=1.2):
+        return eight
+    return four
 
 
 def benchmark(root, report_path, seed=92010001):
@@ -189,17 +208,43 @@ def benchmark(root, report_path, seed=92010001):
     root,report_path=Path(root),Path(report_path)
     if report_path.exists():raise ValueError('Preserve the original resource evidence')
     root.mkdir(parents=True,exist_ok=True)
-    serial=collect(root,'benchmark-serial',4,seed,workers=1)
-    free=[memory_free_percent()]
-    last_sample=[-2.]
-    def measure(status):
-        if status['wall_s']-last_sample[0]>=2.:
-            free.append(memory_free_percent())
-            last_sample[0]=status['wall_s']
-    parallel=collect(root,'benchmark-four',4,seed,workers=4,progress=measure)
+    serial=collect(root,'benchmark-serial',8,seed,workers=1)
+    def measured_collect(workers,name):
+        free=[memory_free_percent()]
+        last_sample=[-2.]
+        def measure(status):
+            if status['wall_s']-last_sample[0]>=2.:
+                free.append(memory_free_percent())
+                last_sample[0]=status['wall_s']
+                if free[-1]<10:
+                    raise InterruptedError('Memory headroom below 10%; benchmark workers stopped')
+        return collect(root,name,8,seed,workers=workers,progress=measure),free
+    baseline_free=memory_free_percent()
+    try:
+        parallel,free=measured_collect(4,'benchmark-four')
+    except InterruptedError as exc:
+        report=dict(assessment={'fits':False,'workers':4,'reasons':[str(exc)]},
+                    serial=serial,created=time.time(),benchmark_only=True,
+                    physics_reduced=False,automatic_hardware_execution=False)
+        save(report_path,report)
+        return report
     memory=int(subprocess.check_output(['sysctl','-n','hw.memsize'],text=True))
     cpus=int(subprocess.check_output(['sysctl','-n','hw.physicalcpu'],text=True))
-    report=dict(serial=serial,parallel=parallel,assessment=assess(serial,parallel,memory,cpus,min(free)),
+    four=assess(serial,parallel,memory,cpus,min(free))
+    projection=eight_projection(four,baseline_free,memory_free_percent(),cpus)
+    eight=None
+    eight_run=None
+    if projection['can_probe']:
+        try:
+            eight_run,eight_free=measured_collect(8,'benchmark-eight')
+            eight=assess(serial,eight_run,memory,cpus,min(eight_free),workers=8)
+        except InterruptedError as exc:
+            eight=dict(fits=False,workers=8,reasons=[str(exc)])
+    else:
+        eight=dict(fits=False,workers=8,reasons=['Insufficient projected memory headroom or failed four-worker baseline'])
+    report=dict(serial=serial,parallel=parallel,eight_parallel=eight_run,
+                four_assessment=four,eight_assessment=eight,eight_projection=projection,
+                assessment=choose_workers(four,eight),
                 created=time.time(),benchmark_only=True,physics_reduced=False,
                 image_capture_and_recording=True,automatic_hardware_execution=False)
     save(report_path,report)

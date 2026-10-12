@@ -169,7 +169,7 @@ class JobRequest(BaseModel):
     count: int = Field(default=10, ge=1, le=1000)
     steps: int = Field(default=3000, ge=1, le=10000000)
     minimum_epochs: int = Field(default=0, ge=0, le=20)
-    workers: int = Field(default=1, ge=1, le=4)
+    workers: int = Field(default=1, ge=1, le=8)
     batch_size: int = Field(default=16, ge=8, le=1024)
     seed: int = Field(default=100, ge=0, le=2**31 - 1)
     episode_ids: list[str] | None = Field(default=None, max_length=1000)
@@ -191,7 +191,7 @@ class JobRequest(BaseModel):
     @field_validator('workers')
     @classmethod
     def valid_workers(cls,value):
-        if value not in (1,4):raise ValueError('Выберите один или четыре исполнителя')
+        if value not in (1,4,8):raise ValueError('Выберите один, четыре или восемь исполнителей')
         return value
 
     @field_validator('episode_ids')
@@ -694,17 +694,18 @@ class Runtime:
                     progress(f'Продолжение: сохранено {len(recovered)} из {request.count} попыток',
                              progress=100 * len(recovered) / request.count)
                 indices=range(request.count)
-                if request.workers==4:
+                if request.workers>1:
                     capacity_path=self.data_root/'parallel-capacity.json'
                     capacity=json.loads(capacity_path.read_text()) if capacity_path.is_file() else {}
-                    if capacity.get('assessment',{}).get('fits') is not True:
-                        raise ValueError('Четыре исполнителя ещё не прошли проверку скорости, памяти и одинаковой физики')
+                    assessed=capacity.get('assessment',{})
+                    if assessed.get('fits') is not True or assessed.get('workers',0)<request.workers:
+                        raise ValueError('Исполнители ещё не прошли проверку скорости, памяти и одинаковой физики')
                     from .parallel_trials import collect
                     def parallel_progress(status):
-                        progress(f"4 исполнителя · завершено {status['completed']} из {status['total']}",
+                        progress(f"{request.workers} исполнителей · завершено {status['completed']} из {status['total']}",
                                  progress=100*status['completed']/status['total'],details=status)
                     parallel_result=collect(self.data_root,job['id'],request.count,request.seed,
-                        task_id=request.task_id,scene_profile=request.scene_profile,workers=4,
+                        task_id=request.task_id,scene_profile=request.scene_profile,workers=request.workers,
                         recovered=recovered,cancelled=is_cancelled,progress=parallel_progress)
                     summaries=parallel_result['episodes']
                     indices=()
