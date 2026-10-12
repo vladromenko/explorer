@@ -178,6 +178,7 @@ class JobRequest(BaseModel):
     model_id: str | None = None
     rounds: int = Field(default=3, ge=1, le=5)
     independent_demos_required: bool = False
+    resume_completed_attempts: bool = False
     validation_seed: int = Field(default=10000,ge=0,le=2**31-1001)
     request_text: str | None = Field(default=None, min_length=1, max_length=4000)
     goal_id: str | None = Field(default=None, pattern='^[0-9a-f]{12}$')
@@ -652,6 +653,8 @@ class Runtime:
                     with self.lock:
                         self.jobs.append(child)
                     values = dict(options, task_id=task['task_id'], independent_demos_required=True)
+                    if stage == 'trials':
+                        values['resume_completed_attempts'] = True
                     if stage=='validate':
                         values.update(count=10,model_id=task['stages']['train']['model_id'])
                     if stage=='export':
@@ -673,22 +676,32 @@ class Runtime:
             elif job['kind'] == 'trials':
                 task_spec(request.task_id)
                 summaries = []
+                from .trial_resume import completed_attempts
+                from .explorer_model import model_metadata
+                recovered = completed_attempts(self.data_root, request.task_id, request.scene_profile,
+                                               request.seed, request.count, model_metadata()) if request.resume_completed_attempts else {}
+                if recovered:
+                    progress(f'Продолжение: сохранено {len(recovered)} из {request.count} попыток',
+                             progress=100 * len(recovered) / request.count)
                 for index in range(request.count):
                     if is_cancelled():
                         raise InterruptedError('Задание остановлено')
                     if shutil.disk_usage(self.data_root).free < 8*1024**3:
                         raise InterruptedError('На диске осталось меньше 8 ГБ; освободите место и продолжите очередь')
-                    folder = self.data_root / 'demonstrations' / f"trial-{job['id']}-{index:04d}"
-                    progress(f'Попытка {index + 1} из {request.count}', progress=100 * index / request.count)
-                    summary = self.on_owner(lambda folder=folder, index=index: self.physics_task(lambda: self.env.make_episode_trial(folder, request.seed + index, progress=physics_progress, scene_profile=request.scene_profile, **({'task_id':request.task_id} if request.task_id!='sock_basket' else {}))))
-                    summaries.append(summary)
-                    current_state = self.on_owner(self.env.state)
-                    with self.lock:
-                        self.cached_state = current_state
-                        self.arm_target = np.asarray(self.cached_state['command'][:6])
-                        self.command = Control()
-                        self.command_at = 0.
-                result = {'episodes': len(summaries), 'physics_verified_successes': sum(bool(item.get('physics_verified_success', item.get('success', False))) for item in summaries), 'summaries': [{key: item.get(key) for key in ('id', 'success', 'physics_verified_success', 'frames', 'error', 'outcome')} for item in summaries]}
+                    if index in recovered:
+                        summaries.append(recovered[index])
+                    else:
+                        folder = self.data_root / 'demonstrations' / f"trial-{job['id']}-{index:04d}"
+                        progress(f'Попытка {index + 1} из {request.count}', progress=100 * index / request.count)
+                        summary = self.on_owner(lambda folder=folder, index=index: self.physics_task(lambda: self.env.make_episode_trial(folder, request.seed + index, progress=physics_progress, scene_profile=request.scene_profile, **({'task_id':request.task_id} if request.task_id!='sock_basket' else {}))))
+                        summaries.append(summary)
+                        current_state = self.on_owner(self.env.state)
+                        with self.lock:
+                            self.cached_state = current_state
+                            self.arm_target = np.asarray(self.cached_state['command'][:6])
+                            self.command = Control()
+                            self.command_at = 0.
+                result = {'episodes': len(summaries), 'reused_episodes': len(recovered), 'physics_verified_successes': sum(bool(item.get('physics_verified_success', item.get('success', False))) for item in summaries), 'summaries': [{key: item.get(key) for key in ('id', 'success', 'physics_verified_success', 'frames', 'error', 'outcome')} for item in summaries]}
                 if request.scene_profile == 'sock_variants_v1' and request.task_id in ('sock_basket', 'cloth_basket'):
                     from .domain_randomization import scene_coverage
                     result['scene_coverage'] = scene_coverage(summaries)

@@ -385,6 +385,7 @@ class ExplorerEnv(gym.Env):
             "model_provenance": model_metadata(), "started_at": time.time()}
         manifest['scene_profile'] = scene_profile if spec['scene'] in ('sock', 'cloth') else 'baseline'
         manifest['domain_variation'] = self.domain_variation
+        manifest['attempt_completed'] = False
         steps = 0
         handle = (folder / "samples.jsonl").open("w")
         def tick(action):
@@ -567,8 +568,10 @@ class ExplorerEnv(gym.Env):
             manifest["success"] = self.task_success
             manifest["outcome"] = self.state()["task"]
             manifest["physics_outcome_diagnostics"] = getattr(self, "placement_diagnostics", {})
+            manifest['attempt_completed'] = True
         except Exception as exc:
             manifest["error"] = str(exc)
+            manifest['attempt_completed'] = not isinstance(exc, InterruptedError)
             manifest["outcome"] = self.state()["task"]
             manifest["physics_outcome_diagnostics"] = getattr(self, "placement_diagnostics", {})
         finally:
