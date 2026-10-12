@@ -9,7 +9,7 @@ for prefix in "$EXPLORER_ROOT"/vendor/ros/*; do
   export LD_LIBRARY_PATH="$prefix/lib:$prefix/lib/aarch64-linux-gnu:${LD_LIBRARY_PATH:-}"
   export PYTHONPATH="$prefix/lib/python3.12/site-packages:${PYTHONPATH:-}"
 done
-export PYTHONPATH="$EXPLORER_ROOT/src:${PYTHONPATH:-}"
+export PYTHONPATH="$EXPLORER_ROOT/src:$EXPLORER_ROOT:${PYTHONPATH:-}"
 export PYTHONPATH="$EXPLORER_ROOT/vendor/moveit_root/usr/lib/python3/dist-packages:$PYTHONPATH"
 export LD_LIBRARY_PATH="$EXPLORER_ROOT/vendor/moveit_root/usr/lib/aarch64-linux-gnu:${LD_LIBRARY_PATH:-}"
 export PATH="$EXPLORER_ROOT/.venv/bin:$PATH"
