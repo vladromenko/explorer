@@ -94,7 +94,9 @@ def read_bundle(job_folder):
         model.get("output_features",{}).get("action",{}).get("shape")!=[9]):
         raise ValueError("Конфигурация модели не соответствует девяти командам Explorer")
     steps=model.get("n_action_steps")
-    if steps!=1 and not (type(steps) is int and 1<steps<=20 and steps==model.get("chunk_size") and
+    horizon=model.get("chunk_size")
+    if steps!=1 and not (type(steps) is int and 1<steps<=20 and type(horizon) is int and
+            steps<=horizon<=20 and
             model.get("temporal_ensemble_coeff") is None and bundle.get("inference_execution")==
             {"kind":"bounded_action_queue","actions_per_call":1,"queue_steps":steps}):
         raise ValueError("Неподдерживаемое выполнение действий политики")

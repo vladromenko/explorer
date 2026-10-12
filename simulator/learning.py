@@ -187,6 +187,20 @@ def choose_device(request="auto"):
     return request
 
 
+def training_budget(requested_steps, frames, batch_size, minimum_epochs=0):
+    """Keep the requested floor while scaling automatic training with real data."""
+    if (type(requested_steps) is not int or not 1<=requested_steps<=200000
+            or type(frames) is not int or frames<1 or type(batch_size) is not int or not 1<=batch_size<=32
+            or type(minimum_epochs) is not int or not 0<=minimum_epochs<=20):
+        raise ValueError('Invalid training exposure budget')
+    required=math.ceil(frames*minimum_epochs/batch_size)
+    effective=min(200000,max(requested_steps,required))
+    return dict(requested_steps=requested_steps,effective_steps=effective,
+                training_frames=frames,batch_size=batch_size,minimum_epochs=minimum_epochs,
+                expected_dataset_passes=effective*batch_size/frames,
+                step_cap_reached=required>200000)
+
+
 class LoadedPolicy:
     """Image/command-only actor callable for independent simulator rollouts."""
     def __init__(self, job_folder, device="cpu"):
@@ -259,7 +273,35 @@ def training_config(folder, steps, device, batch_size=16, seed=1000):
         wandb=dict(enable=False), seed=seed)
 
 
-def validate_checkpoint(folder, device="cpu", maximum_samples=128, cancelled=None):
+def chunk_error_metrics(expected, predicted, previous, valid):
+    """Score every non-padded future command, including the executed chunk tail."""
+    import numpy as np
+    expected, predicted, previous = map(lambda value: np.asarray(value, dtype=float),
+                                        (expected, predicted, previous))
+    valid = np.asarray(valid, dtype=bool)
+    if (expected.ndim != 3 or expected.shape != predicted.shape or expected.shape[-1] != 9
+            or previous.shape != (expected.shape[0],9) or valid.shape != expected.shape[:2]
+            or not valid.any() or not all(np.isfinite(value).all() for value in (expected,predicted,previous))):
+        raise ValueError('Invalid future-action validation batch')
+    scales=np.asarray([10.]*6+[.8,.72,1.67])
+    errors=abs(predicted-expected)
+    hold=abs(previous[:,None,:]-expected)
+    by_step=[]
+    for index in range(expected.shape[1]):
+        mask=valid[:,index]
+        by_step.append(dict(step=index,valid_commands=int(mask.sum()),
+            joint_mae_deg=float(errors[mask,index,:6].mean()) if mask.any() else None,
+            normalized_mae=float((errors[mask,index,:]/scales).mean()) if mask.any() else None))
+    return dict(prediction_horizon=expected.shape[1],valid_commands=int(valid.sum()),
+        normalized_mae=float((errors[valid]/scales).mean()),
+        normalized_hold_baseline_mae=float((hold[valid]/scales).mean()),
+        improves_hold_baseline=bool((errors[valid]/scales).mean() < (hold[valid]/scales).mean()),
+        joint_mae_deg=float(errors[valid,:6].mean()),
+        per_channel_mae=errors[valid].mean(axis=0).tolist(),
+        by_prediction_step=by_step)
+
+
+def validate_checkpoint(folder, device="cpu", maximum_samples=128, cancelled=None, output_path=None, checkpoint=None):
     import numpy as np
     import torch
     from lerobot.datasets import LeRobotDataset
@@ -267,8 +309,10 @@ def validate_checkpoint(folder, device="cpu", maximum_samples=128, cancelled=Non
     from lerobot.policies.act.configuration_act import ACTConfig
     from lerobot.policies import make_pre_post_processors
 
-    folder = Path(folder)
-    checkpoint = folder / "model/checkpoints/last/pretrained_model"
+    folder = Path(folder).resolve()
+    checkpoint = Path(checkpoint).resolve() if checkpoint else (folder / "model/checkpoints/last/pretrained_model").resolve()
+    if not checkpoint.is_relative_to(folder):
+        raise ValueError('Validation checkpoint must belong to this job')
     config = ACTConfig.from_pretrained(checkpoint, local_files_only=True)
     config.device = device
     config.pretrained_backbone_weights = None
@@ -277,46 +321,96 @@ def validate_checkpoint(folder, device="cpu", maximum_samples=128, cancelled=Non
     pre, post = make_pre_post_processors(policy.config, pretrained_path=str(checkpoint),
         preprocessor_overrides={"device_processor": {"device": device}},
         postprocessor_overrides={"device_processor": {"device": "cpu"}})
-    dataset = LeRobotDataset("explorer/simulator-validation", root=folder / "validation", video_backend="pyav")
+    provenance = json.loads((folder / "train/explorer-provenance.json").read_text())
+    fps=float(provenance['dataset_fps'])
+    dataset = LeRobotDataset("explorer/simulator-validation", root=folder / "validation", video_backend="pyav",
+                            delta_timestamps={'action':[index/fps for index in range(config.chunk_size)]})
     if type(maximum_samples) is not int or maximum_samples < 1:
         raise ValueError("Validation sample limit must be positive")
     indices = np.unique(np.linspace(0, len(dataset) - 1, min(maximum_samples, len(dataset)), dtype=int)).tolist()
     selected = torch.utils.data.Subset(dataset, indices)
-    transform = json.loads((folder / "train/explorer-provenance.json").read_text()).get("action_transform")
+    transform = provenance.get("action_transform")
     errors, baseline = [], []
+    future_expected, future_actual, references, masks = [], [], [], []
     with torch.no_grad():
         for batch in torch.utils.data.DataLoader(selected, batch_size=1, shuffle=False, num_workers=0):
             if cancelled and cancelled():
                 raise InterruptedError("Simulator training cancelled during validation")
-            expected = batch["action"].cpu().numpy().reshape(-1, 9)
+            expected = batch["action"].cpu().numpy().reshape(-1,config.chunk_size,9)
             previous = batch["observation.state"].cpu().numpy().reshape(-1, 9)
             policy.reset()
-            actual = post(policy.select_action(pre(batch))).cpu().numpy().reshape(-1, 9)
+            actual = post(policy.predict_action_chunk(pre(batch))).cpu().numpy().reshape(-1,config.chunk_size,9)
             if transform:
-                expected[:, :6] += previous[:, :6]
-                actual[:, :6] += previous[:, :6]
-            errors.extend(np.abs(actual - expected).tolist())
-            baseline.extend(np.abs(previous - expected).tolist())
+                expected[:, :, :6] += previous[:, None, :6]
+                actual[:, :, :6] += previous[:, None, :6]
+            errors.extend(np.abs(actual[:,0] - expected[:,0]).tolist())
+            baseline.extend(np.abs(previous - expected[:,0]).tolist())
+            future_expected.extend(expected.tolist())
+            future_actual.extend(actual.tolist())
+            references.extend(previous.tolist())
+            masks.extend((~batch['action_is_pad']).cpu().numpy().reshape(-1,config.chunk_size).tolist())
     errors, baseline = np.asarray(errors), np.asarray(baseline)
     if not len(errors) or not np.isfinite(errors).all():
         raise ValueError("ACT validation returned no finite predictions")
     split = json.loads((folder / "split.json").read_text())
     scales = np.asarray([10.] * 6 + [.8, .72, 1.67])
-    result = dict(samples=len(errors), heldout_independent=split["heldout_independent"],
+    full_chunk=chunk_error_metrics(future_expected,future_actual,references,masks)
+    result = dict(validation_kind='offline_action_prediction', samples=len(errors), heldout_independent=split["heldout_independent"],
         validation_total_frames=len(dataset), sampling="uniform_across_validation_frames",
         normalized_mae=float(np.mean(errors / scales)),
         normalized_hold_baseline_mae=float(np.mean(baseline / scales)),
         joint_mae_deg=float(np.mean(errors[:, :6])), base_mae_mixed=float(np.mean(errors[:, 6:])),
-        improves_hold_baseline=bool(split["heldout_independent"] and np.mean(errors / scales) < np.mean(baseline / scales)),
+        full_chunk=full_chunk,
+        applied_before_next_observation=config.n_action_steps,
+        first_action_improves_hold_baseline=bool(split["heldout_independent"] and np.mean(errors / scales) < np.mean(baseline / scales)),
+        improves_hold_baseline=bool(split["heldout_independent"] and full_chunk['improves_hold_baseline']),
+        baseline_comparison='complete_prediction_horizon_excluding_padding',
+        evaluated_checkpoint_relative=str(checkpoint.relative_to(folder)),
         training_source="synthetic_only", domain="simulation", physics_acceptance=False,
         physical_success_evaluated=False, physical_success_verified=False, automatic_execution_allowed=False)
-    write_json(folder / "validation.json", result)
+    write_json(output_path or folder / "validation.json", result)
     return result
+
+
+def select_checkpoint(folder, device='cpu', maximum_samples=128, cancelled=None, progress=None):
+    """Select by independent recorded-action error, never final task test scenes."""
+    folder=Path(folder).resolve()
+    split=json.loads((folder/'split.json').read_text())
+    checkpoints=folder/'model/checkpoints'
+    candidates=sorted(path/'pretrained_model' for path in checkpoints.iterdir()
+                      if path.is_dir() and path.name.isdecimal() and (path/'pretrained_model').is_dir())
+    if split.get('heldout_independent') is not True or not candidates:
+        candidates=[checkpoints/'last/pretrained_model']
+    scores=[]
+    best=None
+    for index,checkpoint in enumerate(candidates):
+        if cancelled and cancelled():
+            raise InterruptedError('Simulator checkpoint selection cancelled')
+        if progress:
+            progress(f'Проверка checkpoint {index+1} из {len(candidates)}')
+        report=validate_checkpoint(folder,device,maximum_samples,cancelled,
+            output_path=folder/'checkpoint-validation'/f'{checkpoint.parent.name}.json', checkpoint=checkpoint)
+        score=report['full_chunk']['normalized_mae']
+        if not math.isfinite(score):
+            raise ValueError('Non-finite checkpoint selection metric')
+        relative=str(checkpoint.relative_to(folder))
+        scores.append(dict(checkpoint_relative=relative,normalized_mae=score))
+        if best is None or score<best[0]:
+            best=(score,relative,report)
+    result=dict(criterion='independent_recorded_full_chunk_normalized_mae',
+                heldout_independent=split.get('heldout_independent') is True,
+                final_task_test_used=False,candidates=scores,checkpoint_relative=best[1])
+    write_json(folder/'checkpoint-selection.json',result)
+    write_json(folder/'validation.json',best[2])
+    return result,best[2]
 
 
 def create_bundle(folder, state):
     folder = Path(folder)
-    checkpoint = folder / "model/checkpoints/last/pretrained_model"
+    relative=Path(state.get('checkpoint_relative','model/checkpoints/last/pretrained_model'))
+    checkpoint=(folder/relative).resolve()
+    if relative.is_absolute() or '..' in relative.parts or not checkpoint.is_relative_to(folder.resolve()):
+        raise ValueError('Selected checkpoint must belong to this job')
     files = {str(path.relative_to(checkpoint)): sha256(path) for path in checkpoint.rglob("*") if path.is_file()}
     required = {"model.safetensors", "config.json", "policy_preprocessor.json", "policy_postprocessor.json"}
     if not required.issubset(files):
@@ -325,7 +419,7 @@ def create_bundle(folder, state):
     bundle = dict(format="explorer_mobile_act_bundle_v2", created=time.time(), task=state["task"],
         skill_id=state.get("skill_id"), episodes=state["episodes"], dataset_kind="mobile_manipulation_9dof",
         dataset_fingerprint=state.get("dataset_fingerprint"),
-        checkpoint_relative="model/checkpoints/last/pretrained_model", checkpoint_sha256=files,
+        checkpoint_relative=str(relative), checkpoint_sha256=files,
         framework="lerobot", framework_version=state.get("runtime_versions", {}).get("lerobot", "0.6.1"),
         runtime_versions=state.get("runtime_versions", {}), policy="act", observation_order=ACTION_ORDER,
         action_order=ACTION_ORDER, units=UNITS, joint_state_source="command_estimate",
@@ -340,6 +434,8 @@ def create_bundle(folder, state):
         training_goal=state.get("training_goal", "successful_simulation_imitation"),
         training_profile=state.get("training_profile", "compact_act_v1"),
         warm_start=state.get("warm_start"),
+        checkpoint_selection=state.get('checkpoint_selection'),
+        training_budget=state.get('training_budget'),
         scene_profile=state.get('scene_profile','baseline'), scene_coverage=state.get('scene_coverage'),
         physics_acceptance=False, physical_success_verified=False, autonomous_motion_on_registration=False)
     write_json(folder / "bundle.json", bundle)
@@ -414,7 +510,7 @@ def stage_warm_start(source_folder, destination, target_policy):
 
 def train_job(job_folder, episode_folders, steps=3000, python_executable=None, device="auto", progress=None,
               task="pick and place", skill_id=None, cancelled=None, batch_size=16, seed=1000,
-              diagnostic_only=False, warm_start=None):
+              diagnostic_only=False, warm_start=None, minimum_epochs=0):
     """Blocking worker; call from the simulator's background executor.
 
     The subprocess has no robot connection. A nonzero learner exit is a failed
@@ -432,7 +528,7 @@ def train_job(job_folder, episode_folders, steps=3000, python_executable=None, d
         framework="lerobot", policy="act", dataset_kind="mobile_manipulation_9dof",
         training_source="synthetic_only", domain="simulation", physics_acceptance=False,
         training_goal="diagnostic_pipeline_smoke" if diagnostic_only else "successful_simulation_imitation",
-        training_profile="fourier_timed_visual_act_v6",
+        training_profile="fourier_timed_visual_act_checkpoint_selection_v7",
         physical_success_verified=False, automatic_execution=False, executed=False)
     child = None
 
@@ -480,6 +576,10 @@ def train_job(job_folder, episode_folders, steps=3000, python_executable=None, d
         state["device"] = choose_device(device)
         check_cancelled()
         training, validation, heldout = split_episodes(folders, [item[0] for item in provenance])
+        frame_counts={path:len(item[1]) for path,item in zip(folders,provenance)}
+        budget=training_budget(steps,sum(frame_counts[path] for path in training),batch_size,minimum_epochs)
+        steps=budget['effective_steps']
+        state.update(steps=steps,training_budget=budget)
         export_dataset(training, folder / "train", "explorer/simulator-train", task, cancelled=cancelled)
         check_cancelled()
         export_dataset(validation, folder / "validation", "explorer/simulator-validation", task, cancelled=cancelled)
@@ -531,7 +631,10 @@ def train_job(job_folder, episode_folders, steps=3000, python_executable=None, d
                 raise RuntimeError("LeRobot training failed; see train.log (exit " + str(child.returncode) + ")")
         update("validating", steps_completed=steps, progress=95.)
         check_cancelled()
-        state["validation"] = validate_checkpoint(folder, state["device"], cancelled=cancelled)
+        selection, state["validation"] = select_checkpoint(folder,state["device"],cancelled=cancelled,
+            progress=lambda message: update('validating',message=message))
+        state['checkpoint_selection']=selection
+        state['checkpoint_relative']=selection['checkpoint_relative']
         check_cancelled()
         create_bundle(folder, state)
         update("validated_simulation" if state["validation"]["improves_hold_baseline"] else "trained_simulation_unvalidated", bundle="bundle.json", finished=time.time(), progress=100.)

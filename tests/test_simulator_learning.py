@@ -9,9 +9,10 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from simulator.learning import inspect_episode, training_config, train_job, create_bundle, write_json, split_episodes, export_dataset
+from simulator.learning import inspect_episode, training_config, train_job, create_bundle, write_json, split_episodes, export_dataset, chunk_error_metrics, select_checkpoint, training_budget
 from simulator.transfer import export_package, import_package
 from src.mobile_policy_contract import CONTRACT_SHA256, read_bundle, ACTOR_CLOCK, ACTOR_ACTION_TRANSFORM, decode_policy_action
+from simulator.feedback_audit import feedback_candidate, recorded_failure_summary
 
 
 class SimulatorLearningTests(unittest.TestCase):
@@ -62,6 +63,70 @@ class SimulatorLearningTests(unittest.TestCase):
         self.assertEqual(config["policy"]["chunk_size"], 20)
         self.assertIsNone(config["policy"]["temporal_ensemble_coeff"])
         self.assertIn("samples.jsonl", inputs)
+
+    def test_future_validation_exposes_tail_errors_without_counting_padding(self):
+        import numpy as np
+        expected=np.zeros((2,3,9))
+        predicted=expected.copy()
+        predicted[0,1,:6]=4.
+        predicted[1,2,:]=1000.
+        result=chunk_error_metrics(expected,predicted,np.zeros((2,9)),[[True,True,True],[True,True,False]])
+        self.assertEqual(result['valid_commands'],5)
+        self.assertEqual(result['by_prediction_step'][0]['joint_mae_deg'],0.)
+        self.assertEqual(result['by_prediction_step'][1]['joint_mae_deg'],2.)
+        self.assertAlmostEqual(result['joint_mae_deg'],.8)
+        with self.assertRaisesRegex(ValueError,'Invalid'):
+            chunk_error_metrics(expected,predicted,np.zeros((2,9)),np.zeros((2,3),bool))
+
+    def test_training_exposure_scales_with_dataset_without_changing_explicit_manual_steps(self):
+        budget=training_budget(20000,129548,16,8)
+        self.assertGreaterEqual(budget['expected_dataset_passes'],8.)
+        self.assertEqual(budget['effective_steps'],64774)
+        self.assertEqual(training_budget(20000,129548,16)['effective_steps'],20000)
+        capped=training_budget(20000,1000000,16,8)
+        self.assertEqual(capped['effective_steps'],200000)
+        self.assertTrue(capped['step_cap_reached'])
+        self.assertLess(capped['expected_dataset_passes'],8.)
+        with self.assertRaisesRegex(ValueError,'Invalid'):
+            training_budget(20000,129548,0,8)
+
+    def test_recorded_failure_summary_separates_lift_failure_from_delivery_failure(self):
+        root=self.root/'rollouts'
+        for index,(contact,lifted,success) in enumerate(((False,False,False),(True,False,False),(True,True,False),(True,True,True))):
+            folder=root/f'heldout-{index:04d}'
+            write_json(folder/'episode.json',dict(success=success,outcome={'lifted':lifted}))
+            rows=[{'simulated_outcome':{'grasp_contact':contact,'lifted':lifted}},
+                  {'simulated_outcome':{'grasp_contact':False,'lifted':lifted}}]
+            (folder/'samples.jsonl').write_text('\n'.join(json.dumps(row)for row in rows))
+        result=recorded_failure_summary(root)
+        self.assertEqual(result['successes'],1)
+        self.assertEqual(result['failures']['no_two_finger_contact'],1)
+        self.assertEqual(result['failures']['contact_without_verified_lift'],1)
+        self.assertEqual(result['failures']['lift_without_verified_delivery'],1)
+        self.assertEqual(result['results'][2]['first_lift_frame'],0)
+        self.assertTrue(result['diagnostic_only'])
+
+    def test_checkpoint_selection_uses_recorded_holdout_and_keeps_last_untouched(self):
+        folder=self.root/'selection'
+        write_json(folder/'split.json',{'heldout_independent':True})
+        for name in ('002000','004000','006000'):
+            (folder/'model/checkpoints'/name/'pretrained_model').mkdir(parents=True)
+        scores={'002000':.08,'004000':.02,'006000':.06}
+        def evaluate(*args,**kwargs):
+            name=kwargs['checkpoint'].parent.name
+            return {'full_chunk':{'normalized_mae':scores[name]},'heldout_independent':True}
+        with patch('simulator.learning.validate_checkpoint',side_effect=evaluate) as validator:
+            selection,metrics=select_checkpoint(folder)
+        self.assertEqual(validator.call_count,3)
+        self.assertEqual(selection['checkpoint_relative'],'model/checkpoints/004000/pretrained_model')
+        self.assertFalse(selection['final_task_test_used'])
+        self.assertEqual(metrics['full_chunk']['normalized_mae'],.02)
+        self.assertFalse((folder/'model/checkpoints/last').exists())
+        write_json(folder/'split.json',{'heldout_independent':False})
+        with patch('simulator.learning.validate_checkpoint',return_value={'full_chunk':{'normalized_mae':.05}}) as validator:
+            selection,_=select_checkpoint(folder)
+        self.assertEqual(validator.call_count,1)
+        self.assertEqual(selection['checkpoint_relative'],'model/checkpoints/last/pretrained_model')
 
     def test_scene_seed_duplicates_never_leak_into_holdout(self):
         folders = [Path(name) for name in ("a", "b", "c", "d", "e")]
@@ -154,6 +219,50 @@ class SimulatorLearningTests(unittest.TestCase):
         write_json(Path(imported["path"]) / "bundle.json",bundle)
         with self.assertRaisesRegex(ValueError,"выполнение"):
             read_bundle(imported["path"])
+
+    def test_feedback_candidate_preserves_weights_and_invalidates_old_acceptance(self):
+        model = self.model()
+        config_path = model / 'model/checkpoints/last/pretrained_model/config.json'
+        config = json.loads(config_path.read_text())
+        config.update(chunk_size=20,n_action_steps=20,temporal_ensemble_coeff=None)
+        write_json(config_path,config)
+        state = json.loads((model/'job.json').read_text())
+        state.update(state='validated_simulation',validation={'heldout_independent':True})
+        write_json(model/'job.json',state)
+        original=create_bundle(model,state)
+        write_json(model/'physics-validation.json',{'successes':10,'episodes':10})
+        candidate=self.root/'feedback'
+        result=feedback_candidate(model,candidate)
+        self.assertEqual(result['chunk_size'],20)
+        self.assertEqual(result['action_steps'],5)
+        self.assertEqual(result['checkpoint_sha256']['model.safetensors'],original['checkpoint_sha256']['model.safetensors'])
+        self.assertEqual(json.loads(config_path.read_text())['n_action_steps'],20)
+        self.assertFalse(result['validation']['heldout_independent'])
+        self.assertFalse((candidate/'physics-validation.json').exists())
+        package=export_package(candidate,self.root/'feedback.tar.gz')
+        imported=import_package(package['path'],self.root/'robot')
+        transferred,_=read_bundle(imported['path'])
+        self.assertEqual(transferred['inference_execution']['queue_steps'],5)
+        self.assertFalse(imported['registered'])
+        with self.assertRaises(FileExistsError):
+            feedback_candidate(model,candidate)
+
+    def test_feedback_queue_rejects_beyond_prediction_horizon_and_unfinished_model(self):
+        model=self.model()
+        with self.assertRaisesRegex(ValueError,'20-step'):
+            feedback_candidate(model,self.root/'invalid')
+        config_path=model/'model/checkpoints/last/pretrained_model/config.json'
+        config=json.loads(config_path.read_text())
+        config.update(chunk_size=20,n_action_steps=20,temporal_ensemble_coeff=None)
+        write_json(config_path,config)
+        state=json.loads((model/'job.json').read_text())
+        create_bundle(model,state)
+        with self.assertRaisesRegex(ValueError,'finished training'):
+            feedback_candidate(model,self.root/'unfinished')
+        config.update(chunk_size=4,n_action_steps=5)
+        write_json(config_path,config)
+        with self.assertRaisesRegex(ValueError,'выполнение'):
+            create_bundle(model,state)
 
     def test_incompatible_contract_and_unbounded_commands_rejected(self):
         folder = self.episode()

@@ -168,6 +168,7 @@ class StopRecording(BaseModel):
 class JobRequest(BaseModel):
     count: int = Field(default=10, ge=1, le=1000)
     steps: int = Field(default=3000, ge=1, le=10000000)
+    minimum_epochs: int = Field(default=0, ge=0, le=20)
     batch_size: int = Field(default=16, ge=8, le=1024)
     seed: int = Field(default=100, ge=0, le=2**31 - 1)
     episode_ids: list[str] | None = Field(default=None, max_length=1000)
@@ -655,6 +656,8 @@ class Runtime:
                     values = dict(options, task_id=task['task_id'], independent_demos_required=True)
                     if stage == 'trials':
                         values['resume_completed_attempts'] = True
+                    if stage == 'train':
+                        values['minimum_epochs'] = 8
                     if stage=='validate':
                         values.update(count=10,model_id=task['stages']['train']['model_id'])
                     if stage=='export':
@@ -726,7 +729,7 @@ class Runtime:
                 folder = self.data_root / 'runs' / job['id']
                 if request.independent_demos_required and len({json.loads((path/'episode.json').read_text()).get('seed',path.name) for path in episodes})<2:
                     raise ValueError('Для независимой проверки нужны хотя бы два успешных показа разных сцен')
-                result = module.train_job(job_folder=folder, episode_folders=episodes, steps=request.steps, batch_size=request.batch_size, seed=request.seed, task=task_spec(request.task_id)['title'], skill_id=request.task_id, progress=progress, cancelled=is_cancelled)
+                result = module.train_job(job_folder=folder, episode_folders=episodes, steps=request.steps, batch_size=request.batch_size, seed=request.seed, task=task_spec(request.task_id)['title'], skill_id=request.task_id, progress=progress, cancelled=is_cancelled, minimum_epochs=request.minimum_epochs)
                 if result.get('state') == 'cancelled':
                     raise InterruptedError(result.get('error') or 'Задание остановлено')
                 if result.get('state') == 'failed':

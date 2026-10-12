@@ -97,7 +97,7 @@ def export_package(job_folder, destination, inference_device="cuda"):
                     value["pretrained_revision"] = None
                     value["pretrained_backbone_weights"] = None
                 write_json(copied, value)
-        for name in ("job.json", "validation.json", "split.json", "physics-validation.json", "preview-validation.json"):
+        for name in ("job.json", "validation.json", "split.json", "checkpoint-selection.json", "physics-validation.json", "preview-validation.json"):
             source = folder / name
             if source.is_file():
                 shutil.copyfile(source, stage / name)
@@ -206,7 +206,7 @@ def _extract_verified(archive_path, destination):
         raise ValueError("Simulator actor features differ from its verified observation contract")
     horizon = config.get("chunk_size", 1)
     steps = config.get("n_action_steps")
-    if type(horizon) is not int or horizon not in (1, 20, 50) or steps not in (1, 20) or steps>horizon:
+    if type(horizon) is not int or horizon not in (1, 20, 50) or type(steps) is not int or not 1<=steps<=20 or steps>horizon:
         raise ValueError("Simulator transfer requires bounded ACT chunks and exactly one applied action per call")
     if horizon > 1 and steps==1 and config.get("temporal_ensemble_coeff") != .01:
         raise ValueError("Bounded simulator ACT chunks require the tested temporal ensemble")
