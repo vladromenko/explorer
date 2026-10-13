@@ -39,6 +39,16 @@ def transition_ready(state,plan_id):
     return (plan.get('state')=='complete' and not active and not state.get('recording') and not moving),plan
 
 
+def installed_server_command(command,expected_python):
+    # macOS ps displays the executable path without quoting embedded spaces.
+    # Match that entire path before parsing only the remaining arguments.
+    prefix=expected_python+' '
+    if not command.startswith(prefix):return False
+    try:arguments=shlex.split(command[len(prefix):])
+    except ValueError:return False
+    return arguments[:2]==['-m','simulator.server']
+
+
 def run(plan_id,dry_run=False):
     if len(plan_id)!=12 or any(c not in '0123456789abcdef' for c in plan_id):
         raise ValueError('Invalid original queue identity')
@@ -88,9 +98,9 @@ def run(plan_id,dry_run=False):
     pids=set(pid_text.split())
     if len(pids)!=1:raise RuntimeError('Cannot identify the single local simulator owner')
     pid=int(next(iter(pids)))
-    command=shlex.split(subprocess.check_output(['ps','-p',str(pid),'-o','command='],text=True))
+    command=subprocess.check_output(['ps','-p',str(pid),'-o','command='],text=True).strip()
     expected=str(SUPPORT/'runtime/bin/python')
-    if command[:3]!=[expected,'-m','simulator.server']:
+    if not installed_server_command(command,expected):
         raise RuntimeError('Port owner is not the installed Explorer simulator')
     # This second guard prevents stopping a newly launched learner or recording.
     if not transition_ready(get('/api/state'),plan_id)[0]:

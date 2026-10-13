@@ -8,6 +8,17 @@ module=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 
 
+def test_server_owner_accepts_unquoted_macos_path_spaces_only_for_exact_app():
+    python='/Users/example/Library/Application Support/ExplorerSimulator/runtime/bin/python'
+    assert module.installed_server_command(python+' -m simulator.server --port 8766',python)
+    for command in (python+'-other -m simulator.server',
+                    python+' -m unrelated.server',
+                    '/usr/bin/python -m simulator.server',
+                    python+' -m simulator.server-other',
+                    python+' -m "simulator.server'):
+        assert not module.installed_server_command(command,python)
+
+
 def snapshot(state='complete',active=False,recording=False):
     return {'night_batches':[{'id':'0a859bcd5239','state':state}],
             'jobs':[{'status':'running'}] if active else [],'recording':recording}
