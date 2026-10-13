@@ -181,6 +181,7 @@ class JobRequest(BaseModel):
     rounds: int = Field(default=3, ge=1, le=5)
     independent_demos_required: bool = False
     resume_completed_attempts: bool = False
+    resume_model_id: str | None = Field(default=None,pattern='^[0-9a-f]{12}$')
     validation_seed: int = Field(default=10000,ge=0,le=2**31-1001)
     request_text: str | None = Field(default=None, min_length=1, max_length=4000)
     goal_id: str | None = Field(default=None, pattern='^[0-9a-f]{12}$')
@@ -665,6 +666,7 @@ class Runtime:
                         values['resume_completed_attempts'] = True
                     if stage == 'train':
                         values['minimum_epochs'] = 8
+                        values['resume_model_id'] = request.resume_model_id
                     if stage=='validate':
                         values.update(count=10,model_id=task['stages']['train']['model_id'])
                     if stage=='export':
@@ -750,10 +752,10 @@ class Runtime:
                 episodes = successful
                 if not episodes:
                     raise ValueError('Нет демонстраций с подтверждённой физической доставкой. Неудачные попытки сохранены для диагностики; покажите успешную доставку или сгенерируйте новые попытки.')
-                folder = self.data_root / 'runs' / job['id']
+                folder = self.data_root / 'runs' / (request.resume_model_id or job['id'])
                 if request.independent_demos_required and len({json.loads((path/'episode.json').read_text()).get('seed',path.name) for path in episodes})<2:
                     raise ValueError('Для независимой проверки нужны хотя бы два успешных показа разных сцен')
-                result = module.train_job(job_folder=folder, episode_folders=episodes, steps=request.steps, batch_size=request.batch_size, seed=request.seed, task=task_spec(request.task_id)['title'], skill_id=request.task_id, progress=progress, cancelled=is_cancelled, minimum_epochs=request.minimum_epochs)
+                result = module.train_job(job_folder=folder, episode_folders=episodes, steps=request.steps, batch_size=request.batch_size, seed=request.seed, task=task_spec(request.task_id)['title'], skill_id=request.task_id, progress=progress, cancelled=is_cancelled, minimum_epochs=request.minimum_epochs, resume=bool(request.resume_model_id))
                 if result.get('state') == 'cancelled':
                     raise InterruptedError(result.get('error') or 'Задание остановлено')
                 if result.get('state') == 'failed':

@@ -508,9 +508,48 @@ def stage_warm_start(source_folder, destination, target_policy):
                 source_weights_sha256=bundle["checkpoint_sha256"]["model.safetensors"], resized_tensors=resized)
 
 
+def resume_checkpoint(folder, episode_folders, skill_id):
+    """Verify the saved optimizer checkpoint and the unchanged exported dataset."""
+    folder=Path(folder).resolve()
+    state=json.loads((folder/'job.json').read_text())
+    if state.get('state') not in ('cancelled','failed','training'):
+        raise ValueError('Only interrupted training can be resumed')
+    if state.get('skill_id')!=skill_id or sorted(state['episodes'])!=sorted(Path(p).name for p in episode_folders):
+        raise ValueError('Resume requires the same skill and demonstration set')
+    checkpoint=(folder/'model/checkpoints/last').resolve()
+    if not checkpoint.is_relative_to(folder/'model/checkpoints'):
+        raise ValueError('Resume checkpoint is outside the training job')
+    required=('pretrained_model/model.safetensors','pretrained_model/train_config.json',
+              'training_state/optimizer_state.safetensors','training_state/optimizer_param_groups.json',
+              'training_state/rng_state.safetensors','training_state/training_step.json')
+    if any(not (checkpoint/name).is_file() or not (checkpoint/name).stat().st_size for name in required):
+        raise ValueError('Resume requires model, optimizer and RNG checkpoint files')
+    config=json.loads((checkpoint/'pretrained_model/train_config.json').read_text())
+    step=json.loads((checkpoint/'training_state/training_step.json').read_text())['step']
+    if (Path(config['output_dir']).resolve()!=folder/'model' or
+            Path(config['dataset']['root']).resolve()!=folder/'train' or
+            config['steps']!=state['steps'] or config['batch_size']!=state['batch_size'] or
+            type(step) is not int or not 0<step<=state['steps']):
+        raise ValueError('Resume configuration does not match the saved job')
+    for part in ('train','validation'):
+        if not (folder/part/'explorer-provenance.json').is_file():
+            raise ValueError('Saved exported dataset is missing')
+    pause=folder/'process-pause.json'
+    if pause.is_file():
+        evidence=json.loads(pause.read_text())
+        if evidence.get('checkpoint_path')==str(checkpoint):
+            for name,digest in evidence.get('checkpoint_sha256',{}).items():
+                if sha256(_contained(checkpoint,name))!=digest:
+                    raise ValueError('Saved checkpoint checksum mismatch')
+    state.update(resumed_step=step,steps_completed=step,progress=round(90*step/state['steps'],1))
+    for name in ('error','finished'):
+        state.pop(name,None)
+    return state,checkpoint/'pretrained_model/train_config.json'
+
+
 def train_job(job_folder, episode_folders, steps=3000, python_executable=None, device="auto", progress=None,
               task="pick and place", skill_id=None, cancelled=None, batch_size=16, seed=1000,
-              diagnostic_only=False, warm_start=None, minimum_epochs=0):
+              diagnostic_only=False, warm_start=None, minimum_epochs=0, resume=False):
     """Blocking worker; call from the simulator's background executor.
 
     The subprocess has no robot connection. A nonzero learner exit is a failed
@@ -520,7 +559,7 @@ def train_job(job_folder, episode_folders, steps=3000, python_executable=None, d
 
     folder = Path(job_folder).resolve()
     folder.mkdir(parents=True, exist_ok=True)
-    if (folder / "job.json").exists():
+    if (folder / "job.json").exists() and not resume:
         raise ValueError("Training job folder already contains a job")
     folders = [Path(value).resolve() for value in episode_folders]
     state = dict(id=folder.name, created=time.time(), at=time.time(), state="queued", steps=steps,
@@ -530,6 +569,9 @@ def train_job(job_folder, episode_folders, steps=3000, python_executable=None, d
         training_goal="diagnostic_pipeline_smoke" if diagnostic_only else "successful_simulation_imitation",
         training_profile="fourier_timed_visual_act_checkpoint_selection_v7",
         physical_success_verified=False, automatic_execution=False, executed=False)
+    resume_config = None
+    if resume:
+        state, resume_config = resume_checkpoint(folder, folders, skill_id)
     child = None
 
     def update(phase, **values):
@@ -544,78 +586,86 @@ def train_job(job_folder, episode_folders, steps=3000, python_executable=None, d
 
     try:
         check_cancelled()
-        if not folders:
-            raise ValueError("No simulator trajectories were selected")
-        if len(set(folders)) != len(folders) or len({item.name for item in folders}) != len(folders):
-            raise ValueError("Duplicate trajectories cannot form independent train/validation episodes")
-        training_config(folder, steps, "cpu", batch_size, seed)  # Validate request before a heavy import/export.
-        update("exporting")
-        from importlib.metadata import version
-        state["runtime_versions"] = {name: version(name) for name in ("lerobot", "torch", "torchvision")}
-        if state["runtime_versions"]["lerobot"] != "0.6.1":
-            raise ValueError("Use the Explorer simulator's pinned LeRobot 0.6.1 environment")
-        provenance = [inspect_episode(item) for item in folders]
-        profiles = {item[0].get('scene_profile', 'baseline') for item in provenance}
-        if len(profiles) != 1:
-            raise ValueError('Do not mix legacy and randomized scene profiles in one model')
-        state['scene_profile'] = next(iter(profiles))
-        if state['scene_profile'] == 'sock_variants_v1':
-            from .domain_randomization import scene_coverage
-            state['scene_coverage'] = scene_coverage([item[0] for item in provenance])
-        if not diagnostic_only and any(item[0].get("physics_verified_success", item[0].get("success")) is not True for item in provenance):
-            raise ValueError("ACT task training requires successful simulator demonstrations; failed attempts remain diagnostic data")
-        state["dataset_fingerprint"] = hashlib.sha256(json.dumps([item[3] for item in provenance], sort_keys=True).encode()).hexdigest()
-        # Reuse the verified Torch cache across jobs on the external volume.
-        # Keep LeRobot's job-local environment and dataset provenance intact.
-        shared_backbone = Path(os.environ.get("EXPLORER_SIM_VOLUME", "/Volumes/ExplorerSim")) / "cache/torch/hub/checkpoints/resnet18-f37072fd.pth"
-        environment = configure(folder)
-        if shared_backbone.is_file():
-            backbone_cache = Path(environment["TORCH_HOME"]) / "hub/checkpoints"
-            backbone_cache.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(shared_backbone, backbone_cache / shared_backbone.name)
-        state["device"] = choose_device(device)
-        check_cancelled()
-        training, validation, heldout = split_episodes(folders, [item[0] for item in provenance])
-        frame_counts={path:len(item[1]) for path,item in zip(folders,provenance)}
-        budget=training_budget(steps,sum(frame_counts[path] for path in training),batch_size,minimum_epochs)
-        steps=budget['effective_steps']
-        state.update(steps=steps,training_budget=budget)
-        export_dataset(training, folder / "train", "explorer/simulator-train", task, cancelled=cancelled)
-        check_cancelled()
-        export_dataset(validation, folder / "validation", "explorer/simulator-validation", task, cancelled=cancelled)
-        check_cancelled()
-        write_json(folder / "split.json", dict(train=[item.name for item in training],
-            validation=[item.name for item in validation], heldout_independent=bool(heldout)))
-        config = training_config(folder, steps, state["device"], batch_size, seed)
-        if warm_start:
+        if resume:
+            steps = state['steps']
+            environment = configure(folder)
+        else:
+            if not folders:
+                raise ValueError("No simulator trajectories were selected")
+            if len(set(folders)) != len(folders) or len({item.name for item in folders}) != len(folders):
+                raise ValueError("Duplicate trajectories cannot form independent train/validation episodes")
+            training_config(folder, steps, "cpu", batch_size, seed)  # Validate request before a heavy import/export.
+            update("exporting")
+            from importlib.metadata import version
+            state["runtime_versions"] = {name: version(name) for name in ("lerobot", "torch", "torchvision")}
+            if state["runtime_versions"]["lerobot"] != "0.6.1":
+                raise ValueError("Use the Explorer simulator's pinned LeRobot 0.6.1 environment")
+            provenance = [inspect_episode(item) for item in folders]
+            profiles = {item[0].get('scene_profile', 'baseline') for item in provenance}
+            if len(profiles) != 1:
+                raise ValueError('Do not mix legacy and randomized scene profiles in one model')
+            state['scene_profile'] = next(iter(profiles))
+            if state['scene_profile'] == 'sock_variants_v1':
+                from .domain_randomization import scene_coverage
+                state['scene_coverage'] = scene_coverage([item[0] for item in provenance])
+            if not diagnostic_only and any(item[0].get("physics_verified_success", item[0].get("success")) is not True for item in provenance):
+                raise ValueError("ACT task training requires successful simulator demonstrations; failed attempts remain diagnostic data")
+            state["dataset_fingerprint"] = hashlib.sha256(json.dumps([item[3] for item in provenance], sort_keys=True).encode()).hexdigest()
+            # Reuse the verified Torch cache across jobs on the external volume.
+            # Keep LeRobot's job-local environment and dataset provenance intact.
+            shared_backbone = Path(os.environ.get("EXPLORER_SIM_VOLUME", "/Volumes/ExplorerSim")) / "cache/torch/hub/checkpoints/resnet18-f37072fd.pth"
+            environment = configure(folder)
+            if shared_backbone.is_file():
+                backbone_cache = Path(environment["TORCH_HOME"]) / "hub/checkpoints"
+                backbone_cache.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(shared_backbone, backbone_cache / shared_backbone.name)
+            state["device"] = choose_device(device)
             check_cancelled()
-            source_bundle, _ = read_bundle(warm_start)
-            if source_bundle.get("dataset_fingerprint") != state["dataset_fingerprint"]:
-                raise ValueError("Warm start requires the same verified dataset fingerprint and normalization source")
-            context = json.loads((folder / "train/explorer-provenance.json").read_text()).get("actor_context")
-            if source_bundle.get("actor_context") != context:
-                raise ValueError("Warm start requires the same actor time context")
-            if source_bundle.get("action_transform") is not None:
-                raise ValueError("Warm start requires the same action transformation")
-            state["warm_start"] = stage_warm_start(warm_start, folder / "initial-policy", config["policy"])
-            config["policy"]["pretrained_path"] = str(folder / "initial-policy")
-        write_json(folder / "train-config.json", config)
-        write_json(folder / "train-config.environment.json", environment)
+            training, validation, heldout = split_episodes(folders, [item[0] for item in provenance])
+            frame_counts={path:len(item[1]) for path,item in zip(folders,provenance)}
+            budget=training_budget(steps,sum(frame_counts[path] for path in training),batch_size,minimum_epochs)
+            steps=budget['effective_steps']
+            state.update(steps=steps,training_budget=budget)
+            export_dataset(training, folder / "train", "explorer/simulator-train", task, cancelled=cancelled)
+            check_cancelled()
+            export_dataset(validation, folder / "validation", "explorer/simulator-validation", task, cancelled=cancelled)
+            check_cancelled()
+            write_json(folder / "split.json", dict(train=[item.name for item in training],
+                validation=[item.name for item in validation], heldout_independent=bool(heldout)))
+            config = training_config(folder, steps, state["device"], batch_size, seed)
+            if warm_start:
+                check_cancelled()
+                source_bundle, _ = read_bundle(warm_start)
+                if source_bundle.get("dataset_fingerprint") != state["dataset_fingerprint"]:
+                    raise ValueError("Warm start requires the same verified dataset fingerprint and normalization source")
+                context = json.loads((folder / "train/explorer-provenance.json").read_text()).get("actor_context")
+                if source_bundle.get("actor_context") != context:
+                    raise ValueError("Warm start requires the same actor time context")
+                if source_bundle.get("action_transform") is not None:
+                    raise ValueError("Warm start requires the same action transformation")
+                state["warm_start"] = stage_warm_start(warm_start, folder / "initial-policy", config["policy"])
+                config["policy"]["pretrained_path"] = str(folder / "initial-policy")
+            write_json(folder / "train-config.json", config)
+            write_json(folder / "train-config.environment.json", environment)
         interpreter = str(python_executable or sys.executable)
         env = dict(os.environ, HF_HUB_OFFLINE="1", HF_HUB_DISABLE_TELEMETRY="1", WANDB_MODE="disabled",
                    PYTORCH_ENABLE_MPS_FALLBACK="1", OMP_NUM_THREADS="2", PYTHONUNBUFFERED="1")
         update("training")
+        log_start = (folder/'train.log').stat().st_size if resume and (folder/'train.log').is_file() else 0
         with (folder / "train.log").open("a") as log:
             check_cancelled()
-            child = subprocess.Popen([interpreter, "-m", "lerobot.scripts.lerobot_train",
-                "--config_path=" + str(folder / "train-config.json")], stdout=log, stderr=log, env=env,
+            arguments = [interpreter, "-m", "lerobot.scripts.lerobot_train",
+                         "--config_path=" + str(resume_config or folder / "train-config.json")]
+            if resume_config:
+                arguments.append("--resume=true")
+            child = subprocess.Popen(arguments, stdout=log, stderr=log, env=env,
                 start_new_session=(os.name == "posix"))
             while child.poll() is None:
                 if cancelled and cancelled():
                     raise InterruptedError("Simulator training cancelled")
                 try:
                     with (folder / "train.log").open("rb") as tail:
-                        tail.seek(max(0, (folder / "train.log").stat().st_size - 16000))
+                        tail.seek(max(log_start, (folder / "train.log").stat().st_size - 16000))
                         content = tail.read().decode("utf8", errors="replace")
                     # LeRobot abbreviates its metric steps as 1K/2K. tqdm's
                     # counter remains exact and must take precedence.

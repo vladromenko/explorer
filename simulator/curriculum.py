@@ -57,7 +57,8 @@ class NightQueue:
     """A single persisted batch; completed stages are immutable on resume.
 
     No automatic execution on application restart. An interrupted training stage
-    is retried in a fresh run; failed datasets and logs remain available.
+    may resume a verified optimizer checkpoint when explicitly requested;
+    failed datasets and logs remain available.
     """
     def __init__(self, root):
         self.folder = Path(root) / 'night-batches'
