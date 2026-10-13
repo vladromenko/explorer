@@ -508,6 +508,15 @@ def stage_warm_start(source_folder, destination, target_policy):
                 source_weights_sha256=bundle["checkpoint_sha256"]["model.safetensors"], resized_tensors=resized)
 
 
+def completed_training_steps(content, total, resumed_step=0):
+    """LeRobot's resumed tqdm counts remaining updates from zero."""
+    full=re.findall(r'(\d+)/'+str(total)+r'\s',content)
+    remaining=re.findall(r'(\d+)/'+str(total-resumed_step)+r'\s',content) if resumed_step else []
+    if full:return min(total,int(full[-1]))
+    if remaining:return min(total,resumed_step+int(remaining[-1]))
+    return resumed_step
+
+
 def resume_checkpoint(folder, episode_folders, skill_id):
     """Verify the saved optimizer checkpoint and the unchanged exported dataset."""
     folder=Path(folder).resolve()
@@ -669,10 +678,9 @@ def train_job(job_folder, episode_folders, steps=3000, python_executable=None, d
                         content = tail.read().decode("utf8", errors="replace")
                     # LeRobot abbreviates its metric steps as 1K/2K. tqdm's
                     # counter remains exact and must take precedence.
-                    completed = re.findall(r"(\d+)/" + str(steps) + r"\s", content)
-                    if completed:
-                        state["steps_completed"] = max(state.get("steps_completed", 0), min(steps, int(completed[-1])))
-                        state["progress"] = round(90 * state["steps_completed"] / steps, 1)
+                    completed = completed_training_steps(content,steps,state.get('resumed_step',0))
+                    state["steps_completed"] = max(state.get("steps_completed", 0), completed)
+                    state["progress"] = round(90 * state["steps_completed"] / steps, 1)
                 except OSError:
                     pass
                 update("training")

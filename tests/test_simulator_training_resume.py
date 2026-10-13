@@ -3,7 +3,14 @@ from pathlib import Path
 
 import pytest
 
-from simulator.learning import resume_checkpoint, sha256, train_job, write_json
+from simulator.learning import completed_training_steps, resume_checkpoint, sha256, train_job, write_json
+
+
+def test_progress_counts_remaining_tqdm_updates_after_resume():
+    assert completed_training_steps('Training: 118/58297 [00:34',145741,87444)==87562
+    assert completed_training_steps('Training: 145741/145741 [',145741,87444)==145741
+    assert completed_training_steps('Training: 118/145741 [',145741)==118
+    assert completed_training_steps('step:88K',145741,87444)==87444
 
 
 def saved_run(root):
