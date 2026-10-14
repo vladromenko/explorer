@@ -43,13 +43,15 @@ class LearningCycles:
         for task in tasks:task_spec(task)
         value=dict(id=secrets.token_hex(6),created=time.time(),state='queued',hours=hours,
             options=dict(count=count,workers=workers,scene_profile=scene_profile,steps=steps),goal_id=goal_id,
-            tasks=[dict(task_id=task,state='queued',iteration=1,model_id=(models or {}).get(task),stages={},history=[]) for task in tasks],
+            tasks=[dict(task_id=task,state='queued',iteration=1,model_id=(models or {}).get(task),
+                        reference_model_id=(models or {}).get(task),stages={},history=[]) for task in tasks],
             seed_base=600000000+secrets.randbelow(600000000),physical_ready=False,automatic_hardware_execution=False)
         self.save(value);return value
 
     def run(self,identifier,execute,cancelled,progress):
         value=self.get(identifier)
         if value['state']=='ready_for_transfer':return value
+        if value['state']=='needs_diagnosis':return value
         deadline=time.monotonic()+value['hours']*3600
         def stopped():return cancelled() or time.monotonic()>=deadline
         def check():
@@ -75,33 +77,56 @@ class LearningCycles:
                     check()
                     seed=(value['seed_base']+index*10000000+task['iteration']*10000)%(2**31-100000)
                     options=dict(value['options'],seed=seed,batch_size=32,minimum_epochs=8)
+                    corrective_generation=False
                     if task.get('model_id'):
-                        tuning=stage(task,'audit',dict(options,model_id=task['model_id'],validation_seed=seed+1000))
-                        model=tuning['model_id']
-                        report=stage(task,'validate',dict(options,model_id=model,count=10,validation_seed=seed+2000))
-                        if report_passes(report):
-                            final=stage(task,'final_validate',dict(options,model_id=model,count=10,validation_seed=seed+3000))
-                        else:final=None
-                        if final and report_passes(final):
-                            package=stage(task,'export',dict(options,model_id=model))
-                            task.update(state='ready_for_transfer',simulation_qualified=True,model_id=model,archive=package,
-                                        validation=final,physical_ready=False)
-                            task['history'].append(copy.deepcopy(task['stages']));self.save(value)
-                        else:
-                            failed=final or report
-                            failed_seeds=[]
-                            for position,row in enumerate(failed.get('results',[])):
-                                seed_value=row.get('domain_variation',{}).get('seed')
-                                if seed_value is None and position<len(failed.get('seeds',[])):seed_value=failed['seeds'][position]
-                                if row.get('success') is False and type(seed_value) is int:failed_seeds.append(seed_value)
-                            task['failure_seeds']=failed_seeds
+                        reference=task.get('reference_model_id')
+                        if reference and reference!=task['model_id']:
+                            comparison=stage(task,'compare',dict(options,model_id=task['model_id'],
+                                reference_model_id=reference,validation_seed=value['seed_base']+100))
+                            task['last_comparison']=comparison
+                            if not comparison['improved']:
+                                if (value['options'].get('teacher_profile') in ('planned_grasp_v3','planned_release_v4')
+                                    and task.get('corrective_teacher_evidence_sha256')
+                                    and not task.get('corrective_round_used')):
+                                    task['rejected_model_id']=task['model_id']
+                                    task['model_id']=reference
+                                    task['corrective_round_used']=True
+                                    corrective_generation=True
+                                    self.save(value)
+                                else:
+                                    value.update(state='needs_diagnosis',phase='diagnosis',
+                                        reason='Новая модель не улучшила доставку на тех же диагностических сценах. Автоматический повтор обучения остановлен для разбора причин.')
+                                    self.save(value);return value
+                            else:task['reference_model_id']=task['model_id']
+                        if not corrective_generation:
+                            tuning=stage(task,'audit',dict(options,model_id=task['model_id'],validation_seed=seed+1000))
+                            model=tuning['model_id']
+                            report=stage(task,'validate',dict(options,model_id=model,count=10,validation_seed=seed+2000))
+                            if report_passes(report):
+                                final=stage(task,'final_validate',dict(options,model_id=model,count=10,validation_seed=seed+3000))
+                            else:final=None
+                            if final and report_passes(final):
+                                package=stage(task,'export',dict(options,model_id=model))
+                                task.update(state='ready_for_transfer',simulation_qualified=True,model_id=model,archive=package,
+                                            validation=final,physical_ready=False)
+                                task['history'].append(copy.deepcopy(task['stages']));self.save(value)
+                            else:
+                                failed=final or report
+                                failed_seeds=[]
+                                for position,row in enumerate(failed.get('results',[])):
+                                    seed_value=row.get('domain_variation',{}).get('seed')
+                                    if seed_value is None and position<len(failed.get('seeds',[])):seed_value=failed['seeds'][position]
+                                    if row.get('success') is False and type(seed_value) is int:failed_seeds.append(seed_value)
+                                task['failure_seeds']=failed_seeds
                     if task['state']!='ready_for_transfer':
                         # Previously failed test scenes become teaching data, never final test evidence.
                         failed=list(dict.fromkeys(task.get('failure_seeds',[])))[:options['count']]
                         fresh=[seed+4000+i for i in range(options['count']) if seed+4000+i not in failed]
                         scene_seeds=(failed+fresh)[:options['count']]
                         stage(task,'trials',dict(options,scene_seeds=scene_seeds))
-                        trained=stage(task,'train',options)
+                        trained=stage(task,'train',dict(options,warm_start_model_id=task.get('reference_model_id') or task.get('model_id')))
+                        if not task.get('reference_model_id'):
+                            task['reference_model_id']=task.get('model_id')
                         task['history'].append(copy.deepcopy(task['stages']))
                         task.update(model_id=trained['model_id'],iteration=task['iteration']+1,stages={},state='running')
                         self.save(value)

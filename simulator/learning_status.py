@@ -52,7 +52,7 @@ def learning_status(root,snapshot):
     successes=report.get('successes',model.get('successes',0));episodes=report.get('episodes',model.get('episodes',0))
     qualified=current.get('state')=='ready_for_transfer' if current else task.get('simulation_qualified',False)
     status='running' if active or current and current['state']=='running' else 'ready_for_transfer' if qualified else 'needs_more_training'
-    if current and current['state'] in ('paused','interrupted','failed','corrupt'):status=current['state']
+    if current and current['state'] in ('paused','interrupted','failed','corrupt','needs_diagnosis'):status=current['state']
     details=(active or {}).get('details') or {}
     saved=task.get('stages',{}).get('train') or {}
     budget=details.get('training_budget') or saved.get('training_budget')
@@ -64,4 +64,6 @@ def learning_status(root,snapshot):
         demonstrations=demonstration_counts(str(root),int(time.monotonic()//5),(plan or {}).get('options',{}).get('scene_profile','baseline')).get(task_id,dict(attempts=0,successful=0)),
         successes=successes,episodes=episodes,required_successes=10,simulation_ready=bool(qualified),physical_ready=False,
         model_id=task.get('model_id') or model.get('id'),archive=task.get('archive'),
+        comparison=task.get('last_comparison'),
+        teacher_profile=(plan or {}).get('options',{}).get('teacher_profile','legacy_v1'),
         resume_model_id=task.get('pending',{}).get('job_id') if task.get('pending',{}).get('stage')=='train' else None)

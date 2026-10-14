@@ -56,7 +56,8 @@ def check(identifier,resume=False):
     commands=subprocess.check_output(['ps','-axo','command'],text=True).splitlines()
     pending=[task.get('pending',{}).get('job_id') for task in cycle['tasks']]
     for command in commands:
-        is_worker=('-m lerobot.scripts.lerobot_train ' in command or '-m simulator.feedback_audit ' in command or '-m simulator.parallel_trials worker ' in command)
+        is_worker=('-m lerobot.scripts.lerobot_train ' in command or '-m simulator.train_entry ' in command
+            or '-m simulator.feedback_audit ' in command or '-m simulator.parallel_trials worker ' in command)
         if is_worker and any(identifier and identifier in command for identifier in pending):
             return dict(state='waiting_for_existing_worker')
     free=memory_free_percent()

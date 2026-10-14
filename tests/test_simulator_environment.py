@@ -54,6 +54,24 @@ class SimulatorEnvironmentTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.env.step([float("nan")]*9)
 
+    def test_grasp_planning_fork_preserves_real_episode_state(self):
+        from simulator.grasp_teacher import fork_physics
+        self.env.reset(seed=27,options={'difficulty':'varied'})
+        specification=mujoco.mjtState.mjSTATE_INTEGRATION
+        before=np.empty(mujoco.mj_stateSize(self.env.model,specification))
+        mujoco.mj_getState(self.env.model,self.env.data,before,specification)
+        command=self.env.command.copy()
+        branch=fork_physics(self.env)
+        try:
+            target=branch.command.copy();target[0]+=5.
+            branch.step(target)
+            after=np.empty_like(before)
+            mujoco.mj_getState(self.env.model,self.env.data,after,specification)
+            np.testing.assert_array_equal(before,after)
+            np.testing.assert_array_equal(command,self.env.command)
+            self.assertEqual(self.env.steps,0)
+        finally:branch.close()
+
     def test_cloth_is_rendered_as_faces_and_two_lidars_have_separate_origins(self):
         self.assertTrue(self.env.render_options.flags[mujoco.mjtVisFlag.mjVIS_FLEXFACE])
         self.assertFalse(self.env.render_options.flags[mujoco.mjtVisFlag.mjVIS_FLEXEDGE])

@@ -30,7 +30,8 @@ def worker(spec_path):
     started=time.monotonic()
     try:
         episode=env.make_episode_trial(spec['folder'],seed=spec['seed'],
-            task_id=spec['task_id'],scene_profile=spec['scene_profile'])
+            task_id=spec['task_id'],scene_profile=spec['scene_profile'],
+            teacher_profile=spec.get('teacher_profile','legacy_v1'))
         if episode.get('attempt_completed') is not True:
             raise RuntimeError('Worker did not finish its attempt')
         # The fingerprint lets a benchmark compare actual issued trajectories,
@@ -73,7 +74,8 @@ def stop_children(active):
 
 
 def collect(root, job_id, count, first_seed, task_id='sock_basket', scene_profile='sock_variants_v1',
-            workers=4, recovered=None, cancelled=None, progress=None, attempt_timeout_s=900, seeds=None):
+            workers=4, recovered=None, cancelled=None, progress=None, attempt_timeout_s=900, seeds=None,
+            teacher_profile='legacy_v1'):
     if type(workers) is not int or workers not in (1,4,8):
         raise ValueError('Choose one, four or eight independent workers')
     if type(count) is not int or not 1<=count<=1000 or type(first_seed) is not int or first_seed<0:
@@ -87,6 +89,8 @@ def collect(root, job_id, count, first_seed, task_id='sock_basket', scene_profil
     task_spec(task_id)
     if scene_profile not in ('baseline','sock_variants_v1'):
         raise ValueError('Unknown scene profile')
+    if teacher_profile not in ('legacy_v1','planned_grasp_v3','planned_release_v4'):
+        raise ValueError('Unknown teacher profile')
     root=Path(root).resolve()
     manifests=dict(recovered or {})
     if any(type(index) is not int or not 0<=index<count for index in manifests):
@@ -112,7 +116,7 @@ def collect(root, job_id, count, first_seed, task_id='sock_basket', scene_profil
                 result=coordination/f'{index:04d}-result.json'
                 spec=coordination/f'{index:04d}-request.json'
                 save(spec,dict(folder=str(folder),result=str(result),seed=seeds[index],
-                               task_id=task_id,scene_profile=scene_profile))
+                               task_id=task_id,scene_profile=scene_profile,teacher_profile=teacher_profile))
                 log=(coordination/f'{index:04d}.log').open('wb')
                 env=dict(os.environ,OMP_NUM_THREADS='1',OPENBLAS_NUM_THREADS='1',
                          MKL_NUM_THREADS='1',VECLIB_MAXIMUM_THREADS='1',PYTHONUNBUFFERED='1')

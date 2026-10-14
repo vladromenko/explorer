@@ -66,3 +66,15 @@ def test_resume_rejects_wrong_task_profile_and_incomplete_sample_count(tmp_path)
         path = folder / 'episode.json'
         write_json(path, dict(json.loads(path.read_text()), **changed))
     assert recover(tmp_path) == {}
+
+
+def test_corrected_teacher_never_reuses_old_attempt_for_same_seed(tmp_path):
+    recording(tmp_path,'trial-original',100,success=True)
+    corrected=recording(tmp_path,'trial-corrected',101,success=False)
+    episode=json.loads((corrected/'episode.json').read_text())
+    episode['teacher_profile']='planned_grasp_v3'
+    write_json(corrected/'episode.json',episode)
+    found=completed_attempts(tmp_path,'sock_basket','sock_variants_v1',100,2,
+        {'model':'accepted'},teacher_profile='planned_grasp_v3')
+    assert set(found)=={1}
+    assert found[1]['id']=='trial-corrected'

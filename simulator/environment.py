@@ -357,13 +357,15 @@ class ExplorerEnv(gym.Env):
             raise ValueError(f"IK: цель недостижима, остаток {error:.3f} м")
         return np.r_[angles, gripper]
 
-    def make_episode_trial(self, output_dir, seed=0, progress=None, policy=None, task_id='sock_basket', scene_profile='baseline'):
+    def make_episode_trial(self, output_dir, seed=0, progress=None, policy=None, task_id='sock_basket', scene_profile='baseline', teacher_profile='legacy_v1'):
         """Attempt real physical pickup/place; failed trials remain failed data.
 
         Teacher may inspect simulated object truth for curriculum generation.
         A learned actor receives only the declared nine state values and RGB.
         """
         from src.mobile_policy_contract import CONTRACT_SHA256, SAMPLE_CONTRACT
+        if teacher_profile not in ('legacy_v1', 'cartesian_close_v2', 'planned_grasp_v3', 'planned_release_v4'):
+            raise ValueError('Unknown teacher motion profile')
         folder = Path(output_dir)
         folder.mkdir(parents=True, exist_ok=False)
         (folder / "frames").mkdir()
@@ -384,6 +386,7 @@ class ExplorerEnv(gym.Env):
             "generator": "policy" if policy is not None else "ground_truth_teacher",
             "model_provenance": model_metadata(), "started_at": time.time()}
         manifest['scene_profile'] = scene_profile if spec['scene'] in ('sock', 'cloth') else 'baseline'
+        manifest['teacher_profile'] = teacher_profile if policy is None else None
         manifest['domain_variation'] = self.domain_variation
         manifest['attempt_completed'] = False
         steps = 0
@@ -489,20 +492,42 @@ class ExplorerEnv(gym.Env):
                 self.phase = "approach"
                 approach = self.solve_ik([*center[:2], .13])
                 arm_to(approach)
-                self.phase = "lower"
-                lowered = self.solve_ik([*center[:2], max(.024, float(center[2])+.018)], approach[:5])
-                arm_to(lowered)
-                self.phase = "close"
-                grasp_height = max(.006,float(center[2])) if self.rigid_id >= 0 else .017
-                closed = self.solve_ik([*center[:2], grasp_height], lowered[:5], gripper=170.)
-                arm_to(closed, duration=2.)
-                self.phase = "lift"
+                grasp_plan=None
                 diversified = manifest['scene_profile'] == 'sock_variants_v1'
-                # A common carry height clears every rim in this curriculum;
-                # the actor need not infer a distant basket before pickup.
                 lift_height = self.bin_position[2]+.42 if diversified else .22
                 lift_goal = [self.base_pose()[0]+.23, self.base_pose()[1], .15] if rooms else [*center[:2], lift_height]
-                lifted = self.solve_ik(lift_goal, closed[:5], gripper=170., downward=rooms)
+                if teacher_profile in ('planned_grasp_v3','planned_release_v4') and self.rigid_id<0:
+                    from .grasp_teacher import plan_grasp
+                    grasp_plan,diagnostics=plan_grasp(self,center,approach,lift_goal,
+                        cancelled=(lambda:progress(self.state())) if progress else None,downward_lift=rooms)
+                    manifest['teacher_grasp_planning']=dict(candidates=diagnostics,privileged_teacher_only=True,
+                        actor_inputs_unchanged=True,actual_outcome_required=True)
+                self.phase = "lower"
+                grasp_height = max(.006,float(center[2])) if self.rigid_id >= 0 else .017
+                lower_height = grasp_height if teacher_profile == 'cartesian_close_v2' else max(.024, float(center[2])+.018)
+                lowered = grasp_plan['lowered'] if grasp_plan else self.solve_ik([*center[:2], lower_height], approach[:5])
+                arm_to(lowered)
+                self.phase = "close"
+                closed = grasp_plan['closed'] if grasp_plan else self.solve_ik([*center[:2], grasp_height], lowered[:5], gripper=170.)
+                if teacher_profile == 'cartesian_close_v2':
+                    # Close only after descending with open fingers. Compensate
+                    # the linkage motion with IK instead of dragging a pinched
+                    # patch through the cloth while closing in joint space.
+                    count=max(round(2./PERIOD), round(140./self.velocity_limit[5]/PERIOD)+10)
+                    previous=lowered[:5]
+                    for n in range(count):
+                        u=(n+1)/count;blend=u*u*u*(10.-15.*u+6.*u*u)
+                        target=self.solve_ik([*center[:2],grasp_height],previous,gripper=30.+140.*blend)
+                        tick(np.r_[target,0.,0.,0.]);previous=target[:5]
+                    for _ in range(12):
+                        tick(np.r_[closed,0.,0.,0.])
+                else:
+                    arm_to(closed, duration=2.)
+                self.phase = "lift"
+                # A common carry height clears every rim in this curriculum;
+                # the actor need not infer a distant basket before pickup.
+                lift_goal = [self.base_pose()[0]+.23, self.base_pose()[1], .15] if rooms else [*center[:2], lift_height]
+                lifted = grasp_plan['lifted'] if grasp_plan else self.solve_ik(lift_goal, closed[:5], gripper=170., downward=rooms)
                 arm_to(lifted)
                 for _ in range(30):
                     tick(np.r_[lifted, 0., 0., 0.])
@@ -544,30 +569,42 @@ class ExplorerEnv(gym.Env):
                 arm_to(opened, 2.)
                 for _ in range(60):
                     tick(np.r_[opened, 0., 0., 0.])
-                # Withdraw the open fingers along their approach direction;
-                # cloth can drape on one pad and must release through contact.
-                self.phase = "release_retreat"
-                center = self.jaw_center()
-                retreat = self.solve_ik([center[0]-.035, center[1], center[2]+.07],
-                                        opened[:5], gripper=30., downward=False)
-                arm_to(retreat, 2.)
-                opened = retreat
-                for _ in range(160):
-                    tick(np.r_[opened, 0., 0., 0.])
-                if diversified and not self.task_success:
-                    # A fabric loop may drape over one rounded fingertip after
-                    # opening. Try a bounded wrist roll; success still requires
-                    # real release and settling, with every command recorded.
-                    self.phase = 'release_unhook'
-                    reference = opened.copy()
-                    for roll in (15., -15., 0.):
-                        unhook = reference.copy()
-                        unhook[4] = np.clip(reference[4]+roll, LOW[4], HIGH[4])
-                        arm_to(unhook, 1.)
-                        for _ in range(40):
-                            tick(np.r_[unhook, 0., 0., 0.])
-                        if self.task_success:
-                            break
+                if teacher_profile=='planned_release_v4' and diversified and self.rigid_id<0:
+                    from .grasp_teacher import plan_release
+                    release_plan,release_diagnostics=plan_release(self,
+                        cancelled=(lambda:progress(self.state())) if progress else None)
+                    manifest['teacher_release_planning']=dict(candidates=release_diagnostics,
+                        privileged_teacher_only=True,actual_outcome_required=True)
+                    for goal,duration,hold in release_plan:
+                        self.phase='release_retreat' if self.phase=='place' else 'release_unhook'
+                        arm_to(goal,duration)
+                        for _ in range(max(0,hold-12)):
+                            tick(np.r_[goal,0.,0.,0.])
+                else:
+                    # Withdraw the open fingers along their approach direction;
+                    # cloth can drape on one pad and must release through contact.
+                    self.phase = "release_retreat"
+                    center = self.jaw_center()
+                    retreat = self.solve_ik([center[0]-.035, center[1], center[2]+.07],
+                                            opened[:5], gripper=30., downward=False)
+                    arm_to(retreat, 2.)
+                    opened = retreat
+                    for _ in range(160):
+                        tick(np.r_[opened, 0., 0., 0.])
+                    if diversified and not self.task_success:
+                        # A fabric loop may drape over one rounded fingertip after
+                        # opening. Try a bounded wrist roll; success still requires
+                        # real release and settling, with every command recorded.
+                        self.phase = 'release_unhook'
+                        reference = opened.copy()
+                        for roll in (15., -15., 0.):
+                            unhook = reference.copy()
+                            unhook[4] = np.clip(reference[4]+roll, LOW[4], HIGH[4])
+                            arm_to(unhook, 1.)
+                            for _ in range(40):
+                                tick(np.r_[unhook, 0., 0., 0.])
+                            if self.task_success:
+                                break
             manifest["success"] = self.task_success
             manifest["outcome"] = self.state()["task"]
             manifest["physics_outcome_diagnostics"] = getattr(self, "placement_diagnostics", {})

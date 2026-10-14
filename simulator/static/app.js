@@ -3,7 +3,7 @@ const $ = id => document.getElementById(id);
 let depthView = false;
 let token = '', session = null, latest = null, selectedJoint = 0, arm = Array(6).fill(0), keys = new Set(), held = {arm: Array(6).fill(0), base: [0, 0, 0]}, recording = false, busy = false, gamepadButtons = [];
 const jointNames = ['Поворот основания', 'Подъём плеча', 'Локоть', 'Наклон кисти', 'Поворот кисти', 'Захват'];
-const jobNames = {cycle:'Доработка до готовности',audit:'Настройка обратной связи',trials: 'Попытки', train: 'Обучение ACT', validate: 'Проверка', export: 'Пакет переноса', night: 'Автоматическое обучение', deploy: 'Загрузка на Jetson', assistant: 'Ваша учебная задача'};
+const jobNames = {compare:'Сравнение моделей на одинаковых сценах',cycle:'Доработка до готовности',audit:'Настройка обратной связи',trials: 'Попытки', train: 'Обучение ACT', validate: 'Проверка', export: 'Пакет переноса', night: 'Автоматическое обучение', deploy: 'Загрузка на Jetson', assistant: 'Ваша учебная задача'};
 const statusNames = {running: 'в работе', complete: 'готово', failed: 'ошибка', exporting: 'подготовка данных', training: 'обучение', validating: 'проверка', validated_simulation: 'проверено по записям', trained_simulation_unvalidated: 'обучено; успешность задачи не подтверждена', cancelled: 'остановлено', queued: 'ожидает', paused: 'приостановлено', interrupted: 'прервано; можно продолжить', corrupt: 'файл повреждён'};
 const phases = {approach: 'Подведите захват к предмету', reach: 'Подведите захват к предмету', grasp: 'Замкните захват', lift: 'Поднимите предмет', transport: 'Перенесите к корзине', place: 'Отпустите в корзину', release_retreat: 'Отводит раскрытый захват', release_unhook: 'Поворачивает кисть, чтобы освободить ткань', inspect_floor: 'Осматривает пол', success: 'Объект доставлен', navigate_source: 'Едет в соседнюю комнату', navigate_destination: 'Перевозит предмет через дверь', idle: 'Готов к вашему показу', align_base: 'Подъезжает к объекту', lower: 'Опускает захват', close: 'Замыкает захват', policy: 'Обученная политика пробует выполнить задачу'};
 function notify(text, error = false) { $('notice').textContent = text; $('notice').classList.toggle('error', error); $('notice').classList.remove('hidden'); clearTimeout(notify.timer); notify.timer = setTimeout(() => $('notice').classList.add('hidden'), 4500); }
@@ -88,19 +88,20 @@ function renderStatus(snapshot) {
 }
 function renderLearning(info) {
   if (!info) return;
-  const names={running:'Обучение продолжается',needs_more_training:'Нужна доработка',ready_for_transfer:'Готово к переносу',paused:'Обучение на паузе',interrupted:'Можно продолжить',failed:'Нужна проверка ошибки',corrupt:'Повреждена запись состояния'};
-  const stages={audit:'Сравниваем частоту зрительной обратной связи',trials:'Собираем новые экспертные показы',train:'Обучаем модель ACT',validate:'Проверяем самостоятельное выполнение',export:'Собираем проверенный пакет',finished:'Последний цикл завершён',ready:'Пакет готов'};
+  const names={needs_diagnosis:'Нужен разбор причин',running:'Обучение продолжается',needs_more_training:'Нужна доработка',ready_for_transfer:'Готово к переносу',paused:'Обучение на паузе',interrupted:'Можно продолжить',failed:'Нужна проверка ошибки',corrupt:'Повреждена запись состояния'};
+  const stages={compare:'Сравниваем новую и опорную модель на одинаковых сценах',diagnosis:'Повтор остановлен: улучшение не подтверждено',audit:'Сравниваем частоту зрительной обратной связи',trials:'Собираем новые экспертные показы',train:'Обучаем модель ACT',validate:'Проверяем самостоятельное выполнение',export:'Собираем проверенный пакет',finished:'Последний цикл завершён',ready:'Пакет готов'};
   $('cycle-title').textContent=info.title;
   $('cycle-state').textContent=names[info.state] || info.state;
-  $('cycle-phase').textContent=(stages[info.phase] || info.phase)+' · итерация '+info.iteration+(info.message?' · '+info.message:'');
+  const teacher=info.phase==='trials' && info.teacher_profile==='planned_release_v4'?' · проверяем захват и отпускание ткани':info.phase==='trials' && info.teacher_profile==='planned_grasp_v3'?' · проверяем удержание носка':'';
+  $('cycle-phase').textContent=(stages[info.phase] || info.phase)+' · итерация '+info.iteration+teacher+(info.message?' · '+info.message:'');
   $('cycle-attempts').textContent=info.demonstrations.attempts.toLocaleString('ru-RU');
   $('cycle-examples').textContent=info.demonstrations.successful.toLocaleString('ru-RU');
   $('cycle-check').textContent=info.episodes?`${info.successes} / ${info.episodes}`:'Ещё не выполнена';
   $('cycle-steps').textContent=info.training_budget?`${Number(info.steps_completed || 0).toLocaleString('ru-RU')} / ${info.training_budget.effective_steps.toLocaleString('ru-RU')}`:'—';
   const eta=info.eta_s?` До завершения обучения ориентировочно ${Math.ceil(info.eta_s/60)} мин; затем проверка.`:'';
   $('cycle-progress').value=info.phase==='train' && info.training_budget?100*(info.steps_completed || 0)/info.training_budget.effective_steps:info.progress || 0;
-  const next=info.simulation_ready?'Модель прошла две отдельные проверки. Подключите Jetson для загрузки и физической проверки.':info.state==='running'?'Цикл сам сравнит настройки, проверит результат и при необходимости соберёт новые показы и повторит обучение.':info.state==='paused' || info.state==='interrupted'?'Нажмите «Продолжить сохранённое обучение». Записи и готовые этапы сохраняются.':'Готовность ещё не подтверждена. «Довести выбранный навык до готовности» запускает автоматическую доработку с сохранением результатов.';
-  $('cycle-next').textContent=next+eta;
+  const next=info.simulation_ready?'Модель прошла две отдельные проверки. Подключите Jetson для загрузки и физической проверки.':info.state==='running'?'После обучения цикл сравнит новую модель с прежней. Повтор допускается при подтверждённом улучшении или один раз после проверенного исправления показов.':info.state==='paused' || info.state==='interrupted'?'Нажмите «Продолжить сохранённое обучение». Записи и готовые этапы сохраняются.':'Готовность ещё не подтверждена. «Довести выбранный навык до готовности» запускает автоматическую доработку с сохранением результатов.';
+  $('cycle-next').textContent=info.state==='needs_diagnosis'?(info.message || 'Новая модель не улучшила результат. Автоматический повтор остановлен для диагностики.')+(info.comparison?` Опорная модель: ${info.comparison.reference_successes}/${info.comparison.episodes}; новая: ${info.comparison.candidate_successes}/${info.comparison.episodes} на тех же сценах.`:''):next+eta;
   $('cycle-pause').classList.toggle('hidden',info.state!=='running');
   $('cycle-resume').classList.toggle('hidden',!info.cycle_id || !['paused','interrupted'].includes(info.state));
   $('cycle-download').classList.toggle('hidden',!info.simulation_ready); if(info.cycle_id)$('cycle-download').href='/api/cycles/'+encodeURIComponent(info.cycle_id)+'/package';

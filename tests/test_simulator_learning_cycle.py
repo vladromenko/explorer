@@ -16,6 +16,7 @@ def test_failed_final_test_adds_teaching_data_then_uses_new_independent_scenes(t
     calls=[]
     def execute(stage,options,cancelled):
         calls.append((stage,copy.deepcopy(options)))
+        if stage=='compare':return {'improved':True}
         if stage=='audit':return {'model_id':options['model_id'],'diagnostic_only':True}
         if stage in ('validate','final_validate'):
             seen=sum(name=='final_validate' for name,_ in calls)

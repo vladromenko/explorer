@@ -508,6 +508,28 @@ def stage_warm_start(source_folder, destination, target_policy):
                 source_weights_sha256=bundle["checkpoint_sha256"]["model.safetensors"], resized_tensors=resized)
 
 
+def inherited_split(folders, metadata, source_folder):
+    """Keep source training scenes out of validation after dataset expansion."""
+    source_folder=Path(source_folder)
+    train=json.loads((source_folder/'train/explorer-provenance.json').read_text())
+    validation=json.loads((source_folder/'validation/explorer-provenance.json').read_text())
+    def identity(episode):
+        seed=episode.get('seed')
+        if episode.get('source')!='simulation' or type(seed) is not int:
+            raise ValueError('Inherited simulation split requires explicit scene identities')
+        return seed
+    exposed={identity(item['episode']) for item in train['episodes']}
+    heldout={identity(item['episode']) for item in validation['episodes']}
+    if exposed & heldout:raise ValueError('Source training and validation overlap')
+    training=[];testing=[]
+    for folder,episode in zip(folders,metadata):
+        seed=identity(episode)
+        is_heldout=seed in heldout or seed not in exposed and int(hashlib.sha256(str(seed).encode()).hexdigest(),16)%5==0
+        (testing if is_heldout else training).append(folder)
+    if not testing or not training:raise ValueError('Inherited split needs independent train and validation scenes')
+    return training,testing,True
+
+
 def completed_training_steps(content, total, resumed_step=0):
     """LeRobot's resumed tqdm counts remaining updates from zero."""
     full=re.findall(r'(\d+)/'+str(total)+r'\s',content)
@@ -630,7 +652,8 @@ def train_job(job_folder, episode_folders, steps=3000, python_executable=None, d
                 shutil.copy2(shared_backbone, backbone_cache / shared_backbone.name)
             state["device"] = choose_device(device)
             check_cancelled()
-            training, validation, heldout = split_episodes(folders, [item[0] for item in provenance])
+            split_function=(lambda folders,metadata:inherited_split(folders,metadata,warm_start)) if warm_start else split_episodes
+            training, validation, heldout = split_function(folders, [item[0] for item in provenance])
             frame_counts={path:len(item[1]) for path,item in zip(folders,provenance)}
             budget=training_budget(steps,sum(frame_counts[path] for path in training),batch_size,minimum_epochs)
             if minimum_epochs and budget['expected_dataset_passes']<minimum_epochs:
@@ -647,27 +670,35 @@ def train_job(job_folder, episode_folders, steps=3000, python_executable=None, d
             if warm_start:
                 check_cancelled()
                 source_bundle, _ = read_bundle(warm_start)
-                if source_bundle.get("dataset_fingerprint") != state["dataset_fingerprint"]:
-                    raise ValueError("Warm start requires the same verified dataset fingerprint and normalization source")
+                if (source_bundle.get('skill_id'),source_bundle.get('scene_profile','baseline'))!=(skill_id,state['scene_profile']):
+                    raise ValueError('Warm start requires the same task and scene profile')
                 context = json.loads((folder / "train/explorer-provenance.json").read_text()).get("actor_context")
                 if source_bundle.get("actor_context") != context:
                     raise ValueError("Warm start requires the same actor time context")
                 if source_bundle.get("action_transform") is not None:
                     raise ValueError("Warm start requires the same action transformation")
                 state["warm_start"] = stage_warm_start(warm_start, folder / "initial-policy", config["policy"])
+                state['warm_start'].update(normalization='preserved_source_processors',
+                    source_dataset_fingerprint=source_bundle.get('dataset_fingerprint'),
+                    expanded_dataset_fingerprint=state['dataset_fingerprint'],validation_partition='inherited_scene_identities')
                 config["policy"]["pretrained_path"] = str(folder / "initial-policy")
+                config['policy'].update(optimizer_lr=5e-5,optimizer_lr_backbone=1e-5)
             write_json(folder / "train-config.json", config)
             write_json(folder / "train-config.environment.json", environment)
         interpreter = str(python_executable or sys.executable)
         env = dict(os.environ, HF_HUB_OFFLINE="1", HF_HUB_DISABLE_TELEMETRY="1", WANDB_MODE="disabled",
                    PYTORCH_ENABLE_MPS_FALLBACK="1", OMP_NUM_THREADS="2", PYTHONUNBUFFERED="1")
+        env.pop('EXPLORER_FROZEN_NORMALIZATION',None)
+        if (state.get('warm_start') or {}).get('normalization')=='preserved_source_processors':
+            env['EXPLORER_FROZEN_NORMALIZATION']=str(folder/'initial-policy')
         update("training")
         training_started=time.monotonic()
         starting_step=state.get('resumed_step',0)
         log_start = (folder/'train.log').stat().st_size if resume and (folder/'train.log').is_file() else 0
         with (folder / "train.log").open("a") as log:
             check_cancelled()
-            arguments = [interpreter, "-m", "lerobot.scripts.lerobot_train",
+            entry='simulator.train_entry' if 'EXPLORER_FROZEN_NORMALIZATION' in env and not resume_config else 'lerobot.scripts.lerobot_train'
+            arguments = [interpreter, "-m", entry,
                          "--config_path=" + str(resume_config or folder / "train-config.json")]
             if resume_config:
                 arguments.append("--resume=true")

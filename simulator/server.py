@@ -178,6 +178,8 @@ class JobRequest(BaseModel):
     hours: float = Field(default=8., gt=0, le=24)
     plan_id: str | None = None
     model_id: str | None = None
+    reference_model_id: str | None = Field(default=None,pattern='^[0-9a-f]{12}$')
+    warm_start_model_id: str | None = Field(default=None,pattern='^[0-9a-f]{12}$')
     rounds: int = Field(default=3, ge=1, le=5)
     independent_demos_required: bool = False
     resume_completed_attempts: bool = False
@@ -190,6 +192,7 @@ class JobRequest(BaseModel):
     auto_train: bool = True
     allow_partial: bool = False
     scene_profile: str = Field(default='baseline', pattern='^(baseline|sock_variants_v1)$')
+    teacher_profile: str = Field(default='legacy_v1', pattern='^(legacy_v1|planned_grasp_v3|planned_release_v4)$')
 
     @field_validator('workers')
     @classmethod
@@ -707,7 +710,7 @@ class Runtime:
                 result=self.learning_cycles.run(cycle['id'],execute_cycle,is_cancelled,
                     lambda status:progress('Доработка навыка: '+status.get('phase','подготовка'),details=jsonable(status)))
                 if result['state']=='paused':raise InterruptedError(result['reason'])
-                if result['state']=='failed':raise ValueError(result['reason'])
+                if result['state'] in ('failed','needs_diagnosis'):raise ValueError(result['reason'])
                 from .transfer import export_curriculum,sha256
                 archive=self.data_root/'exports'/f"cycle-{cycle['id']}-result.tar.gz"
                 if not archive.is_file():
@@ -722,6 +725,17 @@ class Runtime:
                 if request.goal_id:
                     goal=self.learning_goals.get(request.goal_id);goal.update(archive=result['archive'])
                     self.learning_goals.save(goal)
+            elif job['kind'] == 'compare':
+                from .model_comparison import compare_models
+                candidate=self.model_for_request(request)
+                if not request.reference_model_id:raise ValueError('Нужна опорная модель')
+                reference=self.model_for_request(JobRequest(task_id=request.task_id,model_id=request.reference_model_id))
+                def comparison_progress(status):
+                    progress(f"Сравнение на одинаковых сценах: {status['completed']} из {status['total']}",
+                        progress=100*status['completed']/status['total'],details=status)
+                result=self.on_owner(lambda:self.physics_task(lambda:compare_models(candidate,reference,
+                    list(range(request.validation_seed,request.validation_seed+10)),
+                    self.data_root/'diagnostics'/f"comparison-{job['id']}",self.env,is_cancelled,comparison_progress)))
             elif job['kind'] == 'audit':
                 from .feedback_parallel import audit
                 from .feedback_audit import feedback_candidate
@@ -788,12 +802,12 @@ class Runtime:
                 from .trial_resume import completed_attempts
                 from .explorer_model import model_metadata
                 recovered = completed_attempts(self.data_root, request.task_id, request.scene_profile,
-                                               request.seed, request.count, model_metadata()) if request.resume_completed_attempts else {}
+                                               request.seed, request.count, model_metadata(),request.teacher_profile) if request.resume_completed_attempts else {}
                 if request.scene_seeds is not None:
                     if len(request.scene_seeds)!=request.count:raise ValueError('Число сцен не совпадает с числом попыток')
                     recovered={index:found[0] for index,seed in enumerate(request.scene_seeds)
                         if (found:=completed_attempts(self.data_root,request.task_id,request.scene_profile,
-                            seed,1,model_metadata()))} if request.resume_completed_attempts else {}
+                            seed,1,model_metadata(),request.teacher_profile))} if request.resume_completed_attempts else {}
                 if recovered:
                     progress(f'Продолжение: сохранено {len(recovered)} из {request.count} попыток',
                              progress=100 * len(recovered) / request.count)
@@ -810,7 +824,8 @@ class Runtime:
                                  progress=100*status['completed']/status['total'],details=status)
                     parallel_result=collect(self.data_root,job['id'],request.count,request.seed,
                         task_id=request.task_id,scene_profile=request.scene_profile,workers=request.workers,
-                        recovered=recovered,cancelled=is_cancelled,progress=parallel_progress,seeds=request.scene_seeds)
+                        recovered=recovered,cancelled=is_cancelled,progress=parallel_progress,seeds=request.scene_seeds,
+                        teacher_profile=request.teacher_profile)
                     summaries=parallel_result['episodes']
                     indices=()
                 for index in indices:
@@ -824,7 +839,7 @@ class Runtime:
                         folder = self.data_root / 'demonstrations' / f"trial-{job['id']}-{index:04d}"
                         progress(f'Попытка {index + 1} из {request.count}', progress=100 * index / request.count)
                         scene_seed=request.scene_seeds[index] if request.scene_seeds else request.seed+index
-                        summary = self.on_owner(lambda folder=folder, scene_seed=scene_seed: self.physics_task(lambda: self.env.make_episode_trial(folder, scene_seed, progress=physics_progress, scene_profile=request.scene_profile, **({'task_id':request.task_id} if request.task_id!='sock_basket' else {}))))
+                        summary = self.on_owner(lambda folder=folder, scene_seed=scene_seed: self.physics_task(lambda: self.env.make_episode_trial(folder, scene_seed, progress=physics_progress, scene_profile=request.scene_profile, teacher_profile=request.teacher_profile, **({'task_id':request.task_id} if request.task_id!='sock_basket' else {}))))
                         summaries.append(summary)
                         current_state = self.on_owner(self.env.state)
                         with self.lock:
@@ -858,7 +873,8 @@ class Runtime:
                 folder = self.data_root / 'runs' / (request.resume_model_id or job['id'])
                 if request.independent_demos_required and len({json.loads((path/'episode.json').read_text()).get('seed',path.name) for path in episodes})<2:
                     raise ValueError('Для независимой проверки нужны хотя бы два успешных показа разных сцен')
-                result = module.train_job(job_folder=folder, episode_folders=episodes, steps=request.steps, batch_size=request.batch_size, seed=request.seed, task=task_spec(request.task_id)['title'], skill_id=request.task_id, progress=progress, cancelled=is_cancelled, minimum_epochs=request.minimum_epochs, resume=bool(request.resume_model_id))
+                warm_start=self.model_for_request(JobRequest(task_id=request.task_id,model_id=request.warm_start_model_id)) if request.warm_start_model_id and not request.resume_model_id else None
+                result = module.train_job(job_folder=folder, episode_folders=episodes, steps=request.steps, batch_size=request.batch_size, seed=request.seed, task=task_spec(request.task_id)['title'], skill_id=request.task_id, progress=progress, cancelled=is_cancelled, minimum_epochs=request.minimum_epochs, resume=bool(request.resume_model_id),warm_start=warm_start)
                 if result.get('state') == 'cancelled':
                     raise InterruptedError(result.get('error') or 'Задание остановлено')
                 if result.get('state') == 'failed':

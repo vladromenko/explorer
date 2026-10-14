@@ -5,7 +5,7 @@ from pathlib import Path
 from .learning import inspect_episode
 
 
-def completed_attempts(root, task_id, profile, first_seed, count, provenance):
+def completed_attempts(root, task_id, profile, first_seed, count, provenance, teacher_profile='legacy_v1'):
     profile = profile if task_id in ('sock_basket', 'cloth_basket') else 'baseline'
     candidates = []
     for path in (Path(root) / 'demonstrations').glob('trial-*/episode.json'):
@@ -20,6 +20,7 @@ def completed_attempts(root, task_id, profile, first_seed, count, provenance):
                        and episode.get('scene_profile', 'baseline') == profile
                        and episode.get('source') == 'simulation'
                        and episode.get('generator') == 'ground_truth_teacher'
+                       and episode.get('teacher_profile','legacy_v1') == teacher_profile
                        and episode.get('model_provenance') == provenance
                        and type(episode.get('finished_at')) in (int, float)
                        and type(episode.get('success')) is bool
