@@ -42,9 +42,9 @@ def recorded_failure_summary(folder):
                 results=results,diagnostic_only=True)
 
 
-def feedback_candidate(source, destination, execution_steps=5):
+def feedback_candidate(source, destination, execution_steps=5, ensemble=False):
     """Copy a finished checkpoint and invalidate acceptance of its old execution."""
-    if type(execution_steps) is not int or not 2<=execution_steps<=20:
+    if type(execution_steps) is not int or not 1<=execution_steps<=20 or execution_steps==1 and not ensemble:
         raise ValueError('Feedback execution steps must be between 2 and 20')
     source, destination = Path(source).resolve(), Path(destination).resolve()
     bundle, checkpoint = read_bundle(source)
@@ -63,6 +63,7 @@ def feedback_candidate(source, destination, execution_steps=5):
         path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(checkpoint/name, path)
     config['n_action_steps'] = execution_steps
+    config['temporal_ensemble_coeff'] = .01 if ensemble else None
     write_json(target/'config.json',config)
     # Old offline and physics reports describe different execution settings.
     # Preserve provenance, but require a fresh rollout for this candidate.
@@ -89,14 +90,14 @@ def paired_audit(model_folder, seeds, destination, modes=('queue20','queue5','en
 
     if not seeds or len(set(seeds))!=len(seeds) or any(type(seed) is not int or seed<0 for seed in seeds):
         raise ValueError('Use distinct nonnegative diagnostic scene seeds')
-    if not modes or any(mode not in ('queue20','queue5','ensemble1') for mode in modes):
+    if not modes or any(mode not in ('queue20','queue10','queue5','ensemble1') for mode in modes):
         raise ValueError('Unknown feedback comparison mode')
     destination=Path(destination)
     if destination.exists():
         raise ValueError('Do not overwrite diagnostic evidence')
     bundle, _=read_bundle(model_folder)
-    if bundle.get('skill_id') not in ('sock_basket','cloth_basket'):
-        raise ValueError('This audit uses the sock/cloth 80-second evaluation budget')
+    from .curriculum import task_spec
+    frame_limit=4800 if task_spec(bundle['skill_id'])['rooms'] else 1600
     if bundle.get('chunk_size')!=20 or bundle.get('temporal_ensemble_coeff') is not None:
         raise ValueError('Comparison requires a bounded 20-step ACT checkpoint')
     torch.set_num_threads(2)
@@ -110,7 +111,7 @@ def paired_audit(model_folder, seeds, destination, modes=('queue20','queue5','en
     try:
         for seed in seeds:
             for mode in modes:
-                actor.policy.config.n_action_steps=1 if mode=='ensemble1' else 5 if mode=='queue5' else 20
+                actor.policy.config.n_action_steps={'queue20':20,'queue10':10,'queue5':5,'ensemble1':1}[mode]
                 actor.policy.config.temporal_ensemble_coeff=.01 if mode=='ensemble1' else None
                 if mode=='ensemble1':
                     actor.policy.temporal_ensembler=ACTTemporalEnsembler(.01,20)
@@ -118,14 +119,19 @@ def paired_audit(model_folder, seeds, destination, modes=('queue20','queue5','en
                 env.reset(seed=seed,options={'task_id':bundle.get('skill_id','sock_basket'),
                                            'scene_profile':report['scene_profile']})
                 started=time.monotonic()
+                preview_folder=destination.parent/'views'/destination.stem
+                preview_folder.mkdir(parents=True,exist_ok=True)
+                overview_at=-1.
                 grasp_frames=0
                 first_grasp=None
                 first_lift=None
                 commands=[]
                 error=None
                 try:
-                    for frame in range(1600):
+                    for frame in range(frame_limit):
                         obs=env._observation()
+                        from .worker_views import capture_overview
+                        overview_at=capture_overview(env,preview_folder,overview_at)
                         command=np.clip(actor(obs['state'],obs['wrist']),LOW,HIGH)
                         _,_,_,_,info=env.step(command,applied=True)
                         commands.append(env.command[:6].copy())

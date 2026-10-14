@@ -240,12 +240,13 @@ class LearningGoals:
             options=options, night_plan_id=None, physical_ready=False)
         return self.save(value)
 
-    def list(self, batches):
+    def list(self, batches,cycles=None):
         output=[]
         for path in self.folder.glob('*.json'):
             try:
                 goal=self.get(path.stem)
                 batch=next((item for item in batches if item['id']==goal.get('night_plan_id')),None)
+                cycle=next((item for item in (cycles or []) if item['id']==goal.get('learning_cycle_id')),None)
                 if batch:
                     goal['batch_state']=batch['state']
                     goal['results']=[dict(task_id=item['task_id'], title=TASKS[item['task_id']]['title'],
@@ -255,6 +256,11 @@ class LearningGoals:
                     complete=batch['state']=='complete'
                     passed=complete and all(item['qualified'] for item in goal['results'])
                     goal['state']=('simulation_checked' if goal['plan']['fully_supported'] else 'partial_simulation_checked') if passed else 'needs_more_training' if complete else batch['state']
+                if cycle:
+                    goal['state']=('simulation_checked' if goal['plan']['fully_supported'] else 'partial_simulation_checked') if cycle['state']=='ready_for_transfer' else cycle['state']
+                    goal['results']=[dict(task_id=item['task_id'],title=TASKS[item['task_id']]['title'],
+                        qualified=item.get('simulation_qualified',False),successes=item.get('validation',{}).get('successes'),
+                        episodes=item.get('validation',{}).get('episodes'),error=cycle.get('reason')) for item in cycle['tasks']]
                 goal['physical_ready']=False
                 output.append(goal)
             except (OSError,ValueError,KeyError,TypeError):

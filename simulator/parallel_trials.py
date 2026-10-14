@@ -73,11 +73,14 @@ def stop_children(active):
 
 
 def collect(root, job_id, count, first_seed, task_id='sock_basket', scene_profile='sock_variants_v1',
-            workers=4, recovered=None, cancelled=None, progress=None, attempt_timeout_s=900):
+            workers=4, recovered=None, cancelled=None, progress=None, attempt_timeout_s=900, seeds=None):
     if type(workers) is not int or workers not in (1,4,8):
         raise ValueError('Choose one, four or eight independent workers')
     if type(count) is not int or not 1<=count<=1000 or type(first_seed) is not int or first_seed<0:
         raise ValueError('Invalid parallel attempt range')
+    seeds=list(seeds) if seeds is not None else list(range(first_seed,first_seed+count))
+    if len(seeds)!=count or len(set(seeds))!=count or any(type(seed) is not int or not 0<=seed<2**31 for seed in seeds):
+        raise ValueError('Choose distinct valid scene seeds for every attempt')
     if not job_id or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_' for c in job_id):
         raise ValueError('Invalid parallel job identity')
     from .curriculum import task_spec
@@ -108,7 +111,7 @@ def collect(root, job_id, count, first_seed, task_id='sock_basket', scene_profil
                     raise ValueError('Do not overwrite an existing attempt')
                 result=coordination/f'{index:04d}-result.json'
                 spec=coordination/f'{index:04d}-request.json'
-                save(spec,dict(folder=str(folder),result=str(result),seed=first_seed+index,
+                save(spec,dict(folder=str(folder),result=str(result),seed=seeds[index],
                                task_id=task_id,scene_profile=scene_profile))
                 log=(coordination/f'{index:04d}.log').open('wb')
                 env=dict(os.environ,OMP_NUM_THREADS='1',OPENBLAS_NUM_THREADS='1',
@@ -128,7 +131,7 @@ def collect(root, job_id, count, first_seed, task_id='sock_basket', scene_profil
                         raise RuntimeError(f'Worker {index} failed; see {coordination}/{index:04d}.log')
                     output=json.loads(item['result'].read_text())
                     episode=output['episode']
-                    if episode.get('seed')!=first_seed+index or episode.get('attempt_completed') is not True:
+                    if episode.get('seed')!=seeds[index] or episode.get('attempt_completed') is not True:
                         raise RuntimeError('Worker result does not match its assigned attempt')
                     manifests[index]=episode
                     metadata[index]={k:output[k] for k in ('wall_s','peak_rss_bytes','trajectory_sha256','pid')}

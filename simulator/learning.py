@@ -269,7 +269,7 @@ def training_config(folder, steps, device, batch_size=16, seed=1000):
             normalization_mapping={"VISUAL": "MEAN_STD", "STATE": "MEAN_STD", "ACTION": "MEAN_STD", "ENV": "IDENTITY"},
             output_features={"action": {"type": "ACTION", "shape": [9]}}),
         output_dir=str(folder / "model"), batch_size=batch_size, num_workers=2, steps=steps,
-        save_freq=min(steps, max(100, steps//10)), log_freq=min(10, steps), env_eval_freq=0,
+        save_freq=min(steps, max(100, min(1000,steps//10))), log_freq=min(10, steps), env_eval_freq=0,
         wandb=dict(enable=False), seed=seed)
 
 
@@ -633,6 +633,8 @@ def train_job(job_folder, episode_folders, steps=3000, python_executable=None, d
             training, validation, heldout = split_episodes(folders, [item[0] for item in provenance])
             frame_counts={path:len(item[1]) for path,item in zip(folders,provenance)}
             budget=training_budget(steps,sum(frame_counts[path] for path in training),batch_size,minimum_epochs)
+            if minimum_epochs and budget['expected_dataset_passes']<minimum_epochs:
+                raise ValueError('Объём данных превышает бюджет полных проходов; качество обучения не снижено')
             steps=budget['effective_steps']
             state.update(steps=steps,training_budget=budget)
             export_dataset(training, folder / "train", "explorer/simulator-train", task, cancelled=cancelled)
@@ -660,6 +662,8 @@ def train_job(job_folder, episode_folders, steps=3000, python_executable=None, d
         env = dict(os.environ, HF_HUB_OFFLINE="1", HF_HUB_DISABLE_TELEMETRY="1", WANDB_MODE="disabled",
                    PYTORCH_ENABLE_MPS_FALLBACK="1", OMP_NUM_THREADS="2", PYTHONUNBUFFERED="1")
         update("training")
+        training_started=time.monotonic()
+        starting_step=state.get('resumed_step',0)
         log_start = (folder/'train.log').stat().st_size if resume and (folder/'train.log').is_file() else 0
         with (folder / "train.log").open("a") as log:
             check_cancelled()
@@ -681,6 +685,10 @@ def train_job(job_folder, episode_folders, steps=3000, python_executable=None, d
                     completed = completed_training_steps(content,steps,state.get('resumed_step',0))
                     state["steps_completed"] = max(state.get("steps_completed", 0), completed)
                     state["progress"] = round(90 * state["steps_completed"] / steps, 1)
+                    elapsed=time.monotonic()-training_started
+                    updates=state['steps_completed']-starting_step
+                    if updates>=100:
+                        state['eta_s']=round((steps-state['steps_completed'])*elapsed/updates)
                 except OSError:
                     pass
                 update("training")

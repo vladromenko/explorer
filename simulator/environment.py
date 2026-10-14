@@ -387,9 +387,10 @@ class ExplorerEnv(gym.Env):
         manifest['domain_variation'] = self.domain_variation
         manifest['attempt_completed'] = False
         steps = 0
+        overview_at = -1.
         handle = (folder / "samples.jsonl").open("w")
         def tick(action):
-            nonlocal steps
+            nonlocal steps, overview_at
             self.set_manual(action)
             row = self.capture_sample()
             row["sample_contract_sha256"] = CONTRACT_SHA256
@@ -402,6 +403,8 @@ class ExplorerEnv(gym.Env):
                 ("jaw_center_m", "sock_center_m", "base_pose")}
             row["simulator_diagnostics"]["placement"] = getattr(self, "placement_diagnostics", {})
             Image.fromarray(self.render_rgb()).save(folder / row["wrist_rgb"], quality=92)
+            from .worker_views import capture_overview
+            overview_at = capture_overview(self, folder, overview_at)
             row["requested_action"] = np.asarray(action, float).tolist()
             self.step(action, applied=policy is not None)
             # The learner's target is the endpoint actually applied after the

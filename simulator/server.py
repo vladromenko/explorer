@@ -182,6 +182,8 @@ class JobRequest(BaseModel):
     independent_demos_required: bool = False
     resume_completed_attempts: bool = False
     resume_model_id: str | None = Field(default=None,pattern='^[0-9a-f]{12}$')
+    cycle_id: str | None = Field(default=None,pattern='^[0-9a-f]{12}$')
+    scene_seeds: list[int] | None = Field(default=None,max_length=1000)
     validation_seed: int = Field(default=10000,ge=0,le=2**31-1001)
     request_text: str | None = Field(default=None, min_length=1, max_length=4000)
     goal_id: str | None = Field(default=None, pattern='^[0-9a-f]{12}$')
@@ -193,6 +195,13 @@ class JobRequest(BaseModel):
     @classmethod
     def valid_workers(cls,value):
         if value not in (1,4,8):raise ValueError('Выберите один, четыре или восемь исполнителей')
+        return value
+
+    @field_validator('scene_seeds')
+    @classmethod
+    def valid_scene_seeds(cls,value):
+        if value is not None and (len(set(value))!=len(value) or any(not 0<=seed<2**31 for seed in value)):
+            raise ValueError('Нужны разные допустимые номера сцен')
         return value
 
     @field_validator('episode_ids')
@@ -239,6 +248,8 @@ class Runtime:
         self.log_file = (self.data_root / 'logs' / f"session-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}-{secrets.token_hex(3)}.jsonl").open('a', encoding='utf8')
         self.latest_package = None
         self.night_queue = NightQueue(self.data_root)
+        from .learning_cycle import LearningCycles
+        self.learning_cycles = LearningCycles(self.data_root)
         self.learning_goals = LearningGoals(self.data_root)
         self.language = LocalLanguageModel(self.data_root)
         self.latest_job_folder = None
@@ -519,10 +530,13 @@ class Runtime:
             self.log(f'Демонстрация сохранена · {self.record_frames} кадров')
             return meta
 
-    def snapshot(self):
+    def snapshot(self,compact=False):
         with self.lock:
             batches = self.night_queue.list()
-            return jsonable({'state': self.cached_state, 'reward': self.reward, 'info': self.info, 'done': self.done, 'paused': self.paused, 'error': self.error, 'recording': bool(self.record_file), 'record_frames': self.record_frames, 'jobs': self.jobs[-20:], 'logs': self.logs[-40:], 'model': self.model_info, 'night_batches':batches, 'learning_goals':self.learning_goals.list(batches), 'package_available': self.latest_package is not None, 'data_root': self.data_root, 'depth_available': 'depth' in self.images, 'frame_age': round(time.monotonic() - self.frame_at, 2) if self.frame_at else None})
+            snapshot={'state': self.cached_state, 'reward': self.reward, 'info': self.info, 'done': self.done, 'paused': self.paused, 'error': self.error, 'recording': bool(self.record_file), 'record_frames': self.record_frames, 'jobs': self.jobs[-20:], 'logs': self.logs[-40:], 'model': self.model_info, 'night_batches':batches, 'learning_goals':self.learning_goals.list(batches,cycles=self.learning_cycles.list()), 'learning_cycles':self.learning_cycles.list(), 'package_available': self.latest_package is not None, 'data_root': self.data_root, 'depth_available': 'depth' in self.images, 'frame_age': round(time.monotonic() - self.frame_at, 2) if self.frame_at else None}
+            from .learning_status import learning_status,compact_value
+            snapshot['learning_status']=learning_status(self.data_root,snapshot)
+            return jsonable(compact_value(snapshot) if compact else snapshot)
 
     def episodes(self):
         output = []
@@ -629,11 +643,12 @@ class Runtime:
                     raise InterruptedError('Разбор остановлен; просьба сохранена')
                 if request.auto_train and goal['plan']['task_ids'] and (goal['plan']['fully_supported'] or request.allow_partial):
                     job['message'] = 'Учебный план разобран; выполняются попытки, обучение и проверка'
-                    child = dict(id=secrets.token_hex(6),kind='night',status='running',progress=0,message='Запуск…')
+                    child_kind='night' if goal.get('night_plan_id') and not goal.get('learning_cycle_id') else 'cycle'
+                    child = dict(id=secrets.token_hex(6),kind=child_kind,status='running',progress=0,message='Запуск…')
                     with self.lock:
                         self.jobs.append(child)
                     values = dict(goal['options'],goal_id=goal['id'],
-                        task_ids=goal['plan']['task_ids'],plan_id=goal.get('night_plan_id'))
+                        task_ids=goal['plan']['task_ids'],plan_id=goal.get('night_plan_id'),cycle_id=goal.get('learning_cycle_id'),allow_partial=request.allow_partial)
                     self.run_job(child,JobRequest(**values),extra_cancelled=is_cancelled)
                     goal['state'] = 'finished' if child['status']=='complete' else child['status']
                     goal['error'] = None if child['status']=='complete' else child['message']
@@ -641,12 +656,94 @@ class Runtime:
                         goal['archive'] = child['result']['archive']
                     # The child linked its persistent batch before beginning.
                     goal['night_plan_id'] = self.learning_goals.get(goal['id']).get('night_plan_id')
+                    goal['learning_cycle_id'] = self.learning_goals.get(goal['id']).get('learning_cycle_id')
                     self.learning_goals.save(goal)
                     if child['status']=='cancelled':
                         raise InterruptedError(child['message'])
                     if child['status']!='complete':
                         raise ValueError(child['message'])
                 result = self.learning_goals.get(goal['id'])
+            elif job['kind'] == 'cycle':
+                if request.cycle_id:
+                    cycle=self.learning_cycles.get(request.cycle_id)
+                else:
+                    models={}
+                    for task_id in request.task_ids:
+                        folder=self.latest_model(task_id)
+                        if folder:
+                            bundle,_=(self.learning or importlib.import_module('simulator.learning')).read_bundle(folder)
+                            if task_id not in ('sock_basket','cloth_basket') or bundle.get('scene_profile','baseline')==request.scene_profile:
+                                models[task_id]=folder.name
+                    capacity=self.data_root/'parallel-capacity.json'
+                    assessed=json.loads(capacity.read_text()).get('assessment',{}) if capacity.is_file() else {}
+                    workers=request.workers if assessed.get('fits') and assessed.get('workers',1)>=request.workers else 1
+                    cycle=self.learning_cycles.create(request.task_ids,request.count,request.hours,workers,
+                        request.scene_profile,models,request.goal_id,steps=request.steps)
+                job['cycle_id']=cycle['id']
+                if request.goal_id:
+                    goal=self.learning_goals.get(request.goal_id)
+                    if set(goal['plan']['task_ids'])!={task['task_id'] for task in cycle['tasks']}:
+                        raise ValueError('Цикл относится к другой учебной просьбе')
+                    if not goal['plan']['fully_supported'] and not request.allow_partial:
+                        raise ValueError('Подтвердите обучение доступной части просьбы')
+                    goal.update(learning_cycle_id=cycle['id'],state='running')
+                    self.learning_goals.save(goal)
+                def execute_cycle(stage,options,cancelled):
+                    values=dict(options);identifier=values.pop('job_id')
+                    kind='validate' if stage=='final_validate' else stage
+                    folder=self.data_root/'runs'/identifier
+                    if kind=='train' and (folder/'job.json').is_file():
+                        if (folder/'model/checkpoints/last').exists():
+                            values['resume_model_id']=identifier
+                            values['episode_ids']=json.loads((folder/'job.json').read_text())['episodes']
+                        else:identifier=secrets.token_hex(6)
+                    values['resume_completed_attempts']=kind=='trials'
+                    child=dict(id=identifier,kind=kind,status='running',progress=0,message='Запуск…')
+                    with self.lock:self.jobs.append(child)
+                    self.run_job(child,JobRequest(**values),extra_cancelled=cancelled)
+                    if child['status']=='cancelled':raise InterruptedError(child['message'])
+                    if child['status']!='complete':raise ValueError(child['message'])
+                    return child['result']
+                result=self.learning_cycles.run(cycle['id'],execute_cycle,is_cancelled,
+                    lambda status:progress('Доработка навыка: '+status.get('phase','подготовка'),details=jsonable(status)))
+                if result['state']=='paused':raise InterruptedError(result['reason'])
+                if result['state']=='failed':raise ValueError(result['reason'])
+                from .transfer import export_curriculum,sha256
+                archive=self.data_root/'exports'/f"cycle-{cycle['id']}-result.tar.gz"
+                if not archive.is_file():
+                    exported=export_curriculum(dict(id=cycle['id'],tasks=[dict(task_id=task['task_id'],state='complete',
+                        error=None,stages=dict(export=task['archive'],validate=task['validation'])) for task in result['tasks']]),archive)
+                    result['archive']=exported;self.learning_cycles.save(result)
+                elif not result.get('archive'):
+                    result['archive']=dict(path=str(archive),sha256=sha256(archive),tasks=len(result['tasks']),
+                                           policies=len(result['tasks']),automatic_execution_allowed=False)
+                    self.learning_cycles.save(result)
+                self.latest_package=archive
+                if request.goal_id:
+                    goal=self.learning_goals.get(request.goal_id);goal.update(archive=result['archive'])
+                    self.learning_goals.save(goal)
+            elif job['kind'] == 'audit':
+                from .feedback_parallel import audit
+                from .feedback_audit import feedback_candidate
+                from .learning import read_bundle
+                source=self.model_for_request(request);bundle,checkpoint=read_bundle(source)
+                config=json.loads((checkpoint/'config.json').read_text())
+                if config.get('chunk_size')!=20 or config.get('temporal_ensemble_coeff') is not None:
+                    result=dict(model_id=source.name,diagnostic_only=True,message='Сохранённая настройка исполнения; нужна новая проверка')
+                else:
+                    workers=request.workers;capacity=self.data_root/'parallel-capacity.json'
+                    evidence=json.loads(capacity.read_text()).get('assessment',{}) if capacity.is_file() else {}
+                    if workers>1 and (not evidence.get('fits') or evidence.get('workers',1)<workers):workers=1
+                    tuning=audit(source,list(range(request.validation_seed,request.validation_seed+10)),
+                        self.data_root/'feedback-audits'/job['id'],workers,is_cancelled,
+                        lambda status:progress(f"Обратная связь: {status['completed']} из {status['total']} сцен",
+                            progress=100*status['completed']/status['total'],details=status))
+                    mode=tuning['decision']['mode'];candidate=source
+                    execution_steps={'queue20':20,'queue5':5,'queue10':10,'ensemble1':1}[mode]
+                    if config.get('n_action_steps')!=execution_steps:
+                        candidate=self.data_root/'runs'/secrets.token_hex(6)
+                        feedback_candidate(source,candidate,execution_steps,ensemble=mode=='ensemble1')
+                    result=dict(model_id=candidate.name,tuning=tuning['decision'],audit_path=str(self.data_root/'feedback-audits'/job['id']/'result.json'),diagnostic_only=True)
             elif job['kind'] == 'night':
                 if request.plan_id:
                     plan = self.night_queue.get(request.plan_id)
@@ -692,6 +789,11 @@ class Runtime:
                 from .explorer_model import model_metadata
                 recovered = completed_attempts(self.data_root, request.task_id, request.scene_profile,
                                                request.seed, request.count, model_metadata()) if request.resume_completed_attempts else {}
+                if request.scene_seeds is not None:
+                    if len(request.scene_seeds)!=request.count:raise ValueError('Число сцен не совпадает с числом попыток')
+                    recovered={index:found[0] for index,seed in enumerate(request.scene_seeds)
+                        if (found:=completed_attempts(self.data_root,request.task_id,request.scene_profile,
+                            seed,1,model_metadata()))} if request.resume_completed_attempts else {}
                 if recovered:
                     progress(f'Продолжение: сохранено {len(recovered)} из {request.count} попыток',
                              progress=100 * len(recovered) / request.count)
@@ -708,7 +810,7 @@ class Runtime:
                                  progress=100*status['completed']/status['total'],details=status)
                     parallel_result=collect(self.data_root,job['id'],request.count,request.seed,
                         task_id=request.task_id,scene_profile=request.scene_profile,workers=request.workers,
-                        recovered=recovered,cancelled=is_cancelled,progress=parallel_progress)
+                        recovered=recovered,cancelled=is_cancelled,progress=parallel_progress,seeds=request.scene_seeds)
                     summaries=parallel_result['episodes']
                     indices=()
                 for index in indices:
@@ -721,7 +823,8 @@ class Runtime:
                     else:
                         folder = self.data_root / 'demonstrations' / f"trial-{job['id']}-{index:04d}"
                         progress(f'Попытка {index + 1} из {request.count}', progress=100 * index / request.count)
-                        summary = self.on_owner(lambda folder=folder, index=index: self.physics_task(lambda: self.env.make_episode_trial(folder, request.seed + index, progress=physics_progress, scene_profile=request.scene_profile, **({'task_id':request.task_id} if request.task_id!='sock_basket' else {}))))
+                        scene_seed=request.scene_seeds[index] if request.scene_seeds else request.seed+index
+                        summary = self.on_owner(lambda folder=folder, scene_seed=scene_seed: self.physics_task(lambda: self.env.make_episode_trial(folder, scene_seed, progress=physics_progress, scene_profile=request.scene_profile, **({'task_id':request.task_id} if request.task_id!='sock_basket' else {}))))
                         summaries.append(summary)
                         current_state = self.on_owner(self.env.state)
                         with self.lock:
@@ -811,6 +914,14 @@ class Runtime:
                 result['task_id'] = request.task_id
             elif job['kind'] == 'deploy':
                 archive = self.latest_package
+                if request.cycle_id:
+                    saved=self.learning_cycles.get(request.cycle_id)
+                    if saved['state']!='ready_for_transfer' or not saved.get('archive'):
+                        raise ValueError('Цикл ещё не завершил независимые проверки')
+                    from .transfer import sha256
+                    archive=Path(saved['archive']['path']).resolve()
+                    if not archive.is_relative_to(self.data_root/'exports') or sha256(archive)!=saved['archive']['sha256']:
+                        raise ValueError('Пакет цикла изменён или отсутствует')
                 if request.goal_id:
                     saved = self.learning_goals.get(request.goal_id).get('archive')
                     if not saved:
@@ -903,8 +1014,8 @@ def create_app(env_factory=None, data_root=DATA_ROOT, learning_module=None, star
         return {'token': request.app.state.runtime.token, 'joint_names': JOINT_NAMES, 'simulation_only': True}
 
     @app.get('/api/state')
-    def state(request: Request):
-        return request.app.state.runtime.snapshot()
+    def state(request: Request,compact:bool=False):
+        return request.app.state.runtime.snapshot(compact=compact)
 
     @app.get('/api/episodes')
     def episodes(request: Request):
@@ -979,7 +1090,7 @@ def create_app(env_factory=None, data_root=DATA_ROOT, learning_module=None, star
 
     @app.post('/api/jobs/{kind}')
     def job(kind: str, command: JobRequest, request: Request):
-        if kind not in {'trials', 'train', 'validate', 'export', 'night', 'deploy', 'assistant'}:
+        if kind not in {'trials', 'train', 'validate', 'export', 'night', 'cycle', 'deploy', 'assistant'}:
             raise HTTPException(404, 'Неизвестное задание')
         return request.app.state.runtime.launch_job(kind, command)
 
@@ -987,6 +1098,20 @@ def create_app(env_factory=None, data_root=DATA_ROOT, learning_module=None, star
     def night_readiness(request: Request):
         from .preflight import night_readiness
         return night_readiness(request.app.state.runtime.data_root)
+
+    @app.get('/api/cycles/{identifier}/package')
+    def cycle_package(identifier:str,request:Request):
+        from .learning import sha256
+        runtime=request.app.state.runtime
+        try:
+            cycle=runtime.learning_cycles.get(identifier)
+            if cycle['state']!='ready_for_transfer' or not cycle.get('archive'):
+                raise ValueError('Независимые проверки ещё не завершены')
+            saved=cycle['archive'];path=Path(saved['path']).resolve()
+            if not path.is_relative_to(runtime.data_root/'exports') or not path.is_file() or sha256(path)!=saved['sha256']:
+                raise ValueError('Пакет изменён или отсутствует')
+            return FileResponse(path,filename=path.name,media_type='application/gzip')
+        except (OSError,ValueError,KeyError) as exc:raise HTTPException(404,str(exc)) from exc
 
     @app.get('/api/package')
     def package(request: Request):
@@ -1009,6 +1134,25 @@ def create_app(env_factory=None, data_root=DATA_ROOT, learning_module=None, star
             return FileResponse(path, filename=path.name, media_type='application/gzip')
         except (OSError,ValueError,KeyError) as exc:
             raise HTTPException(404,str(exc)) from exc
+
+    @app.get('/api/learning-preview.jpg')
+    def learning_preview(request:Request):
+        runtime=request.app.state.runtime
+        active=next((job for job in reversed(runtime.jobs) if job.get('status')=='running' and job['kind'] in ('trials','train','validate','audit')),None)
+        folder=None
+        if active and active['kind']=='trials':
+            attempts=(active.get('details') or {}).get('active_attempts',[])
+            index=(attempts[0]-1) if attempts else 0
+            folder=runtime.data_root/'demonstrations'/f"trial-{active['id']}-{index:04d}"/'frames'
+        elif active and active['kind']=='train':
+            episodes=(active.get('details') or {}).get('episodes',[])
+            if episodes and isinstance(episodes,list):folder=runtime.data_root/'demonstrations'/episodes[0]/'frames'
+        if folder and folder.is_relative_to(runtime.data_root/'demonstrations'):
+            frames=sorted(folder.glob('*.jpg'))
+            if frames:return FileResponse(frames[-1],media_type='image/jpeg')
+        content=runtime.images.get('wrist')
+        if content is None:raise HTTPException(503,'Кадр готовится')
+        return Response(content,media_type='image/jpeg')
 
     @app.get('/{camera}.jpg')
     def camera_image(camera: str, request: Request):
@@ -1041,6 +1185,8 @@ def main():
     parser.add_argument('--port', type=int, default=8766)
     args = parser.parse_args()
     import uvicorn
+    from .worker_views import start
+    start(args.port, STATIC_ROOT / 'learning-live')
     uvicorn.run(app, host='127.0.0.1', port=args.port, access_log=False)
 
 

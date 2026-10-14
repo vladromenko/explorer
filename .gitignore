@@ -28,3 +28,6 @@ releases/*/sessions/
 
 # MuJoCo numerical diagnostics are local runtime output.
 /MUJOCO_LOG.TXT
+
+# Live simulation views are ephemeral images, never source assets.
+/simulator/static/learning-live/

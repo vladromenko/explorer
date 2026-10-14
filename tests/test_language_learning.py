@@ -108,18 +108,21 @@ def test_plan_only_and_missing_parts_do_not_start_training(tmp_path):
     runtime.language.plan=Mock(return_value=(intent(task_ids=['cookie_delivery'],supported=False,
         requested_handover='human_hand',missing=['Нет передачи в ладонь']),{'model':'test'}))
     runtime.night_queue.create=Mock(side_effect=AssertionError('Must not train without the partial choice'))
+    runtime.learning_cycles.create=Mock(side_effect=AssertionError('Must not train without the partial choice'))
     try:
         job=dict(id='b'*12,kind='assistant',status='running')
         runtime.run_job(job,JobRequest(request_text='Печенье в руку'))
         assert job['status']=='complete'
         assert job['result']['state']=='needs_decision'
         runtime.night_queue.create.assert_not_called()
+        runtime.learning_cycles.create.assert_not_called()
         # Explicitly authorizing the available part reaches the actual trainer.
-        runtime.night_queue.create.side_effect=ValueError('Reached training')
+        runtime.learning_cycles.create.side_effect=ValueError('Reached training')
         selected=dict(id='c'*12,kind='assistant',status='running')
         runtime.run_job(selected,JobRequest(goal_id=job['goal_id'],allow_partial=True))
         assert selected['status']=='failed' and 'Reached training' in selected['message']
-        runtime.night_queue.create.assert_called_once()
+        runtime.learning_cycles.create.assert_called_once()
+        runtime.night_queue.create.assert_not_called()
     finally:
         runtime.close()
 

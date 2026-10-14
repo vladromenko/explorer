@@ -29,7 +29,7 @@ def test_transition_never_interrupts_active_round_or_recording(tmp_path):
     moving['state']={'command':[90.]*6+[.1,0.,0.]}
     for value in (snapshot('running'),snapshot(active=True),snapshot(recording=True),snapshot('paused'),moving):
         assert module.transition_ready(value,'0a859bcd5239')[0] is False
-        with patch.object(module,'get',return_value=value),patch.object(module,'benchmark') as bench,patch.object(module.os,'kill') as kill:
+        with patch.object(module,'DATA',tmp_path),patch.object(module,'get',return_value=value),patch.object(module,'benchmark') as bench,patch.object(module.os,'kill') as kill:
             assert module.run('0a859bcd5239')['state']=='waiting'
         bench.assert_not_called()
         kill.assert_not_called()
