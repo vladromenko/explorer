@@ -1,0 +1,62 @@
+import json
+import time
+
+from test_simulator_server import client,auth
+
+
+def wait(connection,identifier):
+    deadline=time.monotonic()+3
+    while time.monotonic()<deadline:
+        job=next(j for j in connection.get('/api/state').json()['jobs'] if j['id']==identifier)
+        if job['status']!='running':return job
+        time.sleep(.01)
+    raise AssertionError('Job did not finish')
+
+
+def test_short_skill_preparation_does_not_launch_act_or_export(tmp_path,monkeypatch):
+    calls=[]
+    def prepare(root,identifier,task,cancelled,progress):
+        calls.append((identifier,task))
+        folder=root/'skill-workshops'/identifier;folder.mkdir(parents=True)
+        state=dict(id=identifier,task_id=task,created=time.time(),state='prepared',simulation_ready=False,physical_ready=False)
+        (folder/'state.json').write_text(json.dumps(state))
+        return state
+    monkeypatch.setattr('simulator.skill_workshop.prepare',prepare)
+    with client(tmp_path) as connection:
+        response=connection.post('/api/jobs/skills',json={'task_ids':['toy_box']},headers=auth(connection))
+        assert response.status_code==200
+        job=wait(connection,response.json()['id'])
+        assert job['status']=='complete'
+        assert job['result']['simulation_ready'] is False
+        assert job['result']['automatic_execution_allowed'] is False
+        assert 'ещё не принято' in job['message']
+        state=connection.get('/api/state?compact=true').json()
+        assert state['skill_workshops'][0]['task_id']=='toy_box'
+        assert not state['learning_cycles'] and not list((tmp_path/'exports').glob('*.tar.gz'))
+        assert len(calls)==1 and all(j['kind']=='skills' for j in state['jobs'])
+
+
+def test_diagnostic_trial_does_not_report_task_success_as_job_completion(tmp_path,monkeypatch):
+    seen=[]
+    def trial(env,root,identifier,task,seed,profile,cancelled,progress):
+        seen.append((task,seed,profile))
+        return dict(state='diagnosed',success=False,reason='Удержание не видно',simulation_ready=False)
+    monkeypatch.setattr('simulator.skill_workshop.trial',trial)
+    with client(tmp_path) as connection:
+        response=connection.post('/api/jobs/skill_trial',json={'task_id':'sock_basket','seed':123,'scene_profile':'sock_variants_v1'},headers=auth(connection))
+        job=wait(connection,response.json()['id'])
+        assert job['status']=='complete' and job['result']['success'] is False
+        assert 'Удержание не видно' in job['message'] and job['message']!='Готово'
+        assert seen==[('sock_basket',123,'sock_variants_v1')]
+
+
+def test_resume_preserves_workshop_identity(tmp_path,monkeypatch):
+    seen=[]
+    def prepare(root,identifier,*args):
+        seen.append(identifier)
+        return dict(state='prepared',simulation_ready=False)
+    monkeypatch.setattr('simulator.skill_workshop.prepare',prepare)
+    with client(tmp_path) as connection:
+        response=connection.post('/api/jobs/skills',json={'task_ids':['sock_basket'],'workshop_id':'a'*12},headers=auth(connection))
+        assert wait(connection,response.json()['id'])['status']=='complete'
+        assert seen==['a'*12]

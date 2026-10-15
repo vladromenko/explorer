@@ -3,7 +3,7 @@ const $ = id => document.getElementById(id);
 let depthView = false;
 let token = '', session = null, latest = null, selectedJoint = 0, arm = Array(6).fill(0), keys = new Set(), held = {arm: Array(6).fill(0), base: [0, 0, 0]}, recording = false, busy = false, gamepadButtons = [];
 const jointNames = ['Поворот основания', 'Подъём плеча', 'Локоть', 'Наклон кисти', 'Поворот кисти', 'Захват'];
-const jobNames = {compare:'Сравнение моделей на одинаковых сценах',cycle:'Доработка до готовности',audit:'Настройка обратной связи',trials: 'Попытки', train: 'Обучение ACT', validate: 'Проверка', export: 'Пакет переноса', night: 'Автоматическое обучение', deploy: 'Загрузка на Jetson', assistant: 'Ваша учебная задача'};
+const jobNames = {skills: 'Подготовка коротких навыков', skill_trial: 'Проверка этапов',compare:'Сравнение моделей на одинаковых сценах',cycle:'Доработка до готовности',audit:'Настройка обратной связи',trials: 'Попытки', train: 'Обучение ACT', validate: 'Проверка', export: 'Пакет переноса', night: 'Автоматическое обучение', deploy: 'Загрузка на Jetson', assistant: 'Ваша учебная задача'};
 const statusNames = {running: 'в работе', complete: 'готово', failed: 'ошибка', exporting: 'подготовка данных', training: 'обучение', validating: 'проверка', validated_simulation: 'проверено по записям', trained_simulation_unvalidated: 'обучено; успешность задачи не подтверждена', cancelled: 'остановлено', queued: 'ожидает', paused: 'приостановлено', interrupted: 'прервано; можно продолжить', corrupt: 'файл повреждён'};
 const phases = {approach: 'Подведите захват к предмету', reach: 'Подведите захват к предмету', grasp: 'Замкните захват', lift: 'Поднимите предмет', transport: 'Перенесите к корзине', place: 'Отпустите в корзину', release_retreat: 'Отводит раскрытый захват', release_unhook: 'Поворачивает кисть, чтобы освободить ткань', inspect_floor: 'Осматривает пол', success: 'Объект доставлен', navigate_source: 'Едет в соседнюю комнату', navigate_destination: 'Перевозит предмет через дверь', idle: 'Готов к вашему показу', align_base: 'Подъезжает к объекту', lower: 'Опускает захват', close: 'Замыкает захват', policy: 'Обученная политика пробует выполнить задачу'};
 function notify(text, error = false) { $('notice').textContent = text; $('notice').classList.toggle('error', error); $('notice').classList.remove('hidden'); clearTimeout(notify.timer); notify.timer = setTimeout(() => $('notice').classList.add('hidden'), 4500); }
@@ -70,7 +70,7 @@ function showResult(result) {
   return pieces.join(' · ');
 }
 function renderStatus(snapshot) {
-  latest = snapshot; renderLearning(snapshot.learning_status); $('depth-view').disabled = !snapshot.depth_available; const state = snapshot.state || {}, task = state.task || {}, command = state.command || state.command9_deg || [];
+  latest = snapshot; renderLearning(snapshot.learning_status); renderSkills(snapshot); $('depth-view').disabled = !snapshot.depth_available; const state = snapshot.state || {}, task = state.task || {}, command = state.command || state.command9_deg || [];
   arm = command.slice(0, 6); jointNames.forEach((_, index) => { $(`joint-${index}`).textContent = Number.isFinite(arm[index]) ? `${arm[index].toFixed(0)}°` : '—'; });
   $('phase').textContent = snapshot.error ? snapshot.error : snapshot.paused ? 'Сцена на паузе' : task.success ? 'Объект доставлен · подтверждено моделью' : phases[task.phase] || 'Управляйте рукой и платформой';
   $('contact').textContent = task.grasp_contact ? 'Есть' : 'Нет'; $('lifted').textContent = task.lifted ? 'Да' : 'Нет'; $('placed').textContent = task.placed ? 'Да' : 'Нет'; $('simtime').textContent = `${Number(state.sim_time || 0).toFixed(1)} с`;
@@ -185,13 +185,13 @@ function renderGoals(goals) {
   $('request-deploy').classList.toggle('hidden',!downloadable);$('request-download').classList.toggle('hidden',!downloadable);
   $('request-download').href='/api/goals/'+encodeURIComponent(goal.id)+'/package';
 }
-async function languageRequest(autoTrain,reply=false){zeroControls();const text=$('learning-request').value.trim();if(!text)throw new Error('Напишите, чему научить робота');const parent=reply?currentGoal.id:null;await api('/api/jobs/assistant',{request_text:text,goal_id:parent,auto_train:autoTrain,scene_profile:'sock_variants_v1',count:Number($('request-attempts').value),steps:Number($('request-steps').value),hours:Number($('request-hours').value),batch_size:16,seed:Math.floor(Math.random()*1000000)});selectedGoalId=null;goalSignature='';notify('Помощник разбирает просьбу на этом Mac');await poll();}
+async function languageRequest(autoTrain,reply=false){zeroControls();const text=$('learning-request').value.trim();if(!text)throw new Error('Напишите, чему научить робота');const parent=reply?currentGoal.id:null;await api('/api/jobs/assistant',{request_text:text,goal_id:parent,auto_train:autoTrain,learning_mode:'skills',scene_profile:'sock_variants_v1',count:Number($('request-attempts').value),steps:Number($('request-steps').value),hours:Number($('request-hours').value),batch_size:16,seed:Math.floor(Math.random()*1000000)});selectedGoalId=null;goalSignature='';notify('Помощник разбирает просьбу на этом Mac');await poll();}
 $('request-history').addEventListener('change',()=>{selectedGoalId=$('request-history').value;goalSignature='';renderGoals(latest?.learning_goals || []);if(currentGoal?.plan)$('learning-request').value=currentGoal.plan.request;});
 button('request-learn',()=>languageRequest(true));button('request-plan',()=>languageRequest(false));
 button('request-reply',()=>languageRequest(true,true));
 button('request-cancel',async()=>{await api('/api/cancel',{});notify('Обучение останавливается; готовые этапы сохранятся');});
-button('request-partial',async()=>{if(!currentGoal)throw new Error('Сначала составьте план');await api('/api/jobs/assistant',{goal_id:currentGoal.id,allow_partial:true});await poll();});
-button('request-resume',async()=>{await api('/api/jobs/assistant',{goal_id:currentGoal.id,allow_partial:!currentGoal.plan.fully_supported});await poll();});
+button('request-partial',async()=>{if(!currentGoal)throw new Error('Сначала составьте план');await api('/api/jobs/assistant',{goal_id:currentGoal.id,learning_mode:'skills',allow_partial:true});await poll();});
+button('request-resume',async()=>{await api('/api/jobs/assistant',{goal_id:currentGoal.id,learning_mode:'skills',allow_partial:!currentGoal.plan.fully_supported});await poll();});
 button('request-deploy',async()=>{await api('/api/jobs/deploy',{goal_id:currentGoal.id});notify('Передача моделей этой просьбы началась; робот не двигается');await poll();});
 document.querySelectorAll('[data-request]').forEach(button=>button.addEventListener('click',()=>{$('learning-request').value=button.dataset.request;$('learning-request').focus();}));
 async function checkNight(){const result=await api('/api/night-readiness');$('night-ready').textContent=result.ready?`Готов: ${result.device}, свободно ${result.free_gib} ГБ, модели установлены`:'Не готов: '+result.blocked_by.join('; ');if(!result.ready)throw new Error(result.blocked_by.join('; '));return result;}
@@ -203,7 +203,7 @@ function saveTaskSelection(){showTaskSelection();try{localStorage.setItem('explo
 try{const saved=JSON.parse(localStorage.getItem('explorer-sim-selected-tasks'));if(Array.isArray(saved)&&saved.every(id=>taskChoices.some(input=>input.value===id)))taskChoices.forEach(input=>{input.checked=saved.includes(input.value);});}catch(_){}
 taskChoices.forEach(input=>input.addEventListener('change',saveTaskSelection));showTaskSelection();
 button('queue-task',()=>{const choice=taskChoices.find(input=>input.value===$('task-select').value);if(choice)choice.checked=true;saveTaskSelection();$('automatic-learning').scrollIntoView({behavior:'smooth',block:'start'});});
-button('night-start',async()=>{const tasks=selectedTasks();if(!tasks.length)throw new Error('Выберите хотя бы одну задачу для обучения');zeroControls();await checkNight();await api('/api/jobs/cycle',{task_ids:tasks,workers:4,scene_profile:$('night-varied').checked?'sock_variants_v1':'baseline',count:Number($('night-attempts').value),steps:Number($('night-steps').value),hours:Number($('night-hours').value),batch_size:16,seed:Math.floor(Math.random()*1000000)});notify('Обучение выбранным задачам запущено');await poll();});
+button('night-start',async()=>{const tasks=selectedTasks();if(!tasks.length)throw new Error('Выберите хотя бы одну задачу для обучения');zeroControls();await checkNight();await api('/api/jobs/skills',{task_ids:tasks,workers:4,scene_profile:$('night-varied').checked?'sock_variants_v1':'baseline',count:Number($('night-attempts').value),steps:Number($('night-steps').value),hours:Number($('night-hours').value),batch_size:16,seed:Math.floor(Math.random()*1000000)});notify('Подготовка отдельных навыков запущена');await poll();});
 button('night-resume',async()=>{const plan=(latest.night_batches || [])[0];await api('/api/jobs/night',{plan_id:plan.id});await poll();});
 button('deploy',async()=>{const info=latest.learning_status;if(info.cycle_id && !info.simulation_ready)throw new Error('Текущий цикл ещё не прошёл независимые проверки');await api('/api/jobs/deploy',info.cycle_id?{cycle_id:info.cycle_id}:{});notify('Загрузка началась; движений не будет');await poll();});
 $('task-select').addEventListener('change',async()=>{zeroControls();await api('/api/reset',{seed:100,difficulty:$('difficulty').value,task_id:$('task-select').value});episodeSignature='';await poll();await updateEpisodes();});
@@ -244,3 +244,26 @@ makeJoints();
 $('worker-camera').addEventListener('change',refreshWorkerViews);
 refreshWorkerViews();setInterval(refreshWorkerViews,1000);
 (async () => { try { session = await api('/api/session'); token = session.token; await poll(); refreshImages(); setInterval(sendControls, 50); setInterval(poll, 1000); setInterval(refreshImages, 200); updateEpisodes(); setInterval(updateEpisodes, 10000); } catch (error) { notify(`Не удалось запустить: ${error.message}`, true); } })();
+
+function renderSkills(snapshot) {
+  const rows=snapshot.skill_workshops || [];
+  const skillNames={find:'Поиск предмета',approach:'Подъезд',reobserve:'Новое измерение',pregrasp:'Подход руки',grasp:'Захват',lift:'Подъём',verify_hold:'Проверка удержания',carry:'Поиск корзины и перенос',support:'Размещение над корзиной',release:'Отпускание',withdraw:'Отвод руки',verify_place:'Проверка размещения'};
+  const active=(snapshot.jobs || []).find(j=>j.status==='running' && ['skills','skill_trial'].includes(j.kind));
+  const list=$('skill-results'); list.replaceChildren();
+  for(const row of rows.slice(0,6)) {
+    const item=document.createElement('li');
+    const names={preparing:'подготовка данных',prepared:'данные и короткие модели подготовлены; исполнение ещё не принято',diagnosed:'проверка завершена',paused:'пауза',failed:'ошибка',running:'проверка этапов'};
+    item.textContent=`${row.task_id}: ${names[row.state] || row.state}${row.phase?' · '+(skillNames[row.phase] || phases[row.phase] || row.phase):''}${row.reason?' · '+row.reason:''}`;
+    list.append(item);
+  }
+  if(active) $('skill-progress').textContent=active.message || 'Выполняется проверка отдельного этапа';
+  else if(rows.length) $('skill-progress').textContent='Последний результат сохранён. Успех команды, удержания и всей задачи проверяется отдельно.';
+  const inProgress=(snapshot.jobs || []).some(j=>j.status==='running');
+  ['skill-run','skill-prepare','skill-resume'].forEach(id=>$(id).disabled=inProgress);
+  $('skill-pause').classList.toggle('hidden',!inProgress);
+  $('skill-resume').classList.toggle('hidden',!rows.some(r=>['paused','failed','preparing'].includes(r.state) && r.selected_episodes));
+}
+button('skill-run',async()=>{zeroControls();await api('/api/jobs/skill_trial',{task_id:$('task-select').value,seed:Math.floor(Math.random()*1000000000),scene_profile:'sock_variants_v1'});await poll();});
+button('skill-prepare',async()=>{const tasks=selectedTasks();if(!tasks.length)throw new Error('Выберите хотя бы одну задачу');await api('/api/jobs/skills',{task_ids:tasks});await poll();});
+button('skill-pause',async()=>{await api('/api/cancel',{});notify('Останавливаю вычисления; записи и завершённые этапы сохраняются');await poll();});
+button('skill-resume',async()=>{const row=(latest.skill_workshops || []).find(r=>['paused','failed','preparing'].includes(r.state) && r.selected_episodes);if(!row)throw new Error('Нет сохранённой подготовки');await api('/api/jobs/skills',{task_ids:[row.task_id],workshop_id:row.id});await poll();});

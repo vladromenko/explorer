@@ -1,0 +1,46 @@
+{
+  "date": "2026-10-15",
+  "scope": "Mac simulator architecture; no robot connection or motion",
+  "rollback_tag": "codex/pre-hierarchical-20261015",
+  "old_cycle": "fb56a108b63f",
+  "old_learner": {"id": "5d878e34e663", "state": "cancelled", "preserved_checkpoint_steps": 3000},
+  "new_architecture": {
+    "executor": "src/task_executor.py",
+    "simulator_port": "simulator/skill_port.py",
+    "robot_adapter": "src/delivery_skill_adapter.py; opt-in, existing DeliveryTask unchanged",
+    "observations": "rendered RGB-D, calibrated camera and robot FK, odometry and lidar",
+    "actor_scene_truth": false,
+    "learning": "separate experimental one-step residual regressors; preserved phase-labelled demonstrations; not automatically executed",
+    "automatic_whole_task_retraining": false,
+    "physics_or_acceptance_changes": false
+  },
+  "finite_preparation_smoke": {
+    "scenes": 3,
+    "frames": 2567,
+    "folder": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/phase-preparation-smoke-cf310e5978a3",
+    "test_groups_used_for_fitting": false,
+    "transfer_ready": false
+  },
+  "observed_execution_diagnostic": {
+    "id": "f580fc72af44",
+    "seed": 887401001,
+    "controller_verified_hold": true,
+    "independent_physics_lifted": true,
+    "independent_physics_contacts": [true, true],
+    "independent_physics_hold_s": 3.7,
+    "stopped_stage": "carry",
+    "reason": "Camera has not localized a container; no transport attempted",
+    "diagnostic_only": true,
+    "qualification": false
+  },
+  "validation": {"targeted_tests_passed": 137, "javascript_syntax": "passed"},
+  "remaining": [
+    "Observe and identify destination before transporting the object, with bounded active camera search.",
+    "Verify support and released material with temporal RGB-D evidence; hidden bin coordinates cannot substitute.",
+    "Generalize the perception and grasp primitives across the unchanged scene distribution.",
+    "Validate two independent ten-scene groups and qualify exact software/artifact checksums before transfer.",
+    "Commission real semantic recognition, hand-eye calibration and dynamics separately on hardware."
+  ],
+  "simulation_ready": false,
+  "physical_ready": false
+}

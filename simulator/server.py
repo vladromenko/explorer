@@ -166,6 +166,8 @@ class StopRecording(BaseModel):
 
 
 class JobRequest(BaseModel):
+    learning_mode: str = Field(default='act',pattern='^(act|skills)$')
+    workshop_id: str | None = Field(default=None,pattern='^[0-9a-f]{12}$')
     count: int = Field(default=10, ge=1, le=1000)
     steps: int = Field(default=3000, ge=1, le=10000000)
     minimum_epochs: int = Field(default=0, ge=0, le=20)
@@ -469,7 +471,7 @@ class Runtime:
 
     def control(self, command: Control):
         with self.lock:
-            if self.job_thread and self.job_thread.is_alive() and self.jobs[-1]['kind'] in {'trials', 'validate'}:
+            if self.job_thread and self.job_thread.is_alive() and self.jobs[-1]['kind'] in {'trials', 'validate', 'skill_trial'}:
                 return
             if command.arm_target is not None:
                 self.pose_goal = np.clip(np.asarray(command.arm_target, dtype=float), *self.arm_limits())
@@ -535,10 +537,12 @@ class Runtime:
             return meta
 
     def snapshot(self,compact=False):
+        from .skill_workshop import list_workshops
         with self.lock:
             batches = self.night_queue.list()
             snapshot={'state': self.cached_state, 'reward': self.reward, 'info': self.info, 'done': self.done, 'paused': self.paused, 'error': self.error, 'recording': bool(self.record_file), 'record_frames': self.record_frames, 'jobs': self.jobs[-20:], 'logs': self.logs[-40:], 'model': self.model_info, 'night_batches':batches, 'learning_goals':self.learning_goals.list(batches,cycles=self.learning_cycles.list()), 'learning_cycles':self.learning_cycles.list(), 'package_available': self.latest_package is not None, 'data_root': self.data_root, 'depth_available': 'depth' in self.images, 'frame_age': round(time.monotonic() - self.frame_at, 2) if self.frame_at else None}
             from .learning_status import learning_status,compact_value
+            snapshot['skill_workshops']=list_workshops(self.data_root)
             snapshot['learning_status']=learning_status(self.data_root,snapshot)
             return jsonable(compact_value(snapshot) if compact else snapshot)
 
@@ -622,7 +626,27 @@ class Runtime:
                     if time.monotonic() - self.frame_at > .15:
                         self.capture_images()
                         self.frame_at = time.monotonic()
-            if job['kind'] == 'assistant':
+            if job['kind'] == 'skills':
+                from .skill_workshop import prepare
+                results=[]
+                for task_id in request.task_ids:
+                    identifier=(request.workshop_id or job['id']) if len(request.task_ids)==1 else secrets.token_hex(6)
+                    results.append(prepare(self.data_root,identifier,task_id,is_cancelled,progress))
+                result=dict(workshops=results,simulation_ready=False,physical_ready=False,
+                    training_mode='phase_local_residual_baseline',automatic_execution_allowed=False)
+            elif job['kind'] == 'skill_trial':
+                from .skill_workshop import trial,STAGE_TITLES
+                def skill_progress(message):
+                    if is_cancelled():raise InterruptedError('Проверка навыков остановлена')
+                    progress(dict(message='Проверка: '+STAGE_TITLES.get(self.env.phase.removeprefix('skill_'),self.env.phase),phase=self.env.phase))
+                    with self.lock:
+                        self.cached_state=dict(command=self.env.command.tolist(),base_pose=self.env.base_pose(),
+                            sim_time=float(self.env.data.time),task=dict(phase=self.env.phase))
+                        if time.monotonic()-self.frame_at>.15:
+                            self.capture_images();self.frame_at=time.monotonic()
+                result=self.on_owner(lambda:self.physics_task(lambda:trial(self.env,self.data_root,job['id'],
+                    request.task_id,request.seed,request.scene_profile,is_cancelled,skill_progress)))
+            elif job['kind'] == 'assistant':
                 if request.goal_id and not request.request_text:
                     goal = self.learning_goals.get(request.goal_id)
                 else:
@@ -649,6 +673,7 @@ class Runtime:
                 if request.auto_train and goal['plan']['task_ids'] and (goal['plan']['fully_supported'] or request.allow_partial):
                     job['message'] = 'Учебный план разобран; выполняются попытки, обучение и проверка'
                     child_kind='night' if goal.get('night_plan_id') and not goal.get('learning_cycle_id') else 'cycle'
+                    if request.learning_mode=='skills':child_kind='skills'
                     child = dict(id=secrets.token_hex(6),kind=child_kind,status='running',progress=0,message='Запуск…')
                     with self.lock:
                         self.jobs.append(child)
@@ -656,6 +681,7 @@ class Runtime:
                         task_ids=goal['plan']['task_ids'],plan_id=goal.get('night_plan_id'),cycle_id=goal.get('learning_cycle_id'),allow_partial=request.allow_partial)
                     self.run_job(child,JobRequest(**values),extra_cancelled=is_cancelled)
                     goal['state'] = 'finished' if child['status']=='complete' else child['status']
+                    if child_kind=='skills' and child['status']=='complete':goal['state']='prepared'
                     goal['error'] = None if child['status']=='complete' else child['message']
                     if child.get('result',{}).get('archive'):
                         goal['archive'] = child['result']['archive']
@@ -972,7 +998,9 @@ class Runtime:
                               note='Для новых маршрутов нужна настоящая карта; первый запуск модели — наблюдаемый тест. Новые API доступны после штатного перезапуска web-сервиса.')
             (self.data_root / 'logs' / f"job-{job['id']}.json").write_text(json.dumps(jsonable(result), ensure_ascii=False, indent=2), encoding='utf8')
             with self.lock:
-                job.update(status='complete', progress=100, message='Готово', result=jsonable(result))
+                completed_message=('Короткие модели подготовлены; исполнение ещё не принято' if job['kind']=='skills' else
+                    'Проверка этапов завершена: '+str(result.get('reason') or result.get('state')) if job['kind']=='skill_trial' else 'Готово')
+                job.update(status='complete', progress=100, message=completed_message, result=jsonable(result))
                 self.log(f"Задание {job['kind']} завершено")
         except Exception as exc:
             with self.lock:
@@ -1131,7 +1159,7 @@ def create_app(env_factory=None, data_root=DATA_ROOT, learning_module=None, star
 
     @app.post('/api/jobs/{kind}')
     def job(kind: str, command: JobRequest, request: Request):
-        if kind not in {'trials', 'train', 'validate', 'export', 'night', 'cycle', 'deploy', 'assistant'}:
+        if kind not in {'trials', 'train', 'validate', 'export', 'night', 'cycle', 'deploy', 'assistant', 'skills', 'skill_trial'}:
             raise HTTPException(404, 'Неизвестное задание')
         return request.app.state.runtime.launch_job(kind, command)
 
