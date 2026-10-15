@@ -166,8 +166,9 @@ class StopRecording(BaseModel):
 
 
 class JobRequest(BaseModel):
-    learning_mode: str = Field(default='act',pattern='^(act|skills)$')
+    learning_mode: str = Field(default='act',pattern='^(act|skills|skill_search)$')
     workshop_id: str | None = Field(default=None,pattern='^[0-9a-f]{12}$')
+    skill_training_id: str | None = Field(default=None,pattern='^[0-9a-f]{12}$')
     count: int = Field(default=10, ge=1, le=1000)
     steps: int = Field(default=3000, ge=1, le=10000000)
     minimum_epochs: int = Field(default=0, ge=0, le=20)
@@ -257,11 +258,13 @@ class Runtime:
         from .learning_cycle import LearningCycles
         self.learning_cycles = LearningCycles(self.data_root)
         self.learning_goals = LearningGoals(self.data_root)
+        from .skill_training import recover_trainings
+        recover_trainings(self.data_root)
         self.language = LocalLanguageModel(self.data_root)
         self.latest_job_folder = None
         self.model_info = None
         self.latest_model()
-        packages = sorted((self.data_root / 'exports').glob('*.tar.gz'), key=lambda path: path.stat().st_mtime, reverse=True)
+        packages = sorted((p for p in (self.data_root / 'exports').glob('*.tar.gz') if not p.name.startswith('observed-skill-')), key=lambda path: path.stat().st_mtime, reverse=True)
         self.latest_package = packages[0] if packages else None
         self.tasks = queue.Queue()
         self.cached_state = {}
@@ -471,7 +474,7 @@ class Runtime:
 
     def control(self, command: Control):
         with self.lock:
-            if self.job_thread and self.job_thread.is_alive() and self.jobs[-1]['kind'] in {'trials', 'validate', 'skill_trial'}:
+            if self.job_thread and self.job_thread.is_alive() and self.jobs[-1]['kind'] in {'trials', 'validate', 'skill_trial','skill_train'}:
                 return
             if command.arm_target is not None:
                 self.pose_goal = np.clip(np.asarray(command.arm_target, dtype=float), *self.arm_limits())
@@ -538,11 +541,13 @@ class Runtime:
 
     def snapshot(self,compact=False):
         from .skill_workshop import list_workshops
+        from .skill_training import list_trainings
         with self.lock:
             batches = self.night_queue.list()
             snapshot={'state': self.cached_state, 'reward': self.reward, 'info': self.info, 'done': self.done, 'paused': self.paused, 'error': self.error, 'recording': bool(self.record_file), 'record_frames': self.record_frames, 'jobs': self.jobs[-20:], 'logs': self.logs[-40:], 'model': self.model_info, 'night_batches':batches, 'learning_goals':self.learning_goals.list(batches,cycles=self.learning_cycles.list()), 'learning_cycles':self.learning_cycles.list(), 'package_available': self.latest_package is not None, 'data_root': self.data_root, 'depth_available': 'depth' in self.images, 'frame_age': round(time.monotonic() - self.frame_at, 2) if self.frame_at else None}
             from .learning_status import learning_status,compact_value
             snapshot['skill_workshops']=list_workshops(self.data_root)
+            snapshot['skill_trainings']=list_trainings(self.data_root)
             snapshot['learning_status']=learning_status(self.data_root,snapshot)
             return jsonable(compact_value(snapshot) if compact else snapshot)
 
@@ -626,7 +631,27 @@ class Runtime:
                     if time.monotonic() - self.frame_at > .15:
                         self.capture_images()
                         self.frame_at = time.monotonic()
-            if job['kind'] == 'skills':
+            if job['kind']=='skill_train':
+                from .skill_training import SkillTraining
+                if request.task_id!='sock_basket' or request.task_ids!=['sock_basket']:
+                    raise ValueError('Автономное обучение этого исполнителя пока доступно для носка и корзины')
+                trainer=SkillTraining(self.data_root,request.skill_training_id or job['id'])
+                saved=trainer.create(attempts=max(8,request.count),hours=request.hours,
+                    workers=min(4,request.workers),seed=request.seed)
+                if request.skill_training_id:
+                    saved['options']['attempts']=max(saved['options']['attempts'],request.count)
+                    saved['options']['hours']=request.hours;trainer.save(saved)
+                def learning_progress(value):
+                    completed=value['completed_attempts'];budget=value['options']['attempts']
+                    progress(dict(message=(value['reason'] if value['state']=='waiting_for_memory' else f'Самостоятельное обучение: {completed} из {budget} попыток · этап {value["phase_group"]}'),
+                        progress=100*completed/max(1,budget),training_id=value['id'],
+                        active_workers=value.get('active_workers',[]),phase_group=value['phase_group'],
+                        completed_attempts=completed,attempt_budget=budget))
+                result=trainer.run(cancelled=is_cancelled,progress=learning_progress,resume=bool(request.skill_training_id))
+                if result['state'].endswith('_paused'):
+                    job['result']=jsonable(result)
+                    raise InterruptedError(result.get('reason') or 'Обучение сохранено на паузе')
+            elif job['kind'] == 'skills':
                 from .skill_workshop import prepare
                 results=[]
                 goal=self.learning_goals.get(request.goal_id) if request.goal_id else None
@@ -685,11 +710,18 @@ class Runtime:
                     job['message'] = 'Учебный план разобран; выполняются попытки, обучение и проверка'
                     child_kind='night' if goal.get('night_plan_id') and not goal.get('learning_cycle_id') else 'cycle'
                     if request.learning_mode=='skills':child_kind='skills'
+                    if request.learning_mode=='skill_search':
+                        child_kind='skill_train' if goal['plan']['task_ids']==['sock_basket'] else 'skills'
                     child = dict(id=secrets.token_hex(6),kind=child_kind,status='running',progress=0,message='Запуск…')
                     with self.lock:
                         self.jobs.append(child)
                     values = dict(goal['options'],goal_id=goal['id'],
                         task_ids=goal['plan']['task_ids'],plan_id=goal.get('night_plan_id'),cycle_id=goal.get('learning_cycle_id'),allow_partial=request.allow_partial)
+                    if child_kind=='skill_train':
+                        values['task_id']='sock_basket'
+                        values['skill_training_id']=goal.get('skill_training_id')
+                        goal['skill_training_id']=goal.get('skill_training_id') or child['id']
+                        goal['state']='running';self.learning_goals.save(goal)
                     if child_kind=='skills':
                         goal['state']='running'
                         self.learning_goals.save(goal)
@@ -699,8 +731,12 @@ class Runtime:
                         goal['state']='prepared' if child['status']=='complete' else 'paused' if child['status']=='cancelled' else child['status']
                         goal['skill_workshops']=self.learning_goals.get(goal['id']).get('skill_workshops',{})
                         goal['results']=[]
+                    if child_kind=='skill_train':
+                        goal['state']=child.get('result',{}).get('state',child['status'])
+                        goal['results']=[dict(task_id='sock_basket',skill_training_id=goal['skill_training_id'],
+                            simulation_ready=child.get('result',{}).get('simulation_ready',False),physical_ready=False)]
                     goal['error'] = None if child['status']=='complete' else child['message']
-                    if child.get('result',{}).get('archive'):
+                    if child_kind!='skill_train' and child.get('result',{}).get('archive'):
                         goal['archive'] = child['result']['archive']
                     # The child linked its persistent batch before beginning.
                     goal['night_plan_id'] = self.learning_goals.get(goal['id']).get('night_plan_id')
@@ -1016,6 +1052,7 @@ class Runtime:
             (self.data_root / 'logs' / f"job-{job['id']}.json").write_text(json.dumps(jsonable(result), ensure_ascii=False, indent=2), encoding='utf8')
             with self.lock:
                 completed_message=('Короткие модели подготовлены; исполнение ещё не принято' if job['kind']=='skills' else
+                    'Обучение: '+str(result.get('reason') or result.get('state')) if job['kind']=='skill_train' else
                     'Проверка этапов завершена: '+str(result.get('reason') or result.get('state')) if job['kind']=='skill_trial' else 'Готово')
                 job.update(status='complete', progress=100, message=completed_message, result=jsonable(result))
                 self.log(f"Задание {job['kind']} завершено")
@@ -1118,7 +1155,7 @@ def create_app(env_factory=None, data_root=DATA_ROOT, learning_module=None, star
         runtime = request.app.state.runtime
         runtime.stop_control()
         with runtime.lock:
-            if runtime.jobs and runtime.jobs[-1]['kind'] in {'trials', 'validate', 'skill_trial'}:
+            if runtime.jobs and runtime.jobs[-1]['kind'] in {'trials', 'validate', 'skill_trial','skill_train'}:
                 runtime.cancellation_context = {}
                 runtime.cancel_job.set()
         return {'ok': True}
@@ -1152,7 +1189,7 @@ def create_app(env_factory=None, data_root=DATA_ROOT, learning_module=None, star
     @app.post('/api/reset')
     def reset(command: Reset, request: Request):
         runtime = request.app.state.runtime
-        if runtime.job_thread and runtime.job_thread.is_alive() and runtime.jobs[-1]['kind'] in {'trials', 'validate', 'skill_trial'}:
+        if runtime.job_thread and runtime.job_thread.is_alive() and runtime.jobs[-1]['kind'] in {'trials', 'validate', 'skill_trial','skill_train'}:
             raise HTTPException(409, 'Сначала остановите текущее задание')
         runtime.on_owner(lambda: runtime.reset(command))
         return {'ok': True}
@@ -1161,7 +1198,7 @@ def create_app(env_factory=None, data_root=DATA_ROOT, learning_module=None, star
     def pause(request: Request):
         runtime = request.app.state.runtime
         with runtime.lock:
-            if runtime.job_thread and runtime.job_thread.is_alive() and runtime.jobs[-1]['kind'] in {'trials', 'validate', 'skill_trial'}:
+            if runtime.job_thread and runtime.job_thread.is_alive() and runtime.jobs[-1]['kind'] in {'trials', 'validate', 'skill_trial','skill_train'}:
                 raise HTTPException(409, 'Сначала остановите текущее задание')
             runtime.paused = not runtime.paused
             runtime.stop_control()
@@ -1177,7 +1214,7 @@ def create_app(env_factory=None, data_root=DATA_ROOT, learning_module=None, star
 
     @app.post('/api/jobs/{kind}')
     def job(kind: str, command: JobRequest, request: Request):
-        if kind not in {'trials', 'train', 'validate', 'export', 'night', 'cycle', 'deploy', 'assistant', 'skills', 'skill_trial'}:
+        if kind not in {'trials', 'train', 'validate', 'export', 'night', 'cycle', 'deploy', 'assistant', 'skills', 'skill_trial','skill_train'}:
             raise HTTPException(404, 'Неизвестное задание')
         return request.app.state.runtime.launch_job(kind, command)
 

@@ -63,15 +63,21 @@ def _plan_oriented_translation(env,target,reference,*,check,check_path=False):
     return None
 
 
-def plan_hold_probe(env,*,check=lambda:None):
+def plan_hold_probe(env,*,check=lambda:None,lowest_material_height_m=None):
     jaw=np.asarray(env.jaw_center(),float);reference=hand_rotation(env)
     radial=jaw[:2]-np.asarray(env.base_pose()[:2])
     directions=[('up',np.array([0.,0.,.02]))]
     if np.linalg.norm(radial)>.19:
         directions.append(('toward_base',np.r_[-.02*radial/np.linalg.norm(radial),0.]))
+    # Near the upper workspace boundary an upward probe may be impossible.
+    # A downward probe needs an actual observed material lower bound, leaving
+    # 20 mm movement plus a 20 mm reserve above the unchanged 45 mm floor gate.
+    if (lowest_material_height_m is not None and np.isfinite(lowest_material_height_m)
+        and lowest_material_height_m>=.085 and jaw[2]>=.25):
+        directions.append(('down',np.array([0.,0.,-.02])))
     for name,delta in directions:
         target=jaw+delta
-        command=_plan_oriented_translation(env,target,reference,check=check)
+        command=_plan_oriented_translation(env,target,reference,check=check,check_path=True)
         if command is not None:
             return HoldProbePlan(command,target,reference,name)
     raise ValueError('Проверочное движение недостижимо без изменения ориентации захвата')

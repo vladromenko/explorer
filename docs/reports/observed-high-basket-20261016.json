@@ -1,0 +1,92 @@
+{
+  "scope": "Mac simulation only; no ROSMASTER connection",
+  "automation": "explorer deleted at user request; no replacement scheduled",
+  "controller": "observed_hierarchical_skills_v1",
+  "simulation_ready": false,
+  "physical_ready": false,
+  "background_learning_started": false,
+  "physics_or_task_acceptance_changed": false,
+  "old_ACT_cycle_resumed": false,
+  "implemented": [
+    "Two complete measured rims plus two independent depth-ray witnesses below the rim; no unseen floor assumption",
+    "Persisted raw metric depth, own-CAD self-filter, camera calibration, own commands and odometry",
+    "Bounded survey revisit with known basket envelope checked against own geometry",
+    "Position-first pickup IK with separate position and downward orientation gates",
+    "Clipped low chassis CAD envelopes retain triangle intersections at cloth height; unchanged 40 mm base margin",
+    "Odometry PI overcomes rolling dead zone; final settled base observation remains required",
+    "High lift reserves the observed hold probe and tracking sag above transport height",
+    "Downward 20 mm verification probe requires observed material clearance and an orientation-constrained path",
+    "Grip-preserving camera views account for current optical pitch and required jaw height",
+    "Observed retreat and paired-depth basket confirmation pass finite diagnostics; autonomous algorithm now explores remaining placement parameters"
+  ],
+  "validation": {
+    "full_targeted_suite": "185 tests passed in aggregate; 3 subtests passed (184 in broad suite, corrected misplaced assertion rechecked with 33 focused tests)",
+    "latest_targeted_suite": "73 passed after pause/restart, memory waiting, parent interruption, source fingerprint and archive separation changes",
+    "recorded_sensor_fixtures": "three checksummed depth/CAD frames; no object truth used by actor"
+  },
+  "physical_diagnostics": [
+    {
+      "folder": "clipped-chassis-middle-grasp-1792104418535723000",
+      "observed_find": true,
+      "observed_pickup_commands": true,
+      "independent_lift": true,
+      "independent_pad_contacts": [
+        true,
+        true
+      ],
+      "stopped": "orientation-constrained high hold probe unavailable; fixed afterward"
+    },
+    {
+      "folder": "held-high-probe-carry-1792104539817881000",
+      "observed_hold": true,
+      "probe": "down",
+      "measured_translation_m": 0.023562324174759237,
+      "measured_rotation_deg": 1.1629583740333456,
+      "stopped": "destination survey"
+    },
+    {
+      "folder": "held-camera-baseline-carry-1792104704870241000",
+      "observed_hold": true,
+      "observed_high_basket": true,
+      "stopped": "transport pose"
+    },
+    {
+      "folder": "height-reserved-full-cycle-1792104794963520000",
+      "fresh_full_execution": true,
+      "observed_hold": true,
+      "independent_pad_contacts": [
+        true,
+        true
+      ],
+      "stopped": "carry viewpoint"
+    },
+    {
+      "folder": "measured-stereo-carry-1792105670631781000",
+      "observed_hold": true,
+      "observed_high_basket": true,
+      "observed_carry": true,
+      "stopped": "support viewpoint; full cycle not yet qualified"
+    }
+  ],
+  "remaining": [
+    "Autonomous algorithm now explores skill parameters; full observed cycle remains unqualified",
+    "Hardware commissioning is separate; no commands sent to ROSMASTER"
+  ],
+  "user_steering": "User requested autonomous algorithm instead of further manual motor/phase tuning; no new manual physical trials scheduled.",
+  "autonomous_learning": {
+    "module": "simulator/skill_training.py",
+    "algorithm": "phase-local cross-entropy policy search",
+    "scene_inputs": "RGBD, own FK, odometry and lidar only",
+    "reward": "post-stop outcome booleans",
+    "unchanged_acceptance": true,
+    "paired_candidates": "four candidate policies on identical paired training scenes",
+    "budget": "up to 100 new attempts and 24 h; memory-adaptive maximum four workers",
+    "stagnation_stop": "eight different generations without improvement",
+    "checkpoint": "every generation plus durable per-episode results",
+    "validation": "two disjoint ten-scene groups, never used for fitting",
+    "archive": "hash every frozen file; re-read compressed archive before qualification",
+    "physical_ready": false,
+    "resources": "Wait without workers when memory is insufficient; cooperative pause under pressure; never close unrelated applications",
+    "resume": "Explicit resume after service restart; worker owner PID guard; no automatic resumption of operator pause"
+  }
+}

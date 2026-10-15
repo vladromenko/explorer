@@ -88,6 +88,7 @@ def extract_candidates(depth, intrinsics, optical_to_world, *, floor_z_m=0.,
     h, w = depth.shape
     containers = []
     hypotheses = []
+    observed_rims = []
     for sample, pixels in _clusters(points, wall_mask, min_pixels=30, cell_m=.02):
         lo, hi = np.quantile(sample, [.02, .98], axis=0)
         span = hi-lo
@@ -108,6 +109,26 @@ def extract_candidates(depth, intrinsics, optical_to_world, *, floor_z_m=0.,
         # the opening are needed. One observed vertical panel is not a bin.
         angles = np.arctan2(relative[:, 1], relative[:, 0])
         sectors = len(np.unique(np.floor((angles+np.pi)/(np.pi/2)).astype(int).clip(0, 3)))
+        # Completeness concerns the top boundary, not a 25 mm strip of the
+        # vertical wall below it. A cropped lower wall must not erase a fully
+        # visible top rim; a cropped top rim still remains unknown.
+        top=sample[:,2]>=hi[2]-.008
+        top_rim=sample[top];rim_pixels=pixels[top]
+        top_relative=(top_rim[:,:2]-center[:2])/half
+        top_angles=np.arctan2(top_relative[:,1],top_relative[:,0])
+        top_sectors=len(np.unique(np.floor((top_angles+np.pi)/(np.pi/2)).astype(int).clip(0,3)))
+        rim_border=bool(np.any((rim_pixels[:,0]<=1)|(rim_pixels[:,0]>=h-2)|
+                              (rim_pixels[:,1]<=1)|(rim_pixels[:,1]>=w-2)))
+        if len(top_rim)>=20 and top_sectors==4 and not rim_border:
+            # A complete visible rim can guide later inspection, but does not
+            # establish an empty opening or permission to release an object.
+            observed_rims.append(_candidate(center,lo,hi,.06,.6,
+                {'shape':'complete_rim_without_opening_proof','actionable':False,
+                 'rim_sectors':top_sectors,'rim_pixels':len(top_rim),
+                 'boundary_band_m':.008,
+                 'touches_image_border':rim_border,
+                 'rim_points':top_rim[::max(1,len(top_rim)//256)].tolist(),
+                 'semantic_identity_proven':False}))
         inside = valid & (np.abs(points[..., 0]-center[0]) < half[0]*.55) & (np.abs(points[..., 1]-center[1]) < half[1]*.55)
         opening = inside & (points[..., 2] < hi[2]-.035)
         border = bool(np.any((pixels[:, 0] <= 1) | (pixels[:, 0] >= h-2) |
@@ -147,7 +168,7 @@ def extract_candidates(depth, intrinsics, optical_to_world, *, floor_z_m=0.,
             .45 if border else .72, {'shape': 'compact_nonfloor_geometry',
             'visible_pixels': len(sample), 'semantic_identity_proven': False,
             'self_occlusion_not_resolved': not robot_mask_resolved, 'hold_proof': False}))
-    for candidate in lows+containers+objects:
+    for candidate in lows+containers+objects+observed_rims:
         candidate['robot_mask_resolved'] = robot_mask_resolved
         candidate['evidence']['robot_mask_resolved'] = robot_mask_resolved
         if rgb is not None:
@@ -163,6 +184,7 @@ def extract_candidates(depth, intrinsics, optical_to_world, *, floor_z_m=0.,
     visible = points[valid]
     stride = max(1, len(visible)//2000)
     return {'low_objects': lows, 'containers': containers, 'container_hypotheses': hypotheses,
+            'observed_rims':observed_rims,
             'object_candidates': objects,
             'surface_points': visible[::stride].tolist(),
             'hold_status': 'unknown', 'placement_status': 'unknown'}
@@ -210,7 +232,7 @@ def render_robot_depth(env):
         return None
 
 
-def observe_environment(env) -> dict[str, Any]:
+def observe_environment(env,*,raw_output=None) -> dict[str, Any]:
     """Capture the wrist sensor; do not inspect scene objects or segmentation.
 
     MuJoCo camera pose is robot forward kinematics, equivalent to a calibrated
@@ -241,6 +263,8 @@ def observe_environment(env) -> dict[str, Any]:
                                     robot_depth=robot_depth, rgb=rgb)
     stamp = float(env.data.time)
     digest = hashlib.sha256(matrix.tobytes()+depth.tobytes()).hexdigest()[:16]
+    if raw_output is not None:
+        raw_output.update(depth=depth.copy(),robot_depth=None if robot_depth is None else robot_depth.copy())
     return dict(schema=1, frame_id=f'wrist_depth:{stamp:.9f}:{digest}',
                 simulation_time=stamp, captured_monotonic=time.monotonic(),
                 intrinsics=intrinsics, optical_to_world=matrix.tolist(),

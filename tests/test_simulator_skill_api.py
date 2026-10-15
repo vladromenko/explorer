@@ -63,6 +63,26 @@ def test_resume_preserves_workshop_identity(tmp_path,monkeypatch):
         assert seen==['a'*12]
 
 
+def test_autonomous_skill_learner_starts_without_act_or_robot_commands(tmp_path,monkeypatch):
+    calls=[]
+    def run(self,*,cancelled,progress,resume):
+        saved=json.loads(self.path.read_text());calls.append((self.id,resume,saved['options']))
+        progress(dict(saved,completed_attempts=8,active_workers=[]))
+        saved.update(state='needs_diagnosis',reason='Нет улучшения',completed_attempts=8)
+        self.save(saved);return saved
+    monkeypatch.setattr('simulator.skill_training.SkillTraining.run',run)
+    with client(tmp_path) as connection:
+        response=connection.post('/api/jobs/skill_train',json=dict(task_ids=['sock_basket'],count=100,workers=4,hours=24),headers=auth(connection))
+        assert response.status_code==200
+        job=wait(connection,response.json()['id'])
+        assert job['status']=='complete' and job['result']['state']=='needs_diagnosis'
+        assert job['message']!='Готово' and not job['result']['simulation_ready']
+        state=connection.get('/api/state').json()
+        assert state['skill_trainings'][0]['completed_attempts']==8
+        assert not state['learning_cycles'] and all(j['kind']=='skill_train' for j in state['jobs'])
+        assert calls[0][1] is False and calls[0][2]['workers']==4
+
+
 def test_stop_interrupts_skill_trial_but_focus_loss_does_not(tmp_path,monkeypatch):
     entered=threading.Event()
     def trial(env,root,identifier,task,seed,profile,cancelled,progress):

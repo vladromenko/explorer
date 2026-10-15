@@ -13,6 +13,10 @@ class CameraViewUnavailable(ValueError):
     pass
 
 
+class ObservedMotionViolation(CameraViewUnavailable):
+    """An executed motion violated its observed guard; never try another pose."""
+
+
 @dataclass(frozen=True)
 class CameraViewPlan:
     command: np.ndarray
@@ -22,8 +26,49 @@ class CameraViewPlan:
     hand_tilt_change_deg: float | None = None
 
 
+def check_observed_box_path(env,command,obstacle,*,check=lambda:None):
+    """Conservative own-geometry sweep outside one measured occupied extent.
+
+    No free cavity is assumed: even empty interior is treated as occupied.
+    This checks the known basket extent only, not an unobserved whole room.
+    """
+    import mujoco
+    from itertools import product
+    from .explorer_model import servo_to_joint
+    command=np.asarray(command,float)
+    lo=np.asarray(obstacle['bounds_min'],float).copy();hi=np.asarray(obstacle['bounds_max'],float).copy()
+    uncertainty=float(obstacle['uncertainty_m'])
+    if (command.shape!=(6,) or lo.shape!=(3,) or hi.shape!=(3,) or
+        not np.isfinite(np.r_[command,lo,hi,uncertainty]).all() or
+        np.any(hi<=lo) or not 0.<=uncertainty<=.02):
+        raise CameraViewUnavailable('Нет достаточно точной границы препятствия для проверки обзора')
+    margin=uncertainty+.012;lo[:2]-=margin;lo[2]=-.01;hi+=margin
+    own=[]
+    for i in range(env.model.ngeom):
+        body=int(env.model.geom_bodyid[i])
+        while body and env.model.body(body).name!='base_link':body=int(env.model.body_parentid[body])
+        if body:own.append(i)
+    own=np.array(own,dtype=int)
+    aabb=np.asarray(env.model.geom_aabb[own],float)
+    signs=np.array(list(product((-1.,1.),repeat=3)))
+    corners=aabb[:,None,:3]+aabb[:,None,3:]*signs
+    scratch=mujoco.MjData(env.model);scratch.qpos[:]=env.data.qpos
+    start=env.command[:6].copy()
+    count=max(2,int(np.ceil(np.sum(np.abs(command[:5]-start[:5]))/.5)))
+    for fraction in np.linspace(0.,1.,count+1):
+        check();q=servo_to_joint(start+(command-start)*fraction);scratch.qpos[env.joint_q]=q
+        for name,m in (('rlink2_Joint',1),('llink1_Joint',1),('llink2_Joint',-1),('rlink3_Joint',-1),('llink3_Joint',1)):
+            scratch.qpos[env.model.joint(name).qposadr[0]]=m*q[5]
+        mujoco.mj_forward(env.model,scratch)
+        rotation=np.asarray(scratch.geom_xmat[own],float).reshape(-1,3,3)
+        world=np.einsum('nvj,nij->nvi',corners,rotation)+scratch.geom_xpos[own,None,:]
+        if not np.isfinite(world).all():raise CameraViewUnavailable('Некорректная геометрия пути обзора')
+        intersects=np.all(world.max(1)>=lo,axis=1)&np.all(world.min(1)<=hi,axis=1)
+        if intersects.any():raise CameraViewUnavailable('Путь обзора пересекает измеренную границу корзины')
+
+
 def plan_camera_view(env,point,*,gripper,distance_m,min_camera_height_m,check=lambda:None,
-                     maximum_hand_tilt_deg=None,reference_hand_gravity=None):
+                     maximum_hand_tilt_deg=None,reference_hand_gravity=None,minimum_jaw_height_m=None):
     import mujoco
     from scipy.optimize import least_squares
     from .explorer_model import servo_to_joint
@@ -34,6 +79,8 @@ def plan_camera_view(env,point,*,gripper,distance_m,min_camera_height_m,check=la
         raise ValueError('Некорректная цель обзора камеры')
     if maximum_hand_tilt_deg is not None and (not np.isfinite(maximum_hand_tilt_deg) or not 0.<maximum_hand_tilt_deg<=3.):
         raise ValueError('Некорректный предел наклона удерживаемого предмета')
+    if minimum_jaw_height_m is not None and (not np.isfinite(minimum_jaw_height_m) or minimum_jaw_height_m<.045):
+        raise ValueError('Некорректная высота удерживаемого предмета')
     scratch=mujoco.MjData(env.model);scratch.qpos[:]=env.data.qpos
     camera=env.model.camera('wrist_depth').id
     start=env.command[:5].copy()
@@ -52,11 +99,12 @@ def plan_camera_view(env,point,*,gripper,distance_m,min_camera_height_m,check=la
         optical=scratch.cam_xmat[camera].reshape(3,3).T@(point-position)
         gravity=scratch.body('arm5').xmat.reshape(3,3).T@np.array([0.,0.,1.])
         tilt=float(np.arccos(np.clip(reference_gravity@gravity,-1.,1.)))
-        return position,optical,gravity,tilt
+        return position,optical,gravity,tilt,float(env.jaw_center(scratch)[2])
     def residual(angles):
-        position,optical,gravity,_=geometry(angles)
+        position,optical,gravity,_,jaw_height=geometry(angles)
         return np.r_[optical[:2]*3.,(-optical[2]-distance_m),
             max(min_camera_height_m-position[2],0.)*30.,(angles-start)*.00003,
+            [max(minimum_jaw_height_m-jaw_height,0.)*30.] if minimum_jaw_height_m is not None else np.empty(0),
             (gravity-reference_gravity)*8. if maximum_hand_tilt_deg is not None else np.empty(0)]
     seeds=(start,[90.,90.,90.,90.,90.],
            [50.,120.,30.,0.,90.],[130.,120.,30.,0.,90.],
@@ -68,13 +116,14 @@ def plan_camera_view(env,point,*,gripper,distance_m,min_camera_height_m,check=la
             bounds=([0.]*5,[180.]*4+[270.]),max_nfev=150)
         # Recompute FK: an optimiser's success flag or reported residual can
         # never replace the actual geometric constraints.
-        position,optical,_,tilt=geometry(fit.x)
+        position,optical,_,tilt,jaw_height=geometry(fit.x)
         lateral=float(np.linalg.norm(optical[:2]));range_error=abs(float(-optical[2]-distance_m))
         height_deficit=max(float(min_camera_height_m-position[2]),0.)
         cost=lateral+range_error+height_deficit
         if cost<best_cost:
             best_cost=cost;best_errors=(lateral,range_error,height_deficit)
         if optical[2]<-.035 and lateral<=.04 and range_error<=.04 and height_deficit<=.008:
+            if minimum_jaw_height_m is not None and jaw_height<minimum_jaw_height_m-.008:continue
             if maximum_hand_tilt_deg is not None:
                 if np.rad2deg(tilt)>maximum_hand_tilt_deg:continue
                 # Check the same joint-space segment used by move_angles;

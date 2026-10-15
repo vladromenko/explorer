@@ -138,3 +138,29 @@ def test_measured_motion_guard_interrupts_the_arm_segment(tmp_path,monkeypatch):
         assert len(ticks)==3
         assert not np.array_equal(ticks[-1],np.full(6,90.))
     finally:port.close()
+
+
+def test_measured_view_violation_aborts_survey_instead_of_trying_another_motion(tmp_path):
+    from simulator.environment import ExplorerEnv
+    from simulator.inspection_planning import ObservedMotionViolation
+    env=ExplorerEnv(render=False);port=SimulatorSkillPort(env,tmp_path/'abort')
+    port.before_hold={};port.hold_rotation=np.eye(3)
+    port.destination=dict(center=[.46,.34,.2],bounds_min=[.33,.21,.09],bounds_max=[.59,.47,.30],uncertainty_m=.012)
+    calls=[]
+    def unsafe(*args,**kwargs):calls.append('yaw');raise ObservedMotionViolation('measured tilt')
+    port.held_yaw_view=unsafe
+    port.look_at=lambda *args,**kwargs:calls.append('another motion')
+    try:
+        with pytest.raises(ObservedMotionViolation,match='measured tilt'):port.survey_destination(None)
+        assert calls==['yaw']
+    finally:port.close();env.close()
+
+
+def test_internal_viewpoint_drive_is_declared_to_shared_executor(tmp_path,monkeypatch):
+    port=setup(tmp_path,[],monkeypatch)
+    def support(ctx):
+        port.base_motion_sequence+=1
+        return dict(outcome='success')
+    port.support=support
+    try:assert port.operations()['support'](None)==dict(outcome='success',base_moved=True)
+    finally:port.close()

@@ -41,6 +41,25 @@ def test_cancelled_probe_planning_never_mutates_robot():
     finally:env.close()
 
 
+def test_upper_workspace_probe_can_descend_only_with_observed_material_clearance(monkeypatch):
+    import simulator.manipulation_planning as planning
+    env=ExplorerEnv(render=False)
+    try:
+        env.command[:6]=[90.,113.2,71.16,0.,81.49,170.]
+        apply_kinematic_pose(env,env.command[:6]);jaw=env.jaw_center().copy();calls=[]
+        def solve(env,target,reference,*,check,check_path):
+            assert check_path
+            calls.append(target.copy())
+            return env.command[:6].copy() if target[2]<jaw[2]-.015 else None
+        monkeypatch.setattr(planning,'_plan_oriented_translation',solve)
+        with pytest.raises(ValueError):plan_hold_probe(env,lowest_material_height_m=.05)
+        assert not any(target[2]<jaw[2]-.015 for target in calls)
+        plan=plan_hold_probe(env,lowest_material_height_m=.12)
+        assert plan.direction=='down'
+        np.testing.assert_allclose(plan.target,jaw+[0.,0.,-.02])
+    finally:env.close()
+
+
 def test_compact_raised_hold_retains_pose_instead_of_free_pitch_reconfiguration():
     env=ExplorerEnv(render=False)
     try:

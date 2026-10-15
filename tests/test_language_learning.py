@@ -181,6 +181,27 @@ def test_language_goal_metadata_survives_verified_import_without_execution(tmp_p
     with pytest.raises(ValueError):_validate_learning_goal(stored,['toy_box'])
 
 
+def test_new_autonomous_mode_reuses_learner_and_does_not_resume_archived_act(tmp_path,monkeypatch):
+    calls=[]
+    def run(self,*,cancelled,progress,resume):
+        state=json.loads(self.path.read_text());calls.append((self.id,resume))
+        state.update(state='operator_paused',reason='Пауза',simulation_ready=False)
+        self.save(state);return state
+    monkeypatch.setattr('simulator.skill_training.SkillTraining.run',run)
+    runtime=Runtime(FakeEnv,tmp_path)
+    try:
+        goal=runtime.learning_goals.create(plan(),{})
+        goal['learning_cycle_id']='b'*12;runtime.learning_goals.save(goal)
+        for i in range(2):
+            job=dict(id=str(i)*12,kind='assistant',status='running')
+            runtime.run_job(job,JobRequest(goal_id=goal['id'],learning_mode='skill_search'))
+        assert calls[0][0]==calls[1][0] and calls[0][1] is False and calls[1][1] is True
+        saved=runtime.learning_goals.list([], [dict(id='b'*12,state='ready_for_transfer',tasks=[])])[0]
+        assert saved['learning_mode']=='skill_search' and saved['state']=='operator_paused'
+        assert not saved.get('archive') and saved['physical_ready'] is False
+    finally:runtime.close()
+
+
 def test_language_api_requires_local_session_and_bounds_identifiers(tmp_path):
     with client(tmp_path) as connection:
         headers=auth(connection)

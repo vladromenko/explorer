@@ -23,7 +23,12 @@ def execution_fingerprint():
     files={name:hashlib.sha256((root/name).read_bytes()).hexdigest() for name in
         ('src/task_executor.py','simulator/skill_port.py','simulator/rgbd_observation.py',
          'simulator/placement_evidence.py','simulator/inspection_planning.py',
-         'simulator/manipulation_planning.py')}
+         'simulator/manipulation_planning.py','simulator/observed_free_space.py',
+         'simulator/multiview_container.py','simulator/observed_navigation.py','simulator/grasp_planning.py',
+         'simulator/skill_parameters.py','simulator/skill_training.py','simulator/skill_workshop.py',
+         'simulator/domain_randomization.py','simulator/environment.py','simulator/explorer_model.py',
+         'simulator/model_config.json','config/explorer.urdf','config/explorer.srdf',
+         'config/arm-motion.json','config/handeye-accepted.json','config/arm_model.json')}
     return dict(files=files,sha256=hashlib.sha256(json.dumps(files,sort_keys=True).encode()).hexdigest())
 
 
@@ -91,7 +96,7 @@ def prepare(root,identifier,task_id,cancelled=None,progress=None):
     return state
 
 
-def trial(env,root,identifier,task_id,seed,scene_profile='sock_variants_v1',cancelled=None,progress=None):
+def trial(env,root,identifier,task_id,seed,scene_profile='sock_variants_v1',cancelled=None,progress=None,parameters=None):
     from src.task_executor import TaskExecutor
     from .skill_port import SimulatorSkillPort
     from .explorer_model import model_metadata
@@ -102,11 +107,14 @@ def trial(env,root,identifier,task_id,seed,scene_profile='sock_variants_v1',canc
         automatic_execution_allowed=False,learned_residuals_executed=False,scene_profile=scene_profile,
         semantic_identity='unverified_single_geometric_target',environment_provenance=model_metadata())
     report['execution_fingerprint']=execution_fingerprint()
+    from .skill_parameters import parameters as checked_parameters
+    report['policy_parameters']=checked_parameters(parameters)
     write_json(folder/'state.json',report)
     port=None
     try:
         env.reset(seed=seed,options=dict(task_id=task_id,scene_profile=scene_profile))
-        port=SimulatorSkillPort(env,folder/'execution',cancelled or (lambda:False),progress or (lambda value:None))
+        options={} if parameters is None else dict(parameters=parameters)
+        port=SimulatorSkillPort(env,folder/'execution',cancelled or (lambda:False),progress or (lambda value:None),**options)
         executor=TaskExecutor(port.operations(),port.observe,guard=lambda ctx:port.check(),
             cancelled=cancelled,total_timeout=300.,stage_timeout=90.,max_find_attempts=1,
             stop=lambda ctx:port.stop_motion())

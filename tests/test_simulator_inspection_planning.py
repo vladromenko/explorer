@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from simulator.environment import ExplorerEnv
-from simulator.inspection_planning import plan_camera_view,CameraViewUnavailable
+from simulator.inspection_planning import plan_camera_view,CameraViewUnavailable,check_observed_box_path
 
 
 def test_feasible_view_satisfies_each_constraint_and_preserves_state():
@@ -85,5 +85,19 @@ def test_destination_view_cannot_tip_a_verified_hold_to_satisfy_camera_aim():
         with pytest.raises(CameraViewUnavailable,match='с сохранением наклона'):
             plan_camera_view(env,point,gripper=170.,distance_m=.45,min_camera_height_m=.30,
                 maximum_hand_tilt_deg=2.)
+        np.testing.assert_array_equal(env.data.qpos,before)
+    finally:env.close()
+
+
+def test_camera_revisit_path_checks_known_robot_volume_without_moving():
+    env=ExplorerEnv(render=False);before=env.data.qpos.copy()
+    try:
+        goal=np.array([50.,120.,30.,0.,90.,30.])
+        obstacle=dict(bounds_min=[.33,.21,.08],bounds_max=[.59,.47,.30],uncertainty_m=.013)
+        check_observed_box_path(env,goal,obstacle)
+        np.testing.assert_array_equal(env.data.qpos,before)
+        blocked=dict(bounds_min=[-.01,-.01,.08],bounds_max=[.10,.10,.30],uncertainty_m=.013)
+        with pytest.raises(CameraViewUnavailable,match='пересекает'):
+            check_observed_box_path(env,goal,blocked)
         np.testing.assert_array_equal(env.data.qpos,before)
     finally:env.close()

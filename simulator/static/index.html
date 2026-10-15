@@ -4,9 +4,15 @@
 <header><div class="brand"><span class="brandmark">E</span><div><strong>Explorer</strong><span>Мастерская симуляции</span></div></div><div class="header-right"><span class="chip"><i></i> Только на этом Mac</span><span id="connection" class="muted">Подключение…</span></div></header>
 <main>
 <section class="panel learning-dashboard" id="skill-workshop" aria-live="polite">
-<p class="eyebrow">ПОЭТАПНЫЕ НАВЫКИ</p><h1>Проверять каждое действие</h1>
+<p class="eyebrow">ПОЭТАПНЫЕ НАВЫКИ</p><h1>Самостоятельное обучение</h1>
 <p>Найти → подъехать → измерить заново → взять → проверить удержание → перенести → отпустить → проверить размещение.</p>
-<p id="skill-progress">Сначала проверяем, что видит камера и на каком этапе возникает ошибка. Подготовка коротких навыков использует сохранённые показы; долгие повторы всей задачи автоматически не запускаются.</p>
+<p id="skill-progress">Алгоритм сам запускает попытки, оценивает результат и подбирает параметры неудачного навыка. Прогресс сохраняется; закрытие страницы не прерывает обучение.</p>
+<div class="button-row"><label>Попыток за запуск <input id="skill-attempts" type="number" min="8" max="1000" value="100"></label><label>Часов максимум <input id="skill-hours" type="number" min="1" max="24" value="24"></label><button id="skill-learn" class="primary">Обучаться: носок → корзина</button><button id="skill-learning-resume" class="hidden">Продолжить обучение</button></div>
+<div id="skill-learning-summary" aria-live="polite">Пока обучение не запущено.</div><progress id="skill-learning-progress" max="100" value="0"></progress>
+<p class="muted">Сейчас обучаются параметры отдельных действий: подъезд, захват, обзор и размещение. Это не универсальная нейросеть. Готовность проверяется на двух отдельных наборах по 10 сцен; физика и требования успеха при подборе не меняются.</p>
+<div class="section-line"><h2>Исполнители обучения</h2><label>Камера <select id="worker-camera"><option value="overview">Общий вид</option><option value="wrist">На руке</option></select></label></div>
+<p id="workers-phase" class="muted">Подключаю камеры исполнителей…</p>
+<div class="worker-grid" id="worker-grid"></div>
 <div class="button-row"><button id="skill-run" class="primary">Проверить этапы в симуляции</button><button id="skill-prepare">Подготовить отдельные навыки</button><button id="skill-resume" class="hidden">Продолжить подготовку</button><button id="skill-pause">Пауза вычислений</button></div>
 <div id="skill-evidence" class="skill-evidence" aria-live="polite"></div><a class="button" href="#scene-view">Показать камеры проверки</a><details><summary>Предыдущие проверки и подготовка данных</summary><ul id="skill-results"></ul></details><p class="muted">Неподтверждённый захват останавливает перенос. Подготовленные данные и короткие модели ещё не означают готовность робота. Передача нового режима на Jetson появится после проверки исполнения.</p>
 </section>
@@ -19,12 +25,9 @@
 <p id="cycle-next" class="cycle-next">Сохранённые данные и модели остаются доступными после перезапуска.</p>
 <div class="button-row"><button id="cycle-start" class="primary">Довести выбранный навык до готовности</button><button id="cycle-pause" class="hidden">Пауза обучения</button><button id="cycle-resume" class="hidden">Продолжить сохранённое обучение</button><a class="button" href="#automatic-learning">Выбрать задачи и время</a><a id="cycle-download" class="button hidden" href="/api/package" download>Скачать проверенную модель</a></div>
 <p class="muted compact">ROSMASTER можно выключить. Для вычислений нужны включённый Mac, питание и подключённый внешний диск. Готовность в симуляции и физическая проверка робота показываются отдельно.</p>
-<div class="section-line"><h2>Исполнители обучения</h2><label>Камера <select id="worker-camera"><option value="overview">Общий вид</option><option value="wrist">На руке</option></select></label></div>
-<p id="workers-phase" class="muted">Подключаю камеры исполнителей…</p>
-<div class="worker-grid" id="worker-grid"></div>
 <details><summary>Сцена и подробности текущего этапа</summary><img id="learning-preview" alt="Кадр текущей попытки или сохранённого учебного примера"><p id="cycle-preview-note">Во время обучения нейросети движения не выполняются; показывается сохранённый пример.</p><p id="cycle-storage"></p></details>
 </section></details>
-<section class="panel assistant-panel"><p class="eyebrow">ОБУЧЕНИЕ ПО ВАШЕЙ ПРОСЬБЕ</p><h1>Чему научить Explorer?</h1><p>Напишите обычными словами. Локальный помощник составит план и подготовит отдельные навыки по сохранённым показам. Исполнение проверяется отдельно, без автоматических повторов долгого обучения. Если часть просьбы ещё не поддерживается, сначала покажет её отдельно.</p>
+<section class="panel assistant-panel"><p class="eyebrow">ОБУЧЕНИЕ ПО ВАШЕЙ ПРОСЬБЕ</p><h1>Чему научить Explorer?</h1><p>Напишите обычными словами. Для носка и корзины помощник запускает самостоятельный подбор параметров по попыткам в симуляции. Для остальных задач пока доступна подготовка данных; автоматическое обучение им ещё не подключено. Если часть просьбы ещё не поддерживается, сначала покажет её отдельно.</p>
 <label for="learning-request">Ваша просьба</label><textarea id="learning-request" rows="3" maxlength="4000" placeholder="Хочу, чтобы робот привозил мне печенье в упаковке из другой комнаты на поднос"></textarea>
 <div class="request-examples"><button data-request="Научись убирать носки с пола в корзину">Носки в корзину</button><button data-request="Хочу, чтобы робот привозил мне печенье в упаковке из другой комнаты на поднос">Привозить печенье</button><button data-request="Хочу, чтобы робот привозил мне печенье в упаковке и давал его мне в руку">Печенье в руку</button><button data-request="Научись складывать маленькие лёгкие кубики в коробку и небольшие тряпочки в корзину для белья">Игрушки и ткань</button></div>
 <div class="button-row"><button id="request-learn" class="primary">Составить план и подготовить навыки</button><button id="request-plan">Только показать план</button><a class="button" href="#automatic-learning">Выбрать готовые задачи</a><button id="request-reply" class="hidden">Отправить уточнение</button><button id="request-partial" class="hidden">Обучить доступную часть</button><button id="request-resume" class="hidden">Продолжить мою задачу</button></div>

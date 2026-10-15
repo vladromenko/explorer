@@ -17,12 +17,16 @@ from .environment import PERIOD
 
 
 class SimulatorSkillPort:
-    def __init__(self,env,folder,cancelled=lambda:False,progress=lambda value:None):
+    def __init__(self,env,folder,cancelled=lambda:False,progress=lambda value:None,*,parameters=None):
+        from .skill_parameters import parameters as checked_parameters
+        self.parameters=checked_parameters(parameters)
         self.env=env;self.folder=Path(folder);self.folder.mkdir(parents=True,exist_ok=False)
-        self.cancelled=cancelled;self.progress=progress;self.sequence=0
+        self.cancelled=cancelled;self.progress=progress;self.sequence=0;self.base_motion_sequence=0
         self.target=None;self.destination=None;self.grasp_xyz=None;self.before_hold=None;self.release_xyz=None
         self.destination_views=[];self.surveys=[]
         self.transport_poses=[]
+        self.depth_records=[];self.depth_manifest=[]
+        (self.folder/'depth').mkdir()
         self.frames=[];self.handle=(self.folder/'commands.jsonl').open('w')
 
     def check(self,ctx=None):
@@ -33,6 +37,7 @@ class SimulatorSkillPort:
     def tick(self,arm,base=(0.,0.,0.),ctx=None):
         self.check(ctx)
         action=np.r_[arm,base]
+        if np.any(np.asarray(base)!=0.):self.base_motion_sequence+=1
         self.handle.write(json.dumps(dict(simulation_time=float(self.env.data.time),
             phase=self.env.phase,command=action.tolist()))+'\n')
         self.env.step(action)
@@ -56,36 +61,103 @@ class SimulatorSkillPort:
             if motion_check is not None:motion_check()
         return goal
 
-    def look_at(self,point,ctx,*,gripper=None,distance_m=.24,min_camera_height_m=.12):
+    def look_at(self,point,ctx,*,gripper=None,distance_m=.24,min_camera_height_m=.12,transport_required=True):
         """Aim the calibrated wrist camera at an already observed location."""
-        from .inspection_planning import plan_camera_view,CameraViewUnavailable
+        from .inspection_planning import plan_camera_view,CameraViewUnavailable,ObservedMotionViolation
         from .manipulation_planning import hand_rotation
         if self.before_hold is not None and not hasattr(self,'hold_rotation'):
             raise CameraViewUnavailable('Нет исходной ориентации подтверждённого захвата')
         held_reference=self.hold_rotation.T@np.array([0.,0.,1.]) if self.before_hold is not None else None
+        minimum_jaw=(float(self.destination['bounds_max'][2])+.10
+            if held_reference is not None and self.destination is not None and transport_required else None)
         plan=plan_camera_view(self.env,point,
             gripper=float(self.env.command[5] if gripper is None else gripper),distance_m=distance_m,
             min_camera_height_m=min_camera_height_m,check=lambda:self.check(ctx),
             maximum_hand_tilt_deg=2. if held_reference is not None else None,
-            reference_hand_gravity=held_reference)
+            reference_hand_gravity=held_reference,minimum_jaw_height_m=minimum_jaw)
         def check_tilt():
             gravity=hand_rotation(self.env).T@np.array([0.,0.,1.])
             tilt=float(np.arccos(np.clip(held_reference@gravity,-1.,1.)))
             if not np.isfinite(tilt) or tilt>np.deg2rad(3.):
-                raise CameraViewUnavailable('Во время обзора превышен наклон удерживаемого предмета')
+                raise ObservedMotionViolation('Во время обзора превышен наклон удерживаемого предмета')
         self.move_angles(plan.command,ctx,motion_check=check_tilt if held_reference is not None else None)
         # Finite torque and joint tracking can lower a physically settled
         # camera below the kinematic prediction. Do not silently accept it.
         camera=self.env.model.camera('wrist_depth').id
         if float(self.env.data.cam_xpos[camera,2])<min_camera_height_m-.008:
-            raise CameraViewUnavailable('После движения камера не достигла рассчитанной высоты обзора')
+            raise ObservedMotionViolation('После движения камера не достигла рассчитанной высоты обзора')
         if held_reference is not None:check_tilt()
+        if minimum_jaw is not None and self.env.jaw_center()[2]<minimum_jaw-.008:
+            raise ObservedMotionViolation('Во время обзора захват опустился ниже высоты переноса')
+
+    def held_yaw_view(self,point,offset_deg,ctx,*,transport_required=True):
+        """Change only arm azimuth, preserving the settled high grasp posture."""
+        from .inspection_planning import check_observed_box_path,ObservedMotionViolation,CameraViewUnavailable
+        from .manipulation_planning import hand_rotation
+        camera=self.env.model.camera('wrist_depth').id
+        forward=-self.env.data.cam_xmat[camera].reshape(3,3)[:,2]
+        direction=np.asarray(point,float)[:2]-self.env.data.cam_xpos[camera,:2]
+        delta=math.atan2(direction[1],direction[0])-math.atan2(forward[1],forward[0])
+        delta=math.atan2(math.sin(delta),math.cos(delta))
+        command=self.env.command[:6].copy();command[0]+=-math.degrees(delta)+offset_deg
+        if not 0.<=command[0]<=180.:raise CameraViewUnavailable('Азимут обзора вне диапазона основания руки')
+        check_observed_box_path(self.env,command,self.destination,check=lambda:self.check(ctx))
+        reference=self.hold_rotation.T@np.array([0.,0.,1.])
+        def guard():
+            gravity=hand_rotation(self.env).T@np.array([0.,0.,1.])
+            if math.acos(float(np.clip(reference@gravity,-1.,1.)))>math.radians(3.):
+                raise ObservedMotionViolation('При повороте обзора изменился наклон удерживаемого предмета')
+            minimum=(float(self.destination['bounds_max'][2])+.09 if transport_required else .18)
+            if self.env.jaw_center()[2]<minimum:
+                raise ObservedMotionViolation('При повороте обзора потеряна высота переноса')
+        self.move_angles(command,ctx,duration=3.,motion_check=guard)
+
+    def held_view_baseline(self,ctx,*,transport_required=True):
+        """A small measured chassis retreat supplies a real stereo baseline."""
+        from .observed_navigation import TranslationFeedback
+        from .inspection_planning import ObservedMotionViolation
+        from .manipulation_planning import hand_rotation,transport_pose_satisfied
+        minimum=max(.18,float(self.destination['bounds_max'][2])+.09) if transport_required else .18
+        if not transport_pose_satisfied(self.env,minimum):
+            raise ObservedMotionViolation('Нет компактной высокой позы для второго ракурса')
+        start=np.asarray(self.env.base_pose())[:2]
+        away=start-np.asarray(self.destination['center'])[:2];away/=np.linalg.norm(away)
+        goal=start+self.parameters['view_baseline_m']*away;feedback=TranslationFeedback(maximum_speed=.03)
+        reference=self.hold_rotation.T@np.array([0.,0.,1.])
+        for n in range(120):
+            pose=np.asarray(self.env.base_pose());delta=goal-pose[:2]
+            if np.linalg.norm(delta)<.002:break
+            if np.linalg.norm(pose[:2]-start)>.08:
+                raise ObservedMotionViolation('Превышен предел второго ракурса')
+            gravity=hand_rotation(self.env).T@np.array([0.,0.,1.])
+            if math.acos(float(np.clip(reference@gravity,-1.,1.)))>math.radians(3.):
+                raise ObservedMotionViolation('Во время смены ракурса изменился наклон захвата')
+            if any(r is not None and r<.12 for r in self.env.lidar_scan()['ranges']):
+                raise ObservedMotionViolation('Лидар не подтвердил проход для второго ракурса')
+            speed=feedback.update(delta,float(pose[2]),PERIOD)
+            self.tick(self.env.command[:6],(*speed,0.),ctx)
+        else:raise ObservedMotionViolation('Второй ракурс не достигнут за ограниченное время')
+        for _ in range(12):self.tick(self.env.command[:6],ctx=ctx)
+        if np.linalg.norm(np.asarray(self.env.base_pose())[:2]-start)<.025:
+            raise ObservedMotionViolation('Измеренное смещение не создало отдельный ракурс')
+        held=self.verify_hold(ctx,probe=False)
+        if held['outcome']!='success':raise ObservedMotionViolation(held['reason'])
 
     def observe(self,ctx):
         from src.task_executor import Observation
         from .rgbd_observation import observe_environment
         self.check(ctx);self.sequence+=1
-        data=observe_environment(self.env)
+        raw={};data=observe_environment(self.env,raw_output=raw)
+        if raw.get('robot_depth') is not None:
+            record=dict(frame=data,depth=raw['depth'],robot_depth=raw['robot_depth'],
+                command=self.env.command[:6].copy(),base_pose=np.asarray(self.env.base_pose()).copy())
+            self.depth_records.append(record);self.depth_records=self.depth_records[-24:]
+            path=self.folder/'depth'/f'{self.sequence:04d}.npz'
+            np.savez_compressed(path,depth=raw['depth'],robot_depth=raw['robot_depth'],
+                optical_to_world=np.asarray(data['optical_to_world']),intrinsics_json=json.dumps(data['intrinsics']),
+                frame_id=data['frame_id'],simulation_time=data['simulation_time'],command=record['command'],
+                base_pose=record['base_pose'])
+            self.depth_manifest.append(dict(frame_id=data['frame_id'],file=str(path)))
         self.frames.append(data)
         return Observation(sequence=self.sequence,captured_at=time.monotonic(),
             base_revision=ctx.base_revision,data=data)
@@ -107,7 +179,7 @@ class SimulatorSkillPort:
         direction=np.array([math.cos(base[2]),math.sin(base[2])])
         self.move([*(base[:2]+.23*direction),.15],30.,ctx)
 
-    def survey_destination(self,ctx,*,max_views=8):
+    def survey_destination(self,ctx,*,max_views=8,transport_required=True):
         """A finite robot-relative survey; partial geometry only guides camera aim.
 
         Cached world geometry is an aiming hint. At least one new complete
@@ -115,29 +187,88 @@ class SimulatorSkillPort:
         the destination can be used. Gripper state is preserved throughout.
         """
         from .rgbd_observation import combine_container_views,ObservationRefused
+        from .inspection_planning import ObservedMotionViolation
+        from .multiview_container import combine_registered_container,opening_refresh_hint
         self.env.phase='skill_find_destination'
         pose=np.asarray(self.env.base_pose());direction=np.array([math.cos(pose[2]),math.sin(pose[2])])
         lateral=np.array([-direction[1],direction[0]])
         aims=[]
         if self.destination is not None:
-            aims.append((np.asarray(self.destination['center']),.45))
+            center=np.asarray(self.destination['center'],float)
+            if self.before_hold is not None:
+                # A verified high hold can point the camera horizontally.
+                # Forcing its optical axis through the basket centre would
+                # require tipping the hand, although the opening can be seen
+                # below the axis within the measured image's field of view.
+                camera=self.env.model.camera('wrist_depth').id
+                current_height=float(self.env.data.cam_xpos[camera,2])
+                forward_z=-float(self.env.data.cam_xmat[camera].reshape(3,3)[2,2])
+                for distance in (.65,.70,.60,.75):
+                    aims.append((np.r_[center[:2],current_height+forward_z*distance],distance))
+            else:aims.append((center,.45))
         for forward,side,height in ((.40,.24,.15),(.40,-.24,.15),(.50,.35,.20),
                                     (.50,-.35,.20),(.35,.28,.25),(.35,-.28,.25)):
             aims.append((np.r_[pose[:2]+forward*direction+side*lateral,height],.40))
-        visited=[];notes=[];new_complete=0
-        while aims and len(visited)<max_views:
+        visited=[];notes=[];new_complete=0;refreshed=False;yaw_attempts=0
+        if self.before_hold is not None and self.destination is not None:
+            for index,offset in enumerate((0.,0.)):
+                if yaw_attempts>=max_views:break
+                yaw_attempts+=1
+                try:
+                    if index:self.held_view_baseline(ctx,transport_required=transport_required)
+                    self.held_yaw_view(self.destination['center'],offset,ctx,transport_required=transport_required)
+                    frame=self.scene(ctx)
+                    notes.append(dict(yaw_offset_deg=offset,frame_id=frame['frame_id'],
+                        complete_candidates=len(frame.get('containers',[]))))
+                    box=combine_registered_container(self.depth_records,now_simulation_time=float(self.env.data.time))
+                    self.destination=box
+                    self.surveys.append(dict(outcome='success',views=notes,destination=box))
+                    return dict(outcome='success',destination=box,evidence=dict(
+                        source='registered_rgbd_rim_and_opening',proof=box['evidence']))
+                except ObservedMotionViolation:raise
+                except (ValueError,ObservationRefused) as error:notes.append(dict(yaw_offset_deg=offset,reason=str(error)))
+        while aims and len(visited)+yaw_attempts<max_views:
             self.check(ctx)
             point,distance=aims.pop(0)
             if any(np.linalg.norm(point-old[0])<.025 and abs(distance-old[1])<.025 for old in visited):
                 continue
             visited.append((point.copy(),distance))
             try:
-                self.look_at(point,ctx,distance_m=distance,min_camera_height_m=.30)
+                self.look_at(point,ctx,distance_m=distance,min_camera_height_m=.30,
+                    transport_required=transport_required)
                 frame=self.scene(ctx)
+            except ObservedMotionViolation:raise
             except ValueError as error:
                 notes.append(dict(aim=point.tolist(),reason=str(error)));continue
             complete=frame.get('containers',[])
             notes.append(dict(aim=point.tolist(),frame_id=frame['frame_id'],complete_candidates=len(complete)))
+            try:
+                box=combine_registered_container(self.depth_records,now_simulation_time=float(self.env.data.time))
+                self.destination=box
+                self.surveys.append(dict(outcome='success',views=notes,destination=box))
+                return dict(outcome='success',destination=box,
+                    evidence=dict(source='registered_rgbd_rim_and_opening',proof=box['evidence']))
+            except ObservationRefused:pass
+            if not refreshed and self.before_hold is None:
+                try:
+                    hint=opening_refresh_hint(self.depth_records,now_simulation_time=float(self.env.data.time))
+                    source=next(r for r in self.depth_records if r['frame']['frame_id']==hint['source_frame'])
+                    if np.linalg.norm(np.asarray(self.env.base_pose())-source['base_pose'])>.001:
+                        raise ObservationRefused('Исходная позиция шасси изменилась')
+                    from .inspection_planning import check_observed_box_path
+                    command=hint['command'];command[5]=self.env.command[5]
+                    refreshed=True
+                    check_observed_box_path(self.env,command,hint['occupied_box'],check=lambda:self.check(ctx))
+                    self.move_angles(command,ctx)
+                    fresh=self.scene(ctx)
+                    notes.append(dict(revisit_source=hint['source_frame'],frame_id=fresh['frame_id']))
+                    box=combine_registered_container(self.depth_records,now_simulation_time=float(self.env.data.time))
+                    self.destination=box
+                    self.surveys.append(dict(outcome='success',views=notes,destination=box))
+                    return dict(outcome='success',destination=box,
+                        evidence=dict(source='registered_rgbd_rim_and_opening',proof=box['evidence']))
+                except (ObservationRefused,ValueError) as error:
+                    if refreshed:notes.append(dict(revisit_refused=str(error)))
             if len(complete)==1:
                 self.destination_views.append(dict(candidate=complete[0],frame_id=frame['frame_id'],
                     simulation_time=frame['simulation_time'],
@@ -158,7 +289,12 @@ class SimulatorSkillPort:
             elif len(frame.get('container_hypotheses',[]))==1:
                 # A wall fragment may steer a new camera view, never a release.
                 hint=frame['container_hypotheses'][0]
-                aims.insert(0,(np.asarray(hint['center']),.45))
+                point=np.asarray(hint['center'],float)
+                if self.before_hold is not None:
+                    camera=self.env.model.camera('wrist_depth').id
+                    forward_z=-float(self.env.data.cam_xmat[camera].reshape(3,3)[2,2])
+                    point[2]=float(self.env.data.cam_xpos[camera,2])+forward_z*.55
+                aims.insert(0,(point,.55 if self.before_hold is not None else .45))
         self.surveys.append(dict(outcome='unknown',views=notes))
         needs_new_view=self.before_hold is not None and new_complete==0
         reason=('Не найден обзор корзины с сохранением удержания; нужна другая точка обзора'
@@ -178,47 +314,36 @@ class SimulatorSkillPort:
             evidence=dict(source='rendered_rgbd',semantic_identity='unverified',single_target_assumption=True))
 
     def approach(self,ctx):
-        import mujoco
-        import copy
+        from .observed_navigation import TranslationFeedback
+        from .grasp_planning import plan_pick_stance
         self.env.phase='skill_approach'
         if self.target is None:return dict(outcome='unknown',reason='Нет наблюдаемой цели')
-        target=np.asarray(self.target['center'])
-        pose=np.asarray(self.env.base_pose());direction=np.array([math.cos(pose[2]),math.sin(pose[2])])
-        destination=None
-        # Select a reachable stance with the robot's own kinematics before
-        # driving. Only the measured target supplies environment coordinates.
-        branch=copy.copy(self.env);branch.data=mujoco.MjData(self.env.model)
-        branch.data.qpos[:]=self.env.data.qpos
-        address=self.env.model.joint('base_free').qposadr[0]
-        grasp=[*target[:2],max(.017,float(target[2])+.010)]
-        for stand_off in (.20,.22,.24,.26,.18):
-            self.check(ctx)
-            candidate=target[:2]-stand_off*direction
-            branch.data.qpos[address:address+2]=candidate
-            mujoco.mj_forward(branch.model,branch.data)
-            try:
-                branch.solve_ik(grasp,gripper=30.)
-                branch.solve_ik(grasp,gripper=170.)
-                try:branch.solve_ik([*target[:2],.18],gripper=170.)
-                except ValueError:branch.solve_ik([*target[:2],.18],gripper=170.,downward=False)
-                destination=candidate;break
-            except ValueError:continue
-        if destination is None:return dict(outcome='failure',reason='Для измеренной точки не найден достижимый захват')
-        travelled=0.
-        for _ in range(160):
+        stance=plan_pick_stance(self.env,self.target,self.depth_records[-1],self.destination,
+            check=lambda:self.check(ctx),preferred_fraction=self.parameters['pick_fraction'],
+            lift_clearance=self.parameters['lift_clearance_m'],surface_offset=self.parameters['pick_surface_offset_m'])
+        self.pick_fraction=stance.fraction;self.pick_lift_height=float(stance.lift_xyz[2])
+        self.planned_pick_xyz=stance.grasp_xyz.copy()
+        destination=stance.base_xy
+        travelled=0.;previous_pose=np.asarray(self.env.base_pose())[:2].copy()
+        feedback=TranslationFeedback()
+        for _ in range(240):
             pose=np.asarray(self.env.base_pose());delta=destination-pose[:2]
-            if np.linalg.norm(delta)<.008:break
+            travelled+=float(np.linalg.norm(pose[:2]-previous_pose));previous_pose=pose[:2].copy()
+            if np.linalg.norm(delta)<.003:break
             if travelled>.22:return dict(outcome='failure',reason='Превышен предел локального подъезда',base_moved=True)
             ranges=self.env.lidar_scan()['ranges']
             # Stop on a near scan return rather than assuming a clear room.
             if any(r is not None and r<.12 for r in ranges):
                 return dict(outcome='unknown',reason='Лидар не подтвердил свободный проход',base_moved=travelled>0)
-            c,s=math.cos(pose[2]),math.sin(pose[2]);body=np.array([[c,s],[-s,c]])@delta
-            speed=np.clip(body*1.2,-.06,.06)
-            self.tick(self.env.command[:6],(*speed,0.),ctx);travelled+=float(np.linalg.norm(speed))*PERIOD
+            speed=feedback.update(delta,float(pose[2]),PERIOD)
+            self.tick(self.env.command[:6],(*speed,0.),ctx)
         else:return dict(outcome='failure',reason='Подъезд не сошёлся',base_moved=travelled>0)
         for _ in range(12):self.tick(self.env.command[:6],ctx=ctx)
-        return dict(outcome='success',base_moved=travelled>0,evidence=dict(local_travel_m=travelled))
+        if np.linalg.norm(destination-np.asarray(self.env.base_pose())[:2])>=.008:
+            return dict(outcome='retry',reason='После остановки требуется уточнение подъезда',base_moved=travelled>0)
+        return dict(outcome='success',base_moved=travelled>0,evidence=dict(local_travel_m=travelled,
+            observed_pick_fraction=stance.fraction,chassis_clearance_m=stance.chassis_clearance_m,
+            measured_pick_point_m=stance.grasp_xyz.tolist()))
 
     def reobserve(self,ctx):
         from .rgbd_observation import ObservationRefused
@@ -234,31 +359,42 @@ class SimulatorSkillPort:
         if new is None:return dict(outcome='unknown',reason='Не удалось получить полный свежий обзор: '+str(last_error))
         if self.target and np.linalg.norm(np.asarray(new['center'])-self.target['center'])>.10:
             return dict(outcome='unknown',reason='Свежая цель не совпадает с предыдущим наблюдением')
-        self.target=new;self.grasp_xyz=np.asarray(new['center'],float)
-        return dict(outcome='success',target=new,evidence=dict(frame_id=new['frame_id']))
+        from .grasp_planning import observed_pick_patch
+        self.target=new;self.grasp_xyz=observed_pick_patch(self.depth_records[-1],new,self.env.base_pose(),
+            fraction=getattr(self,'pick_fraction',.25),preferred_xyz=getattr(self,'planned_pick_xyz',None))
+        return dict(outcome='success',target=new,evidence=dict(frame_id=new['frame_id'],
+            measured_pick_point_m=self.grasp_xyz.tolist()))
 
     def pregrasp(self,ctx):
+        from .grasp_planning import solve_pick_ik
         self.env.phase='skill_pregrasp'
         if self.grasp_xyz is None:return dict(outcome='unknown',reason='Нет свежей точки захвата')
-        self.move([*self.grasp_xyz[:2],max(.10,float(self.grasp_xyz[2])+.08)],30.,ctx)
+        goal=solve_pick_ik(self.env,[*self.grasp_xyz[:2],max(.10,float(self.grasp_xyz[2])+.08)],30.,
+            check=lambda:self.check(ctx))
+        self.move_angles(goal,ctx)
         return dict(outcome='success')
 
     def grasp(self,ctx):
+        from .grasp_planning import solve_pick_ik
         self.env.phase='skill_grasp'
         # The measured visible surface supplies height; no cloth-node truth.
         # Geometric pad-centre offset above the visible cloth surface. It is
         # explicitly estimated, pending the same real gripper calibration as
         # the existing simulator contact geometry; it is not cloth truth.
-        xyz=self.grasp_xyz.copy();xyz[2]=max(.017,float(xyz[2])+.010)
-        self.move(xyz,30.,ctx)
-        self.move(xyz,170.,ctx,duration=2.)
+        xyz=self.grasp_xyz.copy();xyz[2]=max(.017,float(xyz[2])+self.parameters['pick_surface_offset_m'])
+        for gripper,duration in ((30.,1.5),(170.,2.)):
+            goal=solve_pick_ik(self.env,xyz,gripper,check=lambda:self.check(ctx))
+            self.move_angles(goal,ctx,duration=duration)
         return dict(outcome='success',evidence=dict(command_only=True,holding_not_yet_confirmed=True))
 
     def lift(self,ctx):
+        from .grasp_planning import solve_pick_ik
         self.env.phase='skill_lift'
-        xyz=[*self.grasp_xyz[:2],.18]
-        try:goal=self.env.solve_ik(xyz,self.env.command[:5],gripper=170.)
-        except ValueError:goal=self.env.solve_ik(xyz,self.env.command[:5],gripper=170.,downward=False)
+        goal=solve_pick_ik(self.env,[*self.grasp_xyz[:2],.10],170.,check=lambda:self.check(ctx))
+        self.move_angles(goal,ctx)
+        pose=np.asarray(self.env.base_pose());direction=np.array([math.cos(pose[2]),math.sin(pose[2])])
+        xyz=[*(pose[:2]+.16*direction),getattr(self,'pick_lift_height',.24)]
+        goal=self.env.solve_ik(xyz,self.env.command[:5],gripper=170.,downward=False)
         self.move_angles(goal,ctx)
         return dict(outcome='success',evidence=dict(command_only=True))
 
@@ -299,7 +435,8 @@ class SimulatorSkillPort:
                 frame_id=frame['frame_id'],comparison_frame='arm5',relative_displacement_m=displacement))
         from .manipulation_planning import plan_hold_probe,hand_rotation
         from scipy.spatial.transform import Rotation
-        probe_plan=plan_hold_probe(self.env,check=lambda:self.check(ctx))
+        probe_plan=plan_hold_probe(self.env,check=lambda:self.check(ctx),
+            lowest_material_height_m=float(first['bounds_min'][2]))
         self.move_angles(probe_plan.command,ctx)
         second=self.scene(ctx);new_jaw=np.asarray(self.env.jaw_center())
         candidates=[c for c in second.get('object_candidates',[]) if associated(c)
@@ -337,8 +474,45 @@ class SimulatorSkillPort:
         self.env.phase='skill_find_destination'
         # Missing or partial container geometry cannot be replaced by the
         # simulated bin pose or an assumed pre-recorded destination.
-        survey=self.survey_destination(ctx,max_views=4)
-        if survey['outcome']!='success':return survey
+        camera=self.env.model.camera('wrist_depth').id
+        upward_axis=-float(self.env.data.cam_xmat[camera].reshape(3,3)[2,2])
+        retreat_first=(self.destination is not None and
+            float(self.destination['bounds_max'][2])>.25 and upward_axis>.10)
+        survey=None if retreat_first else self.survey_destination(ctx,max_views=4)
+        view_moved=False
+        if (retreat_first or (survey['outcome']!='success' and self.destination is not None
+            and survey.get('evidence',{}).get('needs_new_viewpoint') is True)):
+            # One measured retreat creates a new viewing baseline without
+            # tipping the held object. The cached box supplies direction only;
+            # destination acceptance still requires new registered depth.
+            from .manipulation_planning import transport_pose_satisfied
+            from .observed_navigation import TranslationFeedback
+            rim=float(self.destination['bounds_max'][2])
+            if not transport_pose_satisfied(self.env,max(.18,rim+.09)):
+                return dict(outcome='unknown',reason='Для смены обзора нет высокой компактной позы')
+            held=self.verify_stationary_hold(ctx)
+            if held['outcome']!='success':return held
+            start=np.asarray(self.env.base_pose())[:2];away=start-np.asarray(self.destination['center'])[:2]
+            length=float(np.linalg.norm(away))
+            if length<.15:return dict(outcome='unknown',reason='Нет направления безопасного отступления для обзора')
+            goal=start+self.parameters['view_retreat_m']*away/length;feedback=TranslationFeedback(maximum_speed=.04)
+            self.env.phase='skill_view_retreat'
+            for n in range(300):
+                pose=np.asarray(self.env.base_pose());delta=goal-pose[:2]
+                if np.linalg.norm(delta)<.003:break
+                if np.linalg.norm(pose[:2]-start)>self.parameters['view_retreat_m']+.06:
+                    return dict(outcome='unknown',reason='Превышен предел смены точки обзора',base_moved=view_moved)
+                if any(r is not None and r<.12 for r in self.env.lidar_scan()['ranges']):
+                    return dict(outcome='unknown',reason='Лидар не подтвердил отступление для обзора',base_moved=view_moved)
+                speed=feedback.update(delta,float(pose[2]),PERIOD)
+                self.tick(self.env.command[:6],(*speed,0.),ctx);view_moved=True
+                if n%20==0:
+                    held=self.verify_hold(ctx,probe=False)
+                    if held['outcome']!='success':return dict(held,base_moved=view_moved)
+            else:return dict(outcome='unknown',reason='Не удалось завершить смену точки обзора',base_moved=view_moved)
+            for _ in range(12):self.tick(self.env.command[:6],ctx=ctx)
+            survey=self.survey_destination(ctx,max_views=4)
+        if survey['outcome']!='success':return dict(survey,base_moved=view_moved)
         held=self.verify_hold(ctx,probe=False)
         if held['outcome']!='success':return held
         box=self.destination
@@ -369,7 +543,7 @@ class SimulatorSkillPort:
         self.env.phase='skill_carry'
         half=(np.asarray(box['bounds_max'])-box['bounds_min'])/2
         destination=np.asarray(box['center'])[:2]-[float(half[0])+.17,0.]
-        moved=False
+        moved=view_moved
         for n in range(400):
             pose=np.asarray(self.env.base_pose());delta=destination-pose[:2]
             if np.linalg.norm(delta)<.01:break
@@ -386,10 +560,53 @@ class SimulatorSkillPort:
         for _ in range(12):self.tick(self.env.command[:6],ctx=ctx)
         return dict(outcome='success',base_moved=moved,evidence=dict(destination=box,route='local_rgbd_odometry_lidar'))
 
+    def reorient_for_destination(self,ctx):
+        """Intentional wrist reorientation, with visible grip checked throughout.
+
+        This is a separate manipulation skill. Ordinary camera sweeps retain
+        their original 3 degree guard. No hold reference is rebased during the
+        move; the original material anchor must survive every fresh image.
+        """
+        from .inspection_planning import plan_camera_view,check_observed_box_path,ObservedMotionViolation
+        from .manipulation_planning import hand_rotation
+        from scipy.spatial.transform import Rotation
+        held=self.verify_hold(ctx,probe=False)
+        if held['outcome']!='success':return held
+        box=self.destination;point=np.asarray(box['center'],float).copy()
+        point[2]=float(box['bounds_max'][2])-.02
+        try:
+            plan=plan_camera_view(self.env,point,gripper=170.,distance_m=self.parameters['reorientation_distance_m'],
+                min_camera_height_m=self.parameters['reorientation_camera_height_m'],check=lambda:self.check(ctx))
+            check_observed_box_path(self.env,plan.command,box,check=lambda:self.check(ctx))
+        except ValueError as error:return dict(outcome='unknown',reason='Нет пути изменения обзора: '+str(error))
+        start=self.env.command[:6].copy();last=hand_rotation(self.env);checks=[];tick=0
+        duration=max(3.,float(np.sum(abs(plan.command[:5]-start[:5])))/.5*PERIOD)
+        if duration>30.:return dict(outcome='unknown',reason='Изменение обзора превышает конечный бюджет')
+        def check_grip():
+            nonlocal tick,last
+            tick+=1
+            if tick%2:return
+            rotation=hand_rotation(self.env)
+            change=float(Rotation.from_matrix(last.T@rotation).magnitude())
+            if change>math.radians(3.):raise ObservedMotionViolation('Слишком большой шаг изменения ориентации захвата')
+            observed=self.verify_hold(ctx,probe=False)
+            if observed['outcome']!='success':raise ObservedMotionViolation('Во время изменения обзора: '+observed['reason'])
+            checks.append(dict(frame_id=observed['evidence']['frame_id'],step_rotation_deg=math.degrees(change)))
+            last=rotation;self.env.phase='skill_reorient_destination'
+        self.env.phase='skill_reorient_destination'
+        self.move_angles(plan.command,ctx,duration=duration,motion_check=check_grip)
+        held=self.verify_hold(ctx)
+        if held['outcome']!='success':return held
+        held=self.verify_stationary_hold(ctx)
+        return dict(held,evidence=dict(held.get('evidence',{}),reorientation_frames=checks,
+            original_anchor_checked=True,gripper_closed=True))
+
     def support(self,ctx):
         self.env.phase='skill_support'
         previous=self.destination
-        survey=self.survey_destination(ctx,max_views=4)
+        oriented=self.reorient_for_destination(ctx)
+        if oriented['outcome']!='success':return oriented
+        survey=self.survey_destination(ctx,max_views=4,transport_required=False)
         if survey['outcome']!='success':return survey
         box=self.destination
         if float(box['uncertainty_m'])>.02:return dict(outcome='unknown',reason='Граница корзины перед отпусканием недостаточно точна')
@@ -398,7 +615,8 @@ class SimulatorSkillPort:
         self.destination=box
         lo,hi=np.asarray(box['bounds_min']),np.asarray(box['bounds_max'])
         if min(hi[:2]-lo[:2])<.10:return dict(outcome='unknown',reason='Отверстие корзины слишком мало или не видно')
-        self.release_xyz=np.array([lo[0]+min(.09,(hi[0]-lo[0])/2),(lo[1]+hi[1])/2,hi[2]+.035])
+        self.release_xyz=np.array([lo[0]+self.parameters['release_fraction']*(hi[0]-lo[0]),
+            (lo[1]+hi[1])/2,hi[2]+self.parameters['release_margin_m']])
         self.move(self.release_xyz,170.,ctx,downward=False)
         return dict(outcome='success',evidence=dict(frame_id=box['frame_id'],rim_height_m=float(hi[2])))
 
@@ -416,7 +634,7 @@ class SimulatorSkillPort:
     def withdraw(self,ctx):
         self.env.phase='skill_withdraw'
         if self.release_xyz is None:return dict(outcome='unknown',reason='Нет точки отвода')
-        self.move(self.release_xyz+[-.035,0.,.07],30.,ctx,downward=False)
+        self.move(self.release_xyz+[-.035,0.,self.parameters['withdraw_height_m']],30.,ctx,downward=False)
         for _ in range(40):self.tick(self.env.command[:6],ctx=ctx)
         return dict(outcome='success')
 
@@ -444,8 +662,16 @@ class SimulatorSkillPort:
         finally:
             (self.folder/'destination-surveys.json').write_text(json.dumps(self.surveys,ensure_ascii=False,indent=2))
             (self.folder/'transport-poses.json').write_text(json.dumps(self.transport_poses,ensure_ascii=False,indent=2))
+            (self.folder/'depth-records.json').write_text(json.dumps(self.depth_manifest,ensure_ascii=False,indent=2))
             (self.folder/'observations.json').write_text(json.dumps(self.frames,ensure_ascii=False,indent=2))
 
     def operations(self):
-        return {name:getattr(self,name) for name in ('find','approach','reobserve','pregrasp','grasp',
+        def declared(operation):
+            def execute(ctx):
+                before=self.base_motion_sequence
+                result=operation(ctx)
+                if self.base_motion_sequence!=before:return dict(result,base_moved=True)
+                return result
+            return execute
+        return {name:declared(getattr(self,name)) for name in ('find','approach','reobserve','pregrasp','grasp',
             'lift','verify_hold','carry','support','release','withdraw','verify_place')}

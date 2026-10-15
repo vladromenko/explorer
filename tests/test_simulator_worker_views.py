@@ -37,6 +37,18 @@ def test_training_shows_recordings_never_claims_live_workers(tmp_path):
     assert json.loads((dest/'state.json').read_text())==result
 
 
+def test_skill_learning_shows_actual_distinct_process_scenes(tmp_path):
+    root=tmp_path/'data';training='c'*12;workers=[]
+    for i in range(4):
+        token=str(i)*12;folder=root/'skill-training'/training/'episodes'/token
+        (folder/'frames').mkdir(parents=True);(folder/'frames/000001.jpg').write_bytes(bytes([i]))
+        workers.append(dict(slot=i,episode_id=token,seed=100+i,candidate=i))
+    job=dict(id='a'*12,kind='skill_train',status='running',details=dict(training_id=training,active_workers=workers))
+    result=publish(root,tmp_path/'static',{'jobs':[job]}, {})
+    assert result['phase']=='skill_train' and len(result['views'])==4
+    assert len({v['identity'] for v in result['views']})==4 and all(v['live'] for v in result['views'])
+
+
 def test_old_live_frame_is_reported_stale_and_no_frame_is_not_substituted(tmp_path):
     root=tmp_path/'data';dest=tmp_path/'static'
     folder=scene(root,'a'*12,0,b'frame')

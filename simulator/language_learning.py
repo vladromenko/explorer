@@ -247,7 +247,7 @@ class LearningGoals:
                 goal=self.get(path.stem)
                 batch=next((item for item in batches if item['id']==goal.get('night_plan_id')),None)
                 cycle=next((item for item in (cycles or []) if item['id']==goal.get('learning_cycle_id')),None)
-                if batch and goal.get('learning_mode')!='skills':
+                if batch and goal.get('learning_mode') not in ('skills','skill_search'):
                     goal['batch_state']=batch['state']
                     goal['results']=[dict(task_id=item['task_id'], title=TASKS[item['task_id']]['title'],
                         state=item['state'], qualified=item.get('simulation_qualified',False),
@@ -256,7 +256,7 @@ class LearningGoals:
                     complete=batch['state']=='complete'
                     passed=complete and all(item['qualified'] for item in goal['results'])
                     goal['state']=('simulation_checked' if goal['plan']['fully_supported'] else 'partial_simulation_checked') if passed else 'needs_more_training' if complete else batch['state']
-                if cycle and goal.get('learning_mode')!='skills':
+                if cycle and goal.get('learning_mode') not in ('skills','skill_search'):
                     goal['state']=('simulation_checked' if goal['plan']['fully_supported'] else 'partial_simulation_checked') if cycle['state']=='ready_for_transfer' else cycle['state']
                     goal['results']=[dict(task_id=item['task_id'],title=TASKS[item['task_id']]['title'],
                         qualified=item.get('simulation_qualified',False),successes=item.get('validation',{}).get('successes'),
