@@ -271,18 +271,26 @@ class SimulatorSkillPort:
             if np.linalg.norm(relative-previous)>.025:
                 return dict(outcome='unknown',reason='Положение предмета относительно захвата изменилось')
             return dict(outcome='success',evidence=dict(confirmed=True,source='tracked_rgbd_geometry',frame_id=frame['frame_id']))
-        self.move(jaw+[0.,0.,.02],170.,ctx,downward=False)
+        from .manipulation_planning import plan_hold_probe,hand_rotation
+        from scipy.spatial.transform import Rotation
+        probe_plan=plan_hold_probe(self.env,check=lambda:self.check(ctx))
+        self.move_angles(probe_plan.command,ctx)
         second=self.scene(ctx);new_jaw=np.asarray(self.env.jaw_center())
         candidates=[c for c in second.get('object_candidates',[]) if associated(c)
             and np.linalg.norm(np.asarray(c['center'])-new_jaw)<.08]
         if len(candidates)!=1:return dict(outcome='unknown',reason='Повторный кадр не подтверждает удержание')
         moved=np.asarray(candidates[0]['center'])-first['center'];hand_moved=new_jaw-jaw
-        if second['frame_id']==frame['frame_id'] or hand_moved[2]<.01 or np.linalg.norm(moved-hand_moved)>.015:
+        rotation_change=Rotation.from_matrix(probe_plan.reference_rotation.T@hand_rotation(self.env)).magnitude()
+        if (second['frame_id']==frame['frame_id'] or np.linalg.norm(hand_moved)<.015
+            or float(candidates[0]['bounds_min'][2])<.045 or rotation_change>np.deg2rad(3.)
+            or np.linalg.norm(moved-hand_moved)>.015):
             return dict(outcome='unknown',reason='Предмет не подтверждён совместным движением с захватом')
         self.before_hold=candidates[0]
         self.hold_jaw=new_jaw
         return dict(outcome='success',evidence=dict(confirmed=True,source='two_frame_rgbd_motion_association',
-            frames=[frame['frame_id'],second['frame_id']],semantic_identity='unverified_single_geometric_target'))
+            frames=[frame['frame_id'],second['frame_id']],probe_direction=probe_plan.direction,
+            measured_translation_m=float(np.linalg.norm(hand_moved)),measured_rotation_deg=float(np.rad2deg(rotation_change)),
+            semantic_identity='unverified_single_geometric_target'))
 
     def carry(self,ctx):
         self.env.phase='skill_find_destination'

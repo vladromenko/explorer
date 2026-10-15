@@ -41,7 +41,7 @@
     "qualification": false
   },
   "validation": {
-    "targeted_tests_passed": 183,
+    "targeted_tests_passed": 188,
     "javascript_syntax": "passed",
     "browser": "New panel loaded without console errors; its button launched one finite physics diagnostic. Holding confirmed; delivery correctly not accepted.",
     "stop_regression": "STOP cancels active skill trial; focus loss does not. Reset, pause and recording are blocked during the trial. Cancellation persists a paused report.",
@@ -112,5 +112,24 @@
     "grid": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/inspection-grid-1792081354657867000",
     "result": "No complete rim plus central-floor view found among examined pose/stance combinations. This bounded search is not proof of physical impossibility.",
     "next": "Investigate active observations and clearance for alternative viewpoints; do not relax observation requirements or infer an unseen cavity."
+  },
+  "hold_probe_orientation_fix": {
+    "problem": "A nominal 2 cm vertical hold probe used unconstrained wrist pitch. A previous failed run commanded a pitch change of approximately 4.25 degrees during verification.",
+    "change": "Prefer a small pose-constrained translation; if upward translation is infeasible, plan a 2 cm bodyward probe while retaining the measured hand orientation and closed gripper.",
+    "constraints": {
+      "position_error_m": 0.008,
+      "predicted_rotation_error_deg": 2.0,
+      "measured_rotation_limit_deg": 3.0,
+      "minimum_measured_translation_m": 0.015,
+      "object_motion_error_m": 0.015
+    },
+    "finite_paired_check": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/hold-probe-comparison-1792083011509600000",
+    "seed": 887401001,
+    "same_preprobe_depth_frame": "wrist_depth:26.900000000:ccc969d0935713ac",
+    "baseline_result": "Hold confirmed, both pads in contact, camera rotated 4.382 degrees. This run did not reproduce the older loss of grip.",
+    "proposed_result": "Hold confirmed from two frames; both pads in contact; hold duration 3.85 s; camera rotated 1.657 degrees; hand rotated 1.654 degrees; bodyward displacement 2.479 cm.",
+    "performance_improvement_established": false,
+    "qualification": false,
+    "physics_changed": false
   }
 }
