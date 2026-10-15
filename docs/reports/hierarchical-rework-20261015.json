@@ -50,7 +50,7 @@
   "remaining": [
     "Select a reachable observation stance for the 30 cm basket using observed rim geometry, collision checks and fresh depth; no assumed cavity.",
     "Qualify temporal placement evidence with actual release renders; full task execution is still not accepted.",
-    "Stabilize pickup after the pregrasp camera survey; one unchanged-physics diagnostic lost the material on the probe and stopped.",
+    "Preserve the verified grip during the free-pitch transport-posture change after the destination survey; the paired current diagnostic now isolates actual material loss at this later motion.",
     "Generalize the perception and grasp primitives across the unchanged scene distribution.",
     "Validate two independent ten-scene groups and qualify exact software/artifact checksums before transfer.",
     "Commission real semantic recognition, hand-eye calibration and dynamics separately on hardware."
@@ -131,5 +131,32 @@
     "performance_improvement_established": false,
     "qualification": false,
     "physics_changed": false
+  },
+  "high_basket_active_view_diagnosis": {
+    "scope": "Robot-only pose feasibility from a preserved measured rim; static sensor fixtures are not executed paths or task trials.",
+    "partial_view_fit": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/partial-inspection-fit-1792083746332611000",
+    "clearance_check": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/inspection-clearance-1792083868203472000",
+    "multistart_fit": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/multistart-close-inspection-fit-1792084311982408000",
+    "static_render": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/partial-view-static-render-1792084446351939000",
+    "result": "A floor-only idealized ray fit appeared feasible, but the actual rendered static viewpoint yielded only three central below-rim depth pixels and no complete container. The separate post-observation evaluator found 6.26 mm overlap between the gripper linkage and the basket. This candidate is rejected.",
+    "pose_optimizer_limits": "Thirty-two starts with corrected own gripper mimic FK did not find a pose satisfying the added central-jaw constraint. This is not a proof of impossibility.",
+    "model_limitation": "An outer bounding ellipse alone does not establish a clear sightline through a finite-thickness rim or free space for the fingers.",
+    "next": "Use actual observed rim/inner-wall geometry and swept robot CAD clearance before any closer inspection motion. Partial views remain nonactionable. Continue testing lower-basket delivery independently.",
+    "physics_or_acceptance_changed": false,
+    "qualification": false
+  },
+  "hand_frame_tracking_fix": {
+    "problem": "Tracking compared center-minus-jaw offsets in world axes after the hand rotated. A held patch could be refused despite unchanged position in the hand frame.",
+    "change": "Store the measured arm5 orientation with the verified hold. Compare each offset in its own hand frame; retain the 25 mm displacement limit and all existing appearance, visibility, lift and probe gates. Missing orientation or nonfinite displacement is unknown.",
+    "baseline_trial": "/Volumes/ExplorerSim/ExplorerSim/skill-workshops/cd9e06045a69",
+    "candidate_trial": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/hand-frame-tracking-1792084648866992000/skill-workshops/candidate",
+    "seed": 887401001,
+    "baseline_result": "Stopped immediately after the destination survey on world-relative offset mismatch; independent physics still confirmed both pads in contact.",
+    "candidate_result": "Passed the post-survey tracking check and reached the transport-posture motion. That later motion lost the material; visual tracking correctly refused further transport and independent physics confirmed both contacts lost.",
+    "tests": "115 passed and 3 subtests across executor, adapter, workshop/API, perception, planning and placement. Added rotating-hand rigid-offset, real 30 mm slip and missing-orientation cases.",
+    "next": "Avoid the unnecessary free-pitch transport-posture change or plan it with measured hold orientation and clearance; do not relax hold evidence.",
+    "qualification": false,
+    "whole_task_success": false,
+    "physics_or_acceptance_changed": false
   }
 }

@@ -264,13 +264,19 @@ class SimulatorSkillPort:
             return dict(outcome='failure',reason='Предмет не поднят над полом')
         first=matches[0]
         if not probe:
-            if self.before_hold is None or not hasattr(self,'hold_jaw'):
+            if self.before_hold is None or not hasattr(self,'hold_jaw') or not hasattr(self,'hold_rotation'):
                 return dict(outcome='unknown',reason='Нет исходного подтверждения удержания')
-            relative=np.asarray(first['center'])-jaw
-            previous=np.asarray(self.before_hold['center'])-self.hold_jaw
-            if np.linalg.norm(relative-previous)>.025:
+            from .manipulation_planning import hand_rotation
+            # The held patch rotates with the hand during a camera survey.
+            # Compare both offsets in their own hand frames, never as fixed
+            # world vectors. Keep the same 25 mm slip gate.
+            relative=hand_rotation(self.env).T@(np.asarray(first['center'])-jaw)
+            previous=self.hold_rotation.T@(np.asarray(self.before_hold['center'])-self.hold_jaw)
+            displacement=float(np.linalg.norm(relative-previous))
+            if not np.isfinite(displacement) or displacement>.025:
                 return dict(outcome='unknown',reason='Положение предмета относительно захвата изменилось')
-            return dict(outcome='success',evidence=dict(confirmed=True,source='tracked_rgbd_geometry',frame_id=frame['frame_id']))
+            return dict(outcome='success',evidence=dict(confirmed=True,source='tracked_rgbd_geometry',
+                frame_id=frame['frame_id'],comparison_frame='arm5',relative_displacement_m=displacement))
         from .manipulation_planning import plan_hold_probe,hand_rotation
         from scipy.spatial.transform import Rotation
         probe_plan=plan_hold_probe(self.env,check=lambda:self.check(ctx))
@@ -287,6 +293,7 @@ class SimulatorSkillPort:
             return dict(outcome='unknown',reason='Предмет не подтверждён совместным движением с захватом')
         self.before_hold=candidates[0]
         self.hold_jaw=new_jaw
+        self.hold_rotation=hand_rotation(self.env)
         return dict(outcome='success',evidence=dict(confirmed=True,source='two_frame_rgbd_motion_association',
             frames=[frame['frame_id'],second['frame_id']],probe_direction=probe_plan.direction,
             measured_translation_m=float(np.linalg.norm(hand_moved)),measured_rotation_deg=float(np.rad2deg(rotation_change)),

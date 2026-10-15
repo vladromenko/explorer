@@ -70,3 +70,34 @@ def test_matching_object_motion_cannot_hide_a_turning_hand(tmp_path,monkeypatch)
     port.move_angles=turning
     try:assert port.verify_hold(None)['outcome']=='unknown'
     finally:port.close()
+
+
+@pytest.mark.parametrize('slip_m,expected',[(0.,'success'),(.03,'unknown')])
+def test_tracked_hold_compares_in_rotating_hand_frame(tmp_path,monkeypatch,slip_m,expected):
+    from scipy.spatial.transform import Rotation
+    port=setup(tmp_path,[candidate(z=.18)],monkeypatch)
+    try:
+        assert port.verify_hold(None)['outcome']=='success'
+        rotation=Rotation.from_euler('y',120.,degrees=True).as_matrix()
+        jaw=port.env.jaw_center()
+        offset=np.asarray(port.before_hold['center'])-jaw
+        patch=candidate(z=.18)
+        patch['center']=(jaw+rotation@(offset+[slip_m,0.,0.])).tolist()
+        port.env.data.body=lambda name:SimpleNamespace(xmat=rotation.ravel())
+        port.scene=lambda ctx:dict(frame_id='after_turn',object_candidates=[patch])
+        result=port.verify_hold(None,probe=False)
+        assert result['outcome']==expected
+        if expected=='success':
+            assert result['evidence']['comparison_frame']=='arm5'
+            assert result['evidence']['relative_displacement_m']==pytest.approx(0.,abs=1e-10)
+    finally:port.close()
+
+
+def test_untracked_hold_without_orientation_reference_is_unknown(tmp_path,monkeypatch):
+    port=setup(tmp_path,[candidate(z=.18)],monkeypatch)
+    try:
+        assert port.verify_hold(None)['outcome']=='success'
+        del port.hold_rotation
+        port.scene=lambda ctx:dict(frame_id='later',object_candidates=[candidate(z=.18)])
+        assert port.verify_hold(None,probe=False)['outcome']=='unknown'
+    finally:port.close()
