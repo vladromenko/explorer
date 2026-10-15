@@ -3,7 +3,7 @@
   "scope": "Mac simulation only",
   "training_id": "535d5aa82e3f",
   "training_state": "running",
-  "completed_attempts": 4,
+  "completed_attempts": 5,
   "active_workers": 1,
   "lumen_background_process_terminated": 27116,
   "extra_apps_closed": false,
@@ -36,5 +36,13 @@
     "revision": "29f2f39",
     "installed": false,
     "reason": "Terminating remaining Lumen process freed memory and original queue began; active work retained"
+  },
+  "installed_ui_revision": "00aaf5b815333fdde6d2fcade7bcaeec525babf5",
+  "runtime_revision": "772187e3b5547f8b8400a91dffda504fc0376e3c",
+  "ui_installed_without_restart": true,
+  "browser_live_view": {
+    "javascript_errors": 0,
+    "worker_image_loaded": true,
+    "evidence": "/Volumes/ExplorerSim/ExplorerSim/maintenance/skill-search-running-ui-20261016.png"
   }
 }
