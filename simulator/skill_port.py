@@ -54,25 +54,16 @@ class SimulatorSkillPort:
 
     def look_at(self,point,ctx,*,gripper=None,distance_m=.24,min_camera_height_m=.12):
         """Aim the calibrated wrist camera at an already observed location."""
-        import mujoco
-        from scipy.optimize import least_squares
-        from .explorer_model import servo_to_joint
-        scratch=mujoco.MjData(self.env.model);scratch.qpos[:]=self.env.data.qpos
+        from .inspection_planning import plan_camera_view,CameraViewUnavailable
+        plan=plan_camera_view(self.env,point,
+            gripper=float(self.env.command[5] if gripper is None else gripper),distance_m=distance_m,
+            min_camera_height_m=min_camera_height_m,check=lambda:self.check(ctx))
+        self.move_angles(plan.command,ctx)
+        # Finite torque and joint tracking can lower a physically settled
+        # camera below the kinematic prediction. Do not silently accept it.
         camera=self.env.model.camera('wrist_depth').id
-        gripper=float(self.env.command[5] if gripper is None else gripper)
-        start=self.env.command[:5].copy();point=np.asarray(point,float)
-        def residual(angles):
-            q=servo_to_joint([*angles,gripper]);scratch.qpos[self.env.joint_q]=q
-            for name,multiplier in (('rlink2_Joint',1),('llink1_Joint',1),('llink2_Joint',-1),('rlink3_Joint',-1),('llink3_Joint',1)):
-                scratch.qpos[self.env.model.joint(name).qposadr[0]]=multiplier*q[5]
-            mujoco.mj_forward(self.env.model,scratch)
-            optical=scratch.cam_xmat[camera].reshape(3,3).T@(point-scratch.cam_xpos[camera])
-            return np.r_[optical[:2]*3.,(-optical[2]-distance_m),np.maximum(min_camera_height_m-scratch.cam_xpos[camera,2],0.)*3.,(angles-start)*.00003]
-        fits=[least_squares(residual,np.clip(seed,.001,[179.999]*4+[269.999]),
-            bounds=([0.]*5,[180.]*4+[270.]),max_nfev=100) for seed in (start,[90.,90.,90.,90.,90.])]
-        best=min(fits,key=lambda fit:np.linalg.norm(fit.fun[:3]))
-        if np.linalg.norm(best.fun[:2])>.04:raise ValueError('Не найден обзор камеры с целью внутри кадра')
-        self.move_angles(np.r_[best.x,gripper],ctx)
+        if float(self.env.data.cam_xpos[camera,2])<min_camera_height_m-.008:
+            raise CameraViewUnavailable('После движения камера не достигла рассчитанной высоты обзора')
 
     def observe(self,ctx):
         from src.task_executor import Observation

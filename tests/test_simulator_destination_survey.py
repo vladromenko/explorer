@@ -95,13 +95,13 @@ def test_old_cache_cannot_replace_new_complete_measurement(tmp_path):
 
 def test_look_at_uses_current_closed_gripper_in_fk_and_final_command(tmp_path,monkeypatch):
     from simulator.environment import ExplorerEnv
-    from scipy.optimize import OptimizeResult
+    from simulator.inspection_planning import CameraViewPlan
     env=ExplorerEnv(render=False)
     port=SimulatorSkillPort(env,tmp_path/'execution')
     env.command[5]=170.
     goals=[];port.move_angles=lambda goal,ctx:goals.append(goal)
-    monkeypatch.setattr('scipy.optimize.least_squares',lambda fun,start,**kwargs:
-        OptimizeResult(x=np.asarray(start),fun=np.zeros(8)))
+    monkeypatch.setattr('simulator.inspection_planning.plan_camera_view',lambda env,point,**kwargs:
+        CameraViewPlan(np.r_[np.ones(5)*90.,kwargs['gripper']],np.array([0.,0.,.5]),0.,0.))
     try:
         port.look_at([.4,.24,.15],None)
         assert goals[-1][5]==170.

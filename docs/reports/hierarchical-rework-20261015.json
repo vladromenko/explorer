@@ -41,7 +41,7 @@
     "qualification": false
   },
   "validation": {
-    "targeted_tests_passed": 179,
+    "targeted_tests_passed": 183,
     "javascript_syntax": "passed",
     "browser": "New panel loaded without console errors; its button launched one finite physics diagnostic. Holding confirmed; delivery correctly not accepted.",
     "stop_regression": "STOP cancels active skill trial; focus loss does not. Reset, pause and recording are blocked during the trial. Cancellation persists a paused report.",
@@ -80,5 +80,23 @@
     ],
     "physics_truth_used_by_actor": false,
     "full_physics_placement_demonstrated": false
+  },
+  "camera_feasibility_fix": {
+    "module": "simulator/inspection_planning.py",
+    "problem": "The previous camera optimiser checked only lateral aim error; requested height and range could be missed while the motion was accepted.",
+    "change": "Robot-only multistart IK recomputes pose constraints from FK; rejects missing height or range before motion, then checks physically reached height.",
+    "limits": {
+      "lateral_error_m": 0.04,
+      "range_error_m": 0.04,
+      "height_deficit_m": 0.008
+    },
+    "robot_gripper_state_preserved": true,
+    "scene_truth_used": false,
+    "finite_render_check": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/validated-camera-view-1792080448201309000",
+    "low_basket_result": "Two complete views, baseline 6.8 cm, bound disagreement 1.15 mm, visible opening 4469 pixels. Diagnostic only.",
+    "high_basket_result": "No complete opening in the bounded survey. Result unknown; no pickup or release.",
+    "inspection_stance_probes": "A measured-rim approach to 34 cm standoff did not obtain a feasible complete view; all raw observations and commands retained in diagnostics/inspection-stance-*.",
+    "scope": "This fixes pose acceptance, not complete high-basket inspection or delivery.",
+    "qualification": false
   }
 }

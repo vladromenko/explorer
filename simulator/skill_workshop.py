@@ -22,7 +22,7 @@ def execution_fingerprint():
     root=Path(__file__).resolve().parents[1]
     files={name:hashlib.sha256((root/name).read_bytes()).hexdigest() for name in
         ('src/task_executor.py','simulator/skill_port.py','simulator/rgbd_observation.py',
-         'simulator/placement_evidence.py')}
+         'simulator/placement_evidence.py','simulator/inspection_planning.py')}
     return dict(files=files,sha256=hashlib.sha256(json.dumps(files,sort_keys=True).encode()).hexdigest())
 
 
