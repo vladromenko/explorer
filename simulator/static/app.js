@@ -72,7 +72,9 @@ function showResult(result) {
 function renderStatus(snapshot) {
   latest = snapshot; renderLearning(snapshot.learning_status); renderSkills(snapshot); $('depth-view').disabled = !snapshot.depth_available; const state = snapshot.state || {}, task = state.task || {}, command = state.command || state.command9_deg || [];
   arm = command.slice(0, 6); jointNames.forEach((_, index) => { $(`joint-${index}`).textContent = Number.isFinite(arm[index]) ? `${arm[index].toFixed(0)}°` : '—'; });
-  $('phase').textContent = snapshot.error ? snapshot.error : snapshot.paused ? 'Сцена на паузе' : task.success ? 'Объект доставлен · подтверждено моделью' : phases[task.phase] || 'Управляйте рукой и платформой';
+  const skillScene=String(task.phase || '').startsWith('skill_');
+  const skillRunning=(snapshot.jobs || []).some(job=>job.kind==='skill_trial' && job.status==='running');
+  $('phase').textContent = snapshot.error ? snapshot.error : skillScene && !skillRunning ? 'Проверка завершена · результат сохранён выше' : skillRunning ? phases[task.phase] || 'Проверка этапов' : snapshot.paused ? 'Сцена на паузе' : task.success ? 'Объект доставлен · подтверждено моделью' : phases[task.phase] || 'Управляйте рукой и платформой';
   $('contact').textContent = task.grasp_contact===true ? 'Есть' : task.grasp_contact===false ? 'Нет' : 'Не измерен'; $('lifted').textContent = task.lifted===true ? 'Да' : task.lifted===false ? 'Нет' : 'Не измерено'; $('placed').textContent = task.placed===true ? 'Да' : task.placed===false ? 'Нет' : 'Не измерено'; $('simtime').textContent = `${Number(state.sim_time || 0).toFixed(1)} с`;
   $('pause').textContent = snapshot.paused ? 'Продолжить' : 'Пауза'; recording = snapshot.recording; $('record').textContent = recording ? 'Закончить запись' : 'Начать запись'; $('record-status').textContent = recording ? `● ${snapshot.record_frames} кадров` : ''; $('annotation').disabled = !recording;
   const jobs = snapshot.jobs || []; busy = jobs.some(job => ['running', 'exporting', 'training', 'validating'].includes(job.status));
