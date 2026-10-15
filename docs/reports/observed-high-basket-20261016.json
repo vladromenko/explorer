@@ -69,8 +69,8 @@
     }
   ],
   "remaining": [
-    "Autonomous algorithm now explores skill parameters; full observed cycle remains unqualified",
-    "Hardware commissioning is separate; no commands sent to ROSMASTER"
+    "Background learner awaits free memory by operator choice; no completed search episodes yet",
+    "Full observed cycle, independent qualification and hardware commissioning remain unconfirmed"
   ],
   "user_steering": "User requested autonomous algorithm instead of further manual motor/phase tuning; no new manual physical trials scheduled.",
   "autonomous_learning": {
@@ -88,5 +88,22 @@
     "physical_ready": false,
     "resources": "Wait without workers when memory is insufficient; cooperative pause under pressure; never close unrelated applications",
     "resume": "Explicit resume after service restart; worker owner PID guard; no automatic resumption of operator pause"
+  },
+  "background_queue_running": true,
+  "background_startup": {
+    "training_id": "535d5aa82e3f",
+    "job_id": "acedf41472bd",
+    "state": "waiting_for_memory",
+    "completed_attempts": 0,
+    "active_workers": 0,
+    "configured_workers": 1,
+    "requested_maximum_workers": 4,
+    "code_revision": "772187e3b5547f8b8400a91dffda504fc0376e3c",
+    "operator_choice": "Wait for memory; do not close unrelated applications",
+    "at": 1792107500.7716339,
+    "installed_source": "/Users/vladromenko/Library/Application Support/ExplorerSimulator/source",
+    "old_ACT_preserved": true,
+    "physical_ready": false,
+    "automation_created": false
   }
 }
