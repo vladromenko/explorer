@@ -1,0 +1,40 @@
+{
+  "at": 1792107987.444156,
+  "scope": "Mac simulation only",
+  "training_id": "535d5aa82e3f",
+  "training_state": "running",
+  "completed_attempts": 4,
+  "active_workers": 1,
+  "lumen_background_process_terminated": 27116,
+  "extra_apps_closed": false,
+  "active_queue_interrupted": false,
+  "browser_controls": {
+    "passed": true,
+    "intercepted_posts": 22,
+    "real_posts": 0,
+    "checks": [
+      "plan only",
+      "natural language launch",
+      "resume operator/memory/budget/interrupted",
+      "same learner resume",
+      "direct launch",
+      "selected-task launch",
+      "pause",
+      "worker grid",
+      "unique IDs",
+      "no JavaScript errors"
+    ]
+  },
+  "live_local_llm_report": "/Volumes/ExplorerSim/ExplorerSim/maintenance/language-intent-audit-20261016.json",
+  "limits": [
+    "Only sock_basket uses the new autonomous parameter search",
+    "Other supported task templates currently prepare existing demonstrations",
+    "No arbitrary scene or skill synthesis",
+    "No hardware execution or qualification claimed"
+  ],
+  "deferred_resource_patch": {
+    "revision": "29f2f39",
+    "installed": false,
+    "reason": "Terminating remaining Lumen process freed memory and original queue began; active work retained"
+  }
+}
