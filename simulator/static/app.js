@@ -247,6 +247,7 @@ $('worker-camera').addEventListener('change',refreshWorkerViews);
 refreshWorkerViews();setInterval(refreshWorkerViews,1000);
 (async () => { try { session = await api('/api/session'); token = session.token; await poll(); refreshImages(); setInterval(sendControls, 50); setInterval(poll, 1000); setInterval(refreshImages, 200); updateEpisodes(); setInterval(updateEpisodes, 10000); } catch (error) { notify(`Не удалось запустить: ${error.message}`, true); } })();
 
+function skillReason(text) { return String(text || '').replace(/^(ObservationRefused|ValueError):\s*/, '').replace('Предмет не выделена', 'Предмет не выделен'); }
 function renderSkills(snapshot) {
   const rows=snapshot.skill_workshops || [];
   const skillNames={find:'Поиск предмета',approach:'Подъезд',reobserve:'Новое измерение',pregrasp:'Подход руки',grasp:'Захват',lift:'Подъём',verify_hold:'Проверка удержания',carry:'Поиск корзины и перенос',support:'Размещение над корзиной',release:'Отпускание',withdraw:'Отвод руки',verify_place:'Проверка размещения'};
@@ -255,7 +256,7 @@ function renderSkills(snapshot) {
   for(const row of rows.slice(0,6)) {
     const item=document.createElement('li');
     const names={preparing:'подготовка данных',prepared:'данные и короткие модели подготовлены; исполнение ещё не принято',diagnosed:'проверка завершена',paused:'пауза',failed:'ошибка',running:'проверка этапов'};
-    item.textContent=`${({sock_basket:'Носок → корзина',cloth_basket:'Ткань → бельё',toy_box:'Кубик → коробка',cookie_delivery:'Печенье → поднос'})[row.task_id] || row.task_id}: ${names[row.state] || row.state}${row.phase?' · '+(skillNames[row.phase] || phases[row.phase] || row.phase):''}${row.reason?' · '+row.reason:''}`;
+    item.textContent=`${({sock_basket:'Носок → корзина',cloth_basket:'Ткань → бельё',toy_box:'Кубик → коробка',cookie_delivery:'Печенье → поднос'})[row.task_id] || row.task_id}: ${names[row.state] || row.state}${row.phase?' · '+(skillNames[row.phase] || phases[row.phase] || row.phase):''}${row.reason?' · '+skillReason(row.reason):''}`;
     list.append(item);
   }
   if(active) $('skill-progress').textContent=active.message || 'Выполняется проверка отдельного этапа';
@@ -265,7 +266,7 @@ function renderSkills(snapshot) {
   if(diagnostic && !active){
     const title=document.createElement('strong');title.textContent=diagnostic.success?'Эта сцена выполнена; общей готовности ещё нет':'Проверка остановилась на этапе: '+(skillNames[diagnostic.execution.stage] || diagnostic.execution.stage || 'не определён');evidence.append(title);
     const note=document.createElement('p');note.textContent='Удержание: '+(diagnostic.execution.held_verified?'подтверждено':'не подтверждено')+' · Размещение: '+(diagnostic.execution.placed_verified?'подтверждено':'не подтверждено')+' · Вся задача: '+(diagnostic.success?'выполнена в этой сцене':'не выполнена');evidence.append(note);
-    if(diagnostic.reason){const reason=document.createElement('p');reason.textContent=diagnostic.reason;evidence.append(reason);}
+    if(diagnostic.reason){const reason=document.createElement('p');reason.textContent=skillReason(diagnostic.reason);evidence.append(reason);}
     const timeline=document.createElement('ol');timeline.className='skill-timeline';
     for(const event of diagnostic.execution.events || []){const li=document.createElement('li');li.textContent=(skillNames[event.stage] || event.stage)+' · '+({success:'пройден',unknown:'не подтверждён',failure:'ошибка',retry:'повторное измерение'}[event.result.outcome] || event.result.outcome);timeline.append(li);}evidence.append(timeline);
   }
