@@ -21,6 +21,7 @@ class SimulatorSkillPort:
         self.env=env;self.folder=Path(folder);self.folder.mkdir(parents=True,exist_ok=False)
         self.cancelled=cancelled;self.progress=progress;self.sequence=0
         self.target=None;self.destination=None;self.grasp_xyz=None;self.before_hold=None;self.release_xyz=None
+        self.destination_views=[];self.surveys=[]
         self.frames=[];self.handle=(self.folder/'commands.jsonl').open('w')
 
     def check(self,ctx=None):
@@ -51,26 +52,27 @@ class SimulatorSkillPort:
         for _ in range(12):self.tick(goal,ctx=ctx)
         return goal
 
-    def look_at(self,point,ctx):
+    def look_at(self,point,ctx,*,gripper=None,distance_m=.24,min_camera_height_m=.12):
         """Aim the calibrated wrist camera at an already observed location."""
         import mujoco
         from scipy.optimize import least_squares
         from .explorer_model import servo_to_joint
         scratch=mujoco.MjData(self.env.model);scratch.qpos[:]=self.env.data.qpos
         camera=self.env.model.camera('wrist_depth').id
+        gripper=float(self.env.command[5] if gripper is None else gripper)
         start=self.env.command[:5].copy();point=np.asarray(point,float)
         def residual(angles):
-            q=servo_to_joint([*angles,30.]);scratch.qpos[self.env.joint_q]=q
+            q=servo_to_joint([*angles,gripper]);scratch.qpos[self.env.joint_q]=q
             for name,multiplier in (('rlink2_Joint',1),('llink1_Joint',1),('llink2_Joint',-1),('rlink3_Joint',-1),('llink3_Joint',1)):
                 scratch.qpos[self.env.model.joint(name).qposadr[0]]=multiplier*q[5]
             mujoco.mj_forward(self.env.model,scratch)
             optical=scratch.cam_xmat[camera].reshape(3,3).T@(point-scratch.cam_xpos[camera])
-            return np.r_[optical[:2]*3.,(-optical[2]-.24),np.maximum(.12-scratch.cam_xpos[camera,2],0.)*3.,(angles-start)*.00003]
+            return np.r_[optical[:2]*3.,(-optical[2]-distance_m),np.maximum(min_camera_height_m-scratch.cam_xpos[camera,2],0.)*3.,(angles-start)*.00003]
         fits=[least_squares(residual,np.clip(seed,.001,[179.999]*4+[269.999]),
             bounds=([0.]*5,[180.]*4+[270.]),max_nfev=100) for seed in (start,[90.,90.,90.,90.,90.])]
         best=min(fits,key=lambda fit:np.linalg.norm(fit.fun[:3]))
         if np.linalg.norm(best.fun[:2])>.04:raise ValueError('Не найден обзор камеры с целью внутри кадра')
-        self.move_angles(np.r_[best.x,30.],ctx)
+        self.move_angles(np.r_[best.x,gripper],ctx)
 
     def observe(self,ctx):
         from src.task_executor import Observation
@@ -98,8 +100,69 @@ class SimulatorSkillPort:
         direction=np.array([math.cos(base[2]),math.sin(base[2])])
         self.move([*(base[:2]+.23*direction),.15],30.,ctx)
 
+    def survey_destination(self,ctx,*,max_views=8):
+        """A finite robot-relative survey; partial geometry only guides camera aim.
+
+        Cached world geometry is an aiming hint. At least one new complete
+        depth frame must agree with a separate complete camera viewpoint before
+        the destination can be used. Gripper state is preserved throughout.
+        """
+        from .rgbd_observation import combine_container_views,ObservationRefused
+        self.env.phase='skill_find_destination'
+        pose=np.asarray(self.env.base_pose());direction=np.array([math.cos(pose[2]),math.sin(pose[2])])
+        lateral=np.array([-direction[1],direction[0]])
+        aims=[]
+        if self.destination is not None:
+            aims.append((np.asarray(self.destination['center']),.45))
+        for forward,side,height in ((.40,.24,.15),(.40,-.24,.15),(.50,.35,.20),
+                                    (.50,-.35,.20),(.35,.28,.25),(.35,-.28,.25)):
+            aims.append((np.r_[pose[:2]+forward*direction+side*lateral,height],.40))
+        visited=[];notes=[];new_complete=0
+        for _ in range(max_views):
+            self.check(ctx)
+            if not aims:break
+            point,distance=aims.pop(0)
+            if any(np.linalg.norm(point-old[0])<.025 and abs(distance-old[1])<.025 for old in visited):
+                continue
+            visited.append((point.copy(),distance))
+            try:
+                self.look_at(point,ctx,distance_m=distance,min_camera_height_m=.30)
+                frame=self.scene(ctx)
+            except ValueError as error:
+                notes.append(dict(aim=point.tolist(),reason=str(error)));continue
+            complete=frame.get('containers',[])
+            notes.append(dict(aim=point.tolist(),frame_id=frame['frame_id'],complete_candidates=len(complete)))
+            if len(complete)==1:
+                self.destination_views.append(dict(candidate=complete[0],frame_id=frame['frame_id'],
+                    simulation_time=frame['simulation_time'],
+                    camera_position=[row[3] for row in frame['optical_to_world'][:3]]))
+                new_complete+=1
+                try:
+                    box=combine_container_views(self.destination_views)
+                    if box['frame_id']==frame['frame_id'] and float(box['uncertainty_m'])<=.02:
+                        self.destination=box
+                        self.surveys.append(dict(outcome='success',views=notes,destination=box))
+                        return dict(outcome='success',destination=box,evidence=dict(source='bounded_rgbd_survey',
+                            complete_views=len(self.destination_views),new_complete_views=new_complete))
+                except ObservationRefused:pass
+                aims.insert(0,(np.asarray(complete[0]['center']),.45))
+            elif len(complete)>1:
+                self.surveys.append(dict(outcome='unknown',views=notes,reason='Несколько полных корзин'))
+                return dict(outcome='unknown',reason='Камера видит несколько корзин; назначение неоднозначно')
+            elif len(frame.get('container_hypotheses',[]))==1:
+                # A wall fragment may steer a new camera view, never a release.
+                hint=frame['container_hypotheses'][0]
+                aims.insert(0,(np.asarray(hint['center']),.45))
+        self.surveys.append(dict(outcome='unknown',views=notes))
+        return dict(outcome='unknown',reason='За ограниченный обзор не получены два полных согласованных изображения отверстия корзины',
+                    evidence=dict(source='bounded_rgbd_survey',views=len(notes),new_complete_views=new_complete))
+
     def find(self,ctx):
         self.env.phase='skill_find';self.inspect(ctx)
+        self.target=self.estimate(ctx,'object')
+        survey=self.survey_destination(ctx)
+        if survey['outcome']!='success':return survey
+        self.inspect(ctx)
         self.target=self.estimate(ctx,'object')
         return dict(outcome='success',target=self.target,
             evidence=dict(source='rendered_rgbd',semantic_identity='unverified',single_target_assumption=True))
@@ -235,12 +298,18 @@ class SimulatorSkillPort:
         self.env.phase='skill_find_destination'
         # Missing or partial container geometry cannot be replaced by the
         # simulated bin pose or an assumed pre-recorded destination.
-        self.destination=self.estimate(ctx,'container')
+        survey=self.survey_destination(ctx,max_views=4)
+        if survey['outcome']!='success':return survey
+        held=self.verify_hold(ctx,probe=False)
+        if held['outcome']!='success':return held
         box=self.destination
         if float(box['uncertainty_m'])>.02:return dict(outcome='unknown',reason='Граница корзины измерена недостаточно точно')
         rim=float(box['bounds_max'][2]);pose=np.asarray(self.env.base_pose())
         direction=np.array([math.cos(pose[2]),math.sin(pose[2])])
         self.move([*(pose[:2]+.20*direction),max(.18,rim+.09)],170.,ctx,downward=False)
+        held=self.verify_hold(ctx,probe=False)
+        if held['outcome']!='success':return held
+        self.env.phase='skill_carry'
         half=(np.asarray(box['bounds_max'])-box['bounds_min'])/2
         destination=np.asarray(box['center'])[:2]-[float(half[0])+.17,0.]
         moved=False
@@ -261,9 +330,13 @@ class SimulatorSkillPort:
         return dict(outcome='success',base_moved=moved,evidence=dict(destination=box,route='local_rgbd_odometry_lidar'))
 
     def support(self,ctx):
-        self.env.phase='skill_support';box=self.estimate(ctx,'container')
+        self.env.phase='skill_support'
+        previous=self.destination
+        survey=self.survey_destination(ctx,max_views=4)
+        if survey['outcome']!='success':return survey
+        box=self.destination
         if float(box['uncertainty_m'])>.02:return dict(outcome='unknown',reason='Граница корзины перед отпусканием недостаточно точна')
-        if self.destination and np.linalg.norm(np.asarray(box['center'])-self.destination['center'])>.06:
+        if previous and np.linalg.norm(np.asarray(box['center'])-previous['center'])>.06:
             return dict(outcome='unknown',reason='Корзина не совпала после подъезда')
         self.destination=box
         lo,hi=np.asarray(box['bounds_min']),np.asarray(box['bounds_max'])
@@ -275,6 +348,11 @@ class SimulatorSkillPort:
     def release(self,ctx):
         self.env.phase='skill_release'
         if self.release_xyz is None:return dict(outcome='unknown',reason='Нет проверенной точки отпускания')
+        held=self.verify_hold(ctx,probe=False)
+        if held['outcome']!='success':return held
+        self.env.phase='skill_release'
+        self.before_release=self.scene(ctx)
+        self.release_jaw=np.asarray(self.env.jaw_center()).copy()
         self.move(self.release_xyz,30.,ctx,downward=False,duration=2.)
         return dict(outcome='success',evidence=dict(command_only=True))
 
@@ -286,22 +364,17 @@ class SimulatorSkillPort:
         return dict(outcome='success')
 
     def verify_place(self,ctx):
-        self.env.phase='skill_verify_place';frame=self.scene(ctx)
+        from .placement_evidence import verify_released_target
+        self.env.phase='skill_verify_place'
         if self.destination is None:return dict(outcome='unknown',reason='Нет наблюдаемой корзины')
-        lo,hi=np.asarray(self.destination['bounds_min']),np.asarray(self.destination['bounds_max'])
-        matches=[]
-        for item in frame.get('object_candidates',[]):
-            evidence=item.get('evidence',{})
-            if evidence.get('identity_association_verified') is not True or evidence.get('self_occlusion_not_resolved') is not False:continue
-            lower,upper=np.asarray(item['bounds_min']),np.asarray(item['bounds_max'])
-            margin=max(.015,float(item['uncertainty_m'])+float(self.destination['uncertainty_m']))
-            evidence=item.get('evidence',{})
-            if (evidence.get('release_temporal_association_verified') is True
-                and evidence.get('support_surface_observed') is True
-                and np.all(lower[:2]>lo[:2]+margin) and np.all(upper[:2]<hi[:2]-margin)
-                and lower[2]>=0. and upper[2]<hi[2]-margin):matches.append(item)
-        if len(matches)!=1:return dict(outcome='unknown',reason='Камера не подтверждает предмет внутри корзины после отпускания')
-        return dict(outcome='success',evidence=dict(confirmed=True,source='rgbd_geometry',frame_id=frame['frame_id']))
+        if not hasattr(self,'before_release') or self.before_hold is None:
+            return dict(outcome='unknown',reason='Нет последовательности наблюдаемого удержания и отпускания')
+        first=self.scene(ctx)
+        for _ in range(10):self.tick(self.env.command[:6],ctx=ctx)
+        second=self.scene(ctx)
+        return verify_released_target(first,second,destination=self.destination,
+            held_reference=self.before_hold,release_xyz=self.release_xyz,jaw_xyz=self.env.jaw_center(),
+            before_release=self.before_release,release_jaw_xyz=self.release_jaw)
 
     def stop_motion(self):
         """Release base commands even during cancellation, physics or I/O errors."""
@@ -312,6 +385,7 @@ class SimulatorSkillPort:
         self.stop_motion()
         try:self.handle.close()
         finally:
+            (self.folder/'destination-surveys.json').write_text(json.dumps(self.surveys,ensure_ascii=False,indent=2))
             (self.folder/'observations.json').write_text(json.dumps(self.frames,ensure_ascii=False,indent=2))
 
     def operations(self):

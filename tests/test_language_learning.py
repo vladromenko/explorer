@@ -142,6 +142,32 @@ def test_followup_reinterprets_original_request_without_resuming_old_goal(tmp_pa
     finally:runtime.close()
 
 
+def test_phase_preparation_resume_keeps_workshops_and_ignores_archived_act_state(tmp_path,monkeypatch):
+    calls=[]
+    def prepare(root,identifier,task,cancelled,progress):
+        calls.append(identifier)
+        if len(calls)==1:raise InterruptedError('operator pause')
+        return dict(state='prepared',simulation_ready=False)
+    monkeypatch.setattr('simulator.skill_workshop.prepare',prepare)
+    runtime=Runtime(FakeEnv,tmp_path)
+    try:
+        goal=runtime.learning_goals.create(plan(),{})
+        goal['night_plan_id']='a'*12;goal['learning_cycle_id']='b'*12
+        runtime.learning_goals.save(goal)
+        for index in range(2):
+            job=dict(id=str(index)*12,kind='assistant',status='running')
+            runtime.run_job(job,JobRequest(goal_id=goal['id'],learning_mode='skills'))
+            saved=runtime.learning_goals.get(goal['id'])
+            assert saved['state']==('paused' if index==0 else 'prepared')
+            assert len(saved['skill_workshops'])==1
+        assert calls[0]==calls[1]
+        listed=runtime.learning_goals.list([dict(id='a'*12,state='paused',tasks=[])],
+            [dict(id='b'*12,state='ready_for_transfer',tasks=[])])[0]
+        assert listed['state']=='prepared' and listed['physical_ready'] is False
+        assert listed['learning_mode']=='skills'
+    finally:runtime.close()
+
+
 def test_language_goal_metadata_survives_verified_import_without_execution(tmp_path):
     batch=dict(id='a'*12,tasks=[dict(task_id='sock_basket',state='failed',error='No demos',stages={})],learning_goal=plan())
     exported=export_curriculum(batch,tmp_path/'request.tar.gz')

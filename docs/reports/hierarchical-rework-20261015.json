@@ -3,7 +3,11 @@
   "scope": "Mac simulator architecture; no robot connection or motion",
   "rollback_tag": "codex/pre-hierarchical-20261015",
   "old_cycle": "fb56a108b63f",
-  "old_learner": {"id": "5d878e34e663", "state": "cancelled", "preserved_checkpoint_steps": 3000},
+  "old_learner": {
+    "id": "5d878e34e663",
+    "state": "cancelled",
+    "preserved_checkpoint_steps": 3000
+  },
   "new_architecture": {
     "executor": "src/task_executor.py",
     "simulator_port": "simulator/skill_port.py",
@@ -26,21 +30,55 @@
     "seed": 887401001,
     "controller_verified_hold": true,
     "independent_physics_lifted": true,
-    "independent_physics_contacts": [true, true],
+    "independent_physics_contacts": [
+      true,
+      true
+    ],
     "independent_physics_hold_s": 3.7,
     "stopped_stage": "carry",
     "reason": "Camera has not localized a container; no transport attempted",
     "diagnostic_only": true,
     "qualification": false
   },
-  "validation": {"targeted_tests_passed": 137, "javascript_syntax": "passed"},
+  "validation": {
+    "targeted_tests_passed": 179,
+    "javascript_syntax": "passed",
+    "browser": "New panel loaded without console errors; its button launched one finite physics diagnostic. Holding confirmed; delivery correctly not accepted.",
+    "stop_regression": "STOP cancels active skill trial; focus loss does not. Reset, pause and recording are blocked during the trial. Cancellation persists a paused report.",
+    "goal_resume": "Multi-task workshop identifiers persist before preparation. Resume reuses them and archived ACT state cannot override the new result."
+  },
   "remaining": [
-    "Observe and identify destination before transporting the object, with bounded active camera search.",
-    "Verify support and released material with temporal RGB-D evidence; hidden bin coordinates cannot substitute.",
+    "Select a reachable observation stance for the 30 cm basket using observed rim geometry, collision checks and fresh depth; no assumed cavity.",
+    "Qualify temporal placement evidence with actual release renders; full task execution is still not accepted.",
+    "Stabilize pickup after the pregrasp camera survey; one unchanged-physics diagnostic lost the material on the probe and stopped.",
     "Generalize the perception and grasp primitives across the unchanged scene distribution.",
     "Validate two independent ten-scene groups and qualify exact software/artifact checksums before transfer.",
     "Commission real semantic recognition, hand-eye calibration and dynamics separately on hardware."
   ],
   "simulation_ready": false,
-  "physical_ready": false
+  "physical_ready": false,
+  "destination_survey": {
+    "implemented": "Bounded pregrasp and post-approach RGBD camera survey; gripper state preserved; cached geometry used only for aiming.",
+    "two_view_min_camera_baseline_m": 0.02,
+    "unchanged_uncertainty_limit_m": 0.02,
+    "observed_12cm_basket": "Two distinct complete views agreed within approximately 1 mm; uncertainty includes an explicit estimated 12 mm simulation floor.",
+    "observed_30cm_basket": "Six bounded views plus three diagnostic elevated views: rim visible, central cavity occluded. Result unknown before pickup.",
+    "highest_observed_camera_m": 0.4031,
+    "diagnostic_folder": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/destination-survey-887401001/",
+    "qualification": false
+  },
+  "placement_verification": {
+    "source": "One pre-release image of held material and release area, plus two post-release RGBD images.",
+    "requires": [
+      "Fresh distinct frames",
+      "Appearance association",
+      "Visible previously empty release area",
+      "Drop from gripper",
+      "Stable interior bounds",
+      "Separation from jaw",
+      "Visible supporting surface"
+    ],
+    "physics_truth_used_by_actor": false,
+    "full_physics_placement_demonstrated": false
+  }
 }

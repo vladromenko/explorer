@@ -138,6 +138,17 @@ class TaskExecutorTests(unittest.TestCase):
         self.assertEqual(port.stops, ["grasp"])
         self.assertNotIn("lift", [row[0] for row in port.calls])
 
+    def test_port_interruption_is_cancellation_and_stops_motion(self):
+        port = Port()
+        def interrupted(context):
+            raise InterruptedError("operator pause")
+        port.operations["grasp"] = interrupted
+        result = port.executor().execute({})
+        self.assertEqual(result.state, "cancelled")
+        self.assertEqual(result.reason, "operator pause")
+        self.assertEqual(port.stops, ["grasp"])
+        self.assertNotIn("lift", [row[0] for row in port.calls])
+
     def test_stage_deadline_discards_late_result(self):
         port = Port()
         def operation(context):

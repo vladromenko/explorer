@@ -257,6 +257,8 @@ class TaskExecutor:
             state = "succeeded"
         except TaskStopped as exc:
             state, reason = exc.state, str(exc)
+        except InterruptedError as exc:
+            state, reason = "cancelled", str(exc)
         except Exception as exc:
             reason = type(exc).__name__ + ": " + str(exc)
         finally:

@@ -1,5 +1,6 @@
 import json
 import time
+import threading
 
 from test_simulator_server import client,auth
 
@@ -60,3 +61,26 @@ def test_resume_preserves_workshop_identity(tmp_path,monkeypatch):
         response=connection.post('/api/jobs/skills',json={'task_ids':['sock_basket'],'workshop_id':'a'*12},headers=auth(connection))
         assert wait(connection,response.json()['id'])['status']=='complete'
         assert seen==['a'*12]
+
+
+def test_stop_interrupts_skill_trial_but_focus_loss_does_not(tmp_path,monkeypatch):
+    entered=threading.Event()
+    def trial(env,root,identifier,task,seed,profile,cancelled,progress):
+        entered.set()
+        deadline=time.monotonic()+2
+        while not cancelled() and time.monotonic()<deadline:time.sleep(.005)
+        assert cancelled()
+        return dict(state='paused',reason='Оператор остановил проверку',simulation_ready=False)
+    monkeypatch.setattr('simulator.skill_workshop.trial',trial)
+    with client(tmp_path) as connection:
+        headers=auth(connection)
+        response=connection.post('/api/jobs/skill_trial',json={'task_id':'sock_basket'},headers=headers)
+        assert entered.wait(1)
+        assert connection.post('/api/stop-manual',json={},headers=headers).status_code==200
+        assert not connection.app.state.runtime.cancel_job.is_set()
+        assert connection.post('/api/pause',json={},headers=headers).status_code==409
+        assert connection.post('/api/reset',json={},headers=headers).status_code==409
+        assert connection.post('/api/record/start',json={},headers=headers).status_code==409
+        assert connection.post('/api/stop',json={},headers=headers).status_code==200
+        job=wait(connection,response.json()['id'])
+        assert job['status']=='cancelled' and job['result']['state']=='paused'

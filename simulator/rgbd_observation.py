@@ -87,9 +87,15 @@ def extract_candidates(depth, intrinsics, optical_to_world, *, floor_z_m=0.,
     wall_mask = valid & (height >= .075) & (height <= .55)
     h, w = depth.shape
     containers = []
+    hypotheses = []
     for sample, pixels in _clusters(points, wall_mask, min_pixels=30, cell_m=.02):
         lo, hi = np.quantile(sample, [.02, .98], axis=0)
         span = hi-lo
+        if max(span[:2]) >= .06 and span[2] >= .025:
+            hypotheses.append(_candidate((lo+hi)/2, lo, hi, .06, .3,
+                {'shape': 'partial_raised_geometry_for_camera_aim_only',
+                 'visible_pixels': len(sample), 'actionable': False,
+                 'semantic_identity_proven': False}))
         if not (.09 <= span[0] <= .65 and .09 <= span[1] <= .65 and span[2] >= .04):
             continue
         rim = sample[sample[:, 2] >= hi[2]-.025]
@@ -156,7 +162,7 @@ def extract_candidates(depth, intrinsics, optical_to_world, *, floor_z_m=0.,
                         'source': 'registered_wrist_rgb', 'semantic_identity_proven': False}
     visible = points[valid]
     stride = max(1, len(visible)//2000)
-    return {'low_objects': lows, 'containers': containers,
+    return {'low_objects': lows, 'containers': containers, 'container_hypotheses': hypotheses,
             'object_candidates': objects,
             'surface_points': visible[::stride].tolist(),
             'hold_status': 'unknown', 'placement_status': 'unknown'}
@@ -248,6 +254,48 @@ def observe_environment(env) -> dict[str, Any]:
                              'floor_prior_z_m': 0., 'floor_status': 'synthetic_room_prior',
                              'scope': 'simulation_only_real_handeye_and_dynamics_require_validation'},
                 **candidates)
+
+
+def combine_container_views(views):
+    """Bound a static opening from two separate complete RGBD viewpoints.
+
+    This measures cross-view consistency rather than reducing the acceptance
+    threshold. The 12 mm uncertainty floor is explicit simulation uncertainty;
+    it does not qualify the physical camera or unknown real basket geometry.
+    Partial hypotheses never enter this function or become action targets.
+    """
+    for latest in reversed(views):
+        current = latest['candidate']
+        for previous in reversed(views):
+            if previous['frame_id'] == latest['frame_id']:
+                continue
+            if np.linalg.norm(np.array(previous['camera_position'])-latest['camera_position']) < .02:
+                continue
+            earlier = previous['candidate']
+            pair = (earlier, current)
+            if any(c.get('confidence', 0.) < .7 or
+                   c.get('evidence', {}).get('shape') != 'raised_walls_with_visible_opening'
+                   for c in pair):
+                continue
+            centers = np.array([c['center'] for c in pair])
+            lower = np.array([c['bounds_min'] for c in pair])
+            upper = np.array([c['bounds_max'] for c in pair])
+            disagreement = max(float(np.max(np.abs(lower[0]-lower[1]))),
+                               float(np.max(np.abs(upper[0]-upper[1]))))
+            if np.linalg.norm(centers[0]-centers[1]) > .025 or disagreement > .025:
+                continue
+            lo, hi = lower.mean(axis=0), upper.mean(axis=0)
+            target = dict(current, center=((lo+hi)/2).tolist(), bounds_min=lo.tolist(),
+                          bounds_max=hi.tolist(), uncertainty_m=max(.012, .006+disagreement/2),
+                          frame_id=latest['frame_id'], simulation_time=latest['simulation_time'])
+            target['evidence'] = dict(current['evidence'],
+                multiview_consistent=True, source_frames=[previous['frame_id'], latest['frame_id']],
+                camera_baseline_m=float(np.linalg.norm(np.array(previous['camera_position'])-latest['camera_position'])),
+                bound_disagreement_m=disagreement,
+                uncertainty_source='two_view_bound_consistency_with_12mm_simulation_floor',
+                rim_height_m=float(hi[2]), real_calibration_validated=False)
+            return target
+    raise ObservationRefused('Два полных независимых обзора корзины не согласованы')
 
 
 def estimate_target(observation, kind, *, now_simulation_time=None, max_age_s=.25):

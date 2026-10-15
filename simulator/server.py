@@ -629,8 +629,14 @@ class Runtime:
             if job['kind'] == 'skills':
                 from .skill_workshop import prepare
                 results=[]
+                goal=self.learning_goals.get(request.goal_id) if request.goal_id else None
+                saved_workshops=goal.get('skill_workshops',{}) if goal else {}
                 for task_id in request.task_ids:
-                    identifier=(request.workshop_id or job['id']) if len(request.task_ids)==1 else secrets.token_hex(6)
+                    identifier=saved_workshops.get(task_id) or ((request.workshop_id or job['id']) if len(request.task_ids)==1 else secrets.token_hex(6))
+                    if goal is not None:
+                        saved_workshops[task_id]=identifier
+                        goal['skill_workshops']=saved_workshops
+                        self.learning_goals.save(goal)
                     results.append(prepare(self.data_root,identifier,task_id,is_cancelled,progress))
                 result=dict(workshops=results,simulation_ready=False,physical_ready=False,
                     training_mode='phase_local_residual_baseline',automatic_execution_allowed=False)
@@ -646,6 +652,9 @@ class Runtime:
                             self.capture_images();self.frame_at=time.monotonic()
                 result=self.on_owner(lambda:self.physics_task(lambda:trial(self.env,self.data_root,job['id'],
                     request.task_id,request.seed,request.scene_profile,is_cancelled,skill_progress)))
+                if result.get('state')=='paused':
+                    job['result']=jsonable(result)
+                    raise InterruptedError(result.get('reason') or 'Проверка этапов остановлена')
             elif job['kind'] == 'assistant':
                 if request.goal_id and not request.request_text:
                     goal = self.learning_goals.get(request.goal_id)
@@ -667,6 +676,8 @@ class Runtime:
                     if previous:
                         goal['parent_id'] = previous['id']
                         self.learning_goals.save(goal)
+                goal['learning_mode']=request.learning_mode
+                self.learning_goals.save(goal)
                 job['goal_id'] = goal['id']
                 if is_cancelled():
                     raise InterruptedError('Разбор остановлен; просьба сохранена')
@@ -679,9 +690,15 @@ class Runtime:
                         self.jobs.append(child)
                     values = dict(goal['options'],goal_id=goal['id'],
                         task_ids=goal['plan']['task_ids'],plan_id=goal.get('night_plan_id'),cycle_id=goal.get('learning_cycle_id'),allow_partial=request.allow_partial)
+                    if child_kind=='skills':
+                        goal['state']='running'
+                        self.learning_goals.save(goal)
                     self.run_job(child,JobRequest(**values),extra_cancelled=is_cancelled)
                     goal['state'] = 'finished' if child['status']=='complete' else child['status']
-                    if child_kind=='skills' and child['status']=='complete':goal['state']='prepared'
+                    if child_kind=='skills':
+                        goal['state']='prepared' if child['status']=='complete' else 'paused' if child['status']=='cancelled' else child['status']
+                        goal['skill_workshops']=self.learning_goals.get(goal['id']).get('skill_workshops',{})
+                        goal['results']=[]
                     goal['error'] = None if child['status']=='complete' else child['message']
                     if child.get('result',{}).get('archive'):
                         goal['archive'] = child['result']['archive']
@@ -1100,9 +1117,10 @@ def create_app(env_factory=None, data_root=DATA_ROOT, learning_module=None, star
     def stop(request: Request):
         runtime = request.app.state.runtime
         runtime.stop_control()
-        if runtime.jobs and runtime.jobs[-1]['kind'] in {'trials', 'validate'}:
-            runtime.cancellation_context = {}
-            runtime.cancel_job.set()
+        with runtime.lock:
+            if runtime.jobs and runtime.jobs[-1]['kind'] in {'trials', 'validate', 'skill_trial'}:
+                runtime.cancellation_context = {}
+                runtime.cancel_job.set()
         return {'ok': True}
 
     @app.post('/api/cancel')
@@ -1134,7 +1152,7 @@ def create_app(env_factory=None, data_root=DATA_ROOT, learning_module=None, star
     @app.post('/api/reset')
     def reset(command: Reset, request: Request):
         runtime = request.app.state.runtime
-        if runtime.job_thread and runtime.job_thread.is_alive() and runtime.jobs[-1]['kind'] in {'trials', 'validate'}:
+        if runtime.job_thread and runtime.job_thread.is_alive() and runtime.jobs[-1]['kind'] in {'trials', 'validate', 'skill_trial'}:
             raise HTTPException(409, 'Сначала остановите текущее задание')
         runtime.on_owner(lambda: runtime.reset(command))
         return {'ok': True}
@@ -1143,7 +1161,7 @@ def create_app(env_factory=None, data_root=DATA_ROOT, learning_module=None, star
     def pause(request: Request):
         runtime = request.app.state.runtime
         with runtime.lock:
-            if runtime.job_thread and runtime.job_thread.is_alive() and runtime.jobs[-1]['kind'] in {'trials', 'validate'}:
+            if runtime.job_thread and runtime.job_thread.is_alive() and runtime.jobs[-1]['kind'] in {'trials', 'validate', 'skill_trial'}:
                 raise HTTPException(409, 'Сначала остановите текущее задание')
             runtime.paused = not runtime.paused
             runtime.stop_control()
