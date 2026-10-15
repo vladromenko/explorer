@@ -48,7 +48,7 @@ class LearningCycles:
             seed_base=600000000+secrets.randbelow(600000000),physical_ready=False,automatic_hardware_execution=False)
         self.save(value);return value
 
-    def run(self,identifier,execute,cancelled,progress):
+    def run(self,identifier,execute,cancelled,progress,cancellation_context=None):
         value=self.get(identifier)
         if value['state']=='ready_for_transfer':return value
         if value['state']=='needs_diagnosis':return value
@@ -70,6 +70,7 @@ class LearningCycles:
             result=execute(name,dict(options,job_id=pending['job_id'],task_id=task['task_id']),stopped)
             task['stages'][name]=result;task.pop('pending',None);self.save(value)
             return result
+        value.pop('maintenance_token',None)
         value.update(state='running',reason=None,pause_kind=None);self.save(value)
         try:
             for index,task in enumerate(value['tasks']):
@@ -132,7 +133,10 @@ class LearningCycles:
                         self.save(value)
             value.update(state='ready_for_transfer',phase='ready',simulation_qualified=True,physical_ready=False)
         except InterruptedError as exc:
-            value.update(state='paused',reason=str(exc),pause_kind='operator' if cancelled() else 'budget_or_capacity')
+            context=cancellation_context() if cancelled() and cancellation_context else {}
+            maintenance=context.get('kind')=='maintenance' and context.get('cycle_id')==identifier and context.get('token')
+            value.update(state='paused',reason=str(exc),pause_kind='maintenance' if maintenance else 'operator' if cancelled() else 'budget_or_capacity')
+            if maintenance:value['maintenance_token']=context['token']
         except Exception as exc:
             value.update(state='failed',reason=str(exc))
         finally:self.save(value);progress(value)

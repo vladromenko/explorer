@@ -228,6 +228,7 @@ class Runtime:
         self.lock = threading.RLock()
         self.stop_event = threading.Event()
         self.cancel_job = threading.Event()
+        self.cancellation_context = {}
         self.thread = None
         self.job_thread = None
         self.token = secrets.token_urlsafe(32)
@@ -561,6 +562,7 @@ class Runtime:
             if self.job_thread and self.job_thread.is_alive():
                 raise HTTPException(409, 'Дождитесь завершения текущего задания')
             self.cancel_job.clear()
+            self.cancellation_context = {}
             job = {'id': secrets.token_hex(6), 'kind': kind, 'status': 'running', 'progress': 0, 'message': 'Запуск…'}
             self.jobs.append(job)
             self.job_thread = threading.Thread(target=self.run_job, args=(job, request), name='explorer-learning', daemon=True)
@@ -708,7 +710,8 @@ class Runtime:
                     if child['status']!='complete':raise ValueError(child['message'])
                     return child['result']
                 result=self.learning_cycles.run(cycle['id'],execute_cycle,is_cancelled,
-                    lambda status:progress('Доработка навыка: '+status.get('phase','подготовка'),details=jsonable(status)))
+                    lambda status:progress('Доработка навыка: '+status.get('phase','подготовка'),details=jsonable(status)),
+                    cancellation_context=lambda:dict(self.cancellation_context))
                 if result['state']=='paused':raise InterruptedError(result['reason'])
                 if result['state'] in ('failed','needs_diagnosis'):raise ValueError(result['reason'])
                 from .transfer import export_curriculum,sha256
@@ -1070,13 +1073,35 @@ def create_app(env_factory=None, data_root=DATA_ROOT, learning_module=None, star
         runtime = request.app.state.runtime
         runtime.stop_control()
         if runtime.jobs and runtime.jobs[-1]['kind'] in {'trials', 'validate'}:
+            runtime.cancellation_context = {}
             runtime.cancel_job.set()
         return {'ok': True}
 
     @app.post('/api/cancel')
     def cancel(request: Request):
-        request.app.state.runtime.cancel_job.set()
+        runtime=request.app.state.runtime
+        with runtime.lock:
+            runtime.cancellation_context = {}
+            runtime.cancel_job.set()
         return {'ok': True}
+
+    @app.post('/api/maintenance-stop/{cycle_id}')
+    def maintenance_stop(cycle_id: str, request: Request):
+        runtime=request.app.state.runtime
+        with runtime.lock:
+            try:cycle=runtime.learning_cycles.get(cycle_id)
+            except (ValueError,FileNotFoundError) as exc:raise HTTPException(404, 'Учебный цикл не найден') from exc
+            if cycle.get('pause_kind')=='operator' or runtime.cancel_job.is_set():
+                raise HTTPException(409, 'Пауза пользователя сохраняется')
+            active=[job for job in runtime.jobs if job.get('status')=='running']
+            if any(job.get('kind')=='train' for job in active):
+                raise HTTPException(409, 'Дождитесь завершения обучения')
+            if not any(job.get('kind')=='cycle' and job.get('cycle_id')==cycle_id for job in active):
+                raise HTTPException(409, 'Этот цикл сейчас не выполняется')
+            token=secrets.token_hex(16)
+            runtime.cancellation_context=dict(kind='maintenance',cycle_id=cycle_id,token=token)
+            runtime.cancel_job.set()
+        return {'ok':True,'maintenance_token':token}
 
     @app.post('/api/reset')
     def reset(command: Reset, request: Request):

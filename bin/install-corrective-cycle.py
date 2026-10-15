@@ -149,8 +149,14 @@ def install(cycle_id,train_id,reference,revision,watch=False,teacher_profile='pl
             if cycle.get('state')=='ready_for_transfer':
                 state['state']='already_qualified';save(marker,state);return state
         state.update(state='stopping_following_stage');save(marker,state)
+        maintenance_token=None
         if any(job['status']=='running' for job in snapshot.get('jobs',[])):
-            post('/api/cancel',{})
+            # A user stop and an installer stop must remain distinguishable.
+            # Older services lack this endpoint: fail safely without cancelling.
+            stopped=post('/api/maintenance-stop/'+cycle_id,{})
+            maintenance_token=stopped.get('maintenance_token')
+            if not maintenance_token:raise ValueError('Simulator did not identify the maintenance stop')
+            state['maintenance_token']=maintenance_token;save(marker,state)
         deadline=time.monotonic()+90
         while any(job['status']=='running' for job in get('/api/state?compact=true').get('jobs',[])):
             if time.monotonic()>deadline:raise TimeoutError('Following stage did not stop; original service retained')
@@ -162,6 +168,8 @@ def install(cycle_id,train_id,reference,revision,watch=False,teacher_profile='pl
         cycle=json.loads((DATA/'learning-cycles'/(cycle_id+'.json')).read_text())
         if cycle.get('pause_kind')=='operator':
             state['state']='operator_paused';save(marker,state);return state
+        if maintenance_token and (cycle.get('pause_kind')!='maintenance' or cycle.get('maintenance_token')!=maintenance_token):
+            raise ValueError('Simulator pause does not belong to this installer')
         servers=simulator_pids()
         if len(servers)!=1:raise ValueError('Expected exactly one local simulator server')
         os.kill(servers[0],signal.SIGTERM)

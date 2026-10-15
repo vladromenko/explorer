@@ -111,3 +111,27 @@ def test_corrective_install_boundary_waits_for_training_and_respects_operator_pa
     assert module.boundary({'jobs':[]},cycle,'a'*12,'validated_simulation')=='ready'
     assert module.boundary(finished,{'pause_kind':None,'state':'running','tasks':[{'model_id':'b'*12}]},'a'*12)=='waiting_for_training'
     assert module.boundary(finished,{'pause_kind':'operator'},'a'*12)=='operator_paused'
+
+
+def test_maintenance_stop_retains_pending_stage_and_identifies_its_installer(tmp_path):
+    store=LearningCycles(tmp_path);cycle=store.create(['toy_box'],models={'toy_box':'a'*12})
+    context={};stopped=False
+    def execute(stage,options,cancelled):
+        nonlocal stopped
+        assert stage=='audit'
+        context.update(kind='maintenance',cycle_id=cycle['id'],token='installer-token')
+        stopped=True
+        raise InterruptedError('audit stopped for update')
+    paused=store.run(cycle['id'],execute,lambda:stopped,lambda value:None,
+        cancellation_context=lambda:context)
+    assert paused['pause_kind']=='maintenance'
+    assert paused['maintenance_token']=='installer-token'
+    assert paused['tasks'][0]['pending']['stage']=='audit'
+    assert paused['tasks'][0]['model_id']=='a'*12
+
+
+def test_another_cycles_maintenance_token_never_overrides_operator_stop(tmp_path):
+    store=LearningCycles(tmp_path);cycle=store.create(['toy_box'])
+    paused=store.run(cycle['id'],lambda *args:None,lambda:True,lambda value:None,
+        cancellation_context=lambda:dict(kind='maintenance',cycle_id='other',token='token'))
+    assert paused['pause_kind']=='operator' and 'maintenance_token' not in paused

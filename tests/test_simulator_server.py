@@ -53,6 +53,34 @@ def auth(connection):
     return {'X-Explorer-Sim-Token': connection.get('/api/session').json()['token']}
 
 
+def test_maintenance_cancel_is_owned_and_operator_cancel_takes_precedence(tmp_path):
+    with client(tmp_path) as connection:
+        headers=auth(connection);runtime=connection.app.state.runtime
+        cycle=runtime.learning_cycles.create(['toy_box'])
+        runtime.jobs=[dict(id='owner',kind='cycle',cycle_id=cycle['id'],status='running'),
+                      dict(id='audit',kind='audit',status='running')]
+        response=connection.post('/api/maintenance-stop/'+cycle['id'],json={},headers=headers)
+        assert response.status_code==200
+        token=response.json()['maintenance_token']
+        assert runtime.cancel_job.is_set()
+        assert runtime.cancellation_context==dict(kind='maintenance',cycle_id=cycle['id'],token=token)
+        connection.post('/api/cancel',json={},headers=headers)
+        assert runtime.cancellation_context=={} and runtime.cancel_job.is_set()
+
+
+def test_maintenance_cancel_refuses_live_training_and_existing_operator_pause(tmp_path):
+    with client(tmp_path) as connection:
+        headers=auth(connection);runtime=connection.app.state.runtime
+        cycle=runtime.learning_cycles.create(['toy_box'])
+        runtime.jobs=[dict(id='owner',kind='cycle',cycle_id=cycle['id'],status='running'),
+                      dict(id='learner',kind='train',status='running')]
+        assert connection.post('/api/maintenance-stop/'+cycle['id'],json={},headers=headers).status_code==409
+        assert not runtime.cancel_job.is_set()
+        runtime.jobs.pop();cycle.update(state='paused',pause_kind='operator');runtime.learning_cycles.save(cycle)
+        assert connection.post('/api/maintenance-stop/'+cycle['id'],json={},headers=headers).status_code==409
+        assert not runtime.cancel_job.is_set()
+
+
 def test_local_authenticated_mutations_only(tmp_path):
     with client(tmp_path) as connection:
         headers = auth(connection)

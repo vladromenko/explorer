@@ -32,6 +32,14 @@
     }
   ],
   "selected_teacher": "planned_release_v4",
+  "maintenance_transition_fix": {
+    "cause": "Installer used the operator cancel endpoint after training completed, then treated its own stop as an operator pause.",
+    "training_job": "40054de70f33",
+    "completed_training_steps": 92216,
+    "fix": "Authenticated maintenance stop returns an ownership token. The cycle records maintenance separately; the installer verifies that token before installing. Operator stops and active training block maintenance.",
+    "tests": "39 targeted tests passed on the final source correction.",
+    "deployment": "Source correction only. Existing operator-labelled pause is preserved; current cycle was not resumed. Legacy services without the maintenance endpoint are rejected before cancellation."
+  },
   "limitations": [
     "These paired teacher trials do not qualify the learned ACT policy.",
     "Some high-basket releases still fail; a deeper unhook trial did not improve the targeted case and was not selected.",
