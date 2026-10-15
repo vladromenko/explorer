@@ -19,9 +19,11 @@ class CameraViewPlan:
     position: np.ndarray
     lateral_error_m: float
     range_error_m: float
+    hand_tilt_change_deg: float | None = None
 
 
-def plan_camera_view(env,point,*,gripper,distance_m,min_camera_height_m,check=lambda:None):
+def plan_camera_view(env,point,*,gripper,distance_m,min_camera_height_m,check=lambda:None,
+                     maximum_hand_tilt_deg=None,reference_hand_gravity=None):
     import mujoco
     from scipy.optimize import least_squares
     from .explorer_model import servo_to_joint
@@ -30,9 +32,17 @@ def plan_camera_view(env,point,*,gripper,distance_m,min_camera_height_m,check=la
         not np.isfinite([gripper,distance_m,min_camera_height_m]).all() or
         not 30.<=gripper<=170. or not .08<=distance_m<=1. or min_camera_height_m<.08):
         raise ValueError('Некорректная цель обзора камеры')
+    if maximum_hand_tilt_deg is not None and (not np.isfinite(maximum_hand_tilt_deg) or not 0.<maximum_hand_tilt_deg<=3.):
+        raise ValueError('Некорректный предел наклона удерживаемого предмета')
     scratch=mujoco.MjData(env.model);scratch.qpos[:]=env.data.qpos
     camera=env.model.camera('wrist_depth').id
     start=env.command[:5].copy()
+    reference_gravity=env.data.body('arm5').xmat.reshape(3,3).T@np.array([0.,0.,1.])
+    if reference_hand_gravity is not None:
+        reference_gravity=np.asarray(reference_hand_gravity,float)
+        if (maximum_hand_tilt_deg is None or reference_gravity.shape!=(3,) or
+            not np.isfinite(reference_gravity).all() or abs(np.linalg.norm(reference_gravity)-1.)>1e-5):
+            raise ValueError('Некорректная исходная ориентация захвата')
     def geometry(angles):
         q=servo_to_joint([*angles,gripper]);scratch.qpos[env.joint_q]=q
         for name,multiplier in (('rlink2_Joint',1),('llink1_Joint',1),('llink2_Joint',-1),('rlink3_Joint',-1),('llink3_Joint',1)):
@@ -40,11 +50,14 @@ def plan_camera_view(env,point,*,gripper,distance_m,min_camera_height_m,check=la
         mujoco.mj_forward(env.model,scratch)
         position=scratch.cam_xpos[camera].copy()
         optical=scratch.cam_xmat[camera].reshape(3,3).T@(point-position)
-        return position,optical
+        gravity=scratch.body('arm5').xmat.reshape(3,3).T@np.array([0.,0.,1.])
+        tilt=float(np.arccos(np.clip(reference_gravity@gravity,-1.,1.)))
+        return position,optical,gravity,tilt
     def residual(angles):
-        position,optical=geometry(angles)
+        position,optical,gravity,_=geometry(angles)
         return np.r_[optical[:2]*3.,(-optical[2]-distance_m),
-            max(min_camera_height_m-position[2],0.)*30.,(angles-start)*.00003]
+            max(min_camera_height_m-position[2],0.)*30.,(angles-start)*.00003,
+            (gravity-reference_gravity)*8. if maximum_hand_tilt_deg is not None else np.empty(0)]
     seeds=(start,[90.,90.,90.,90.,90.],
            [50.,120.,30.,0.,90.],[130.,120.,30.,0.,90.],
            [50.,45.,120.,120.,90.],[130.,45.,120.,120.,90.])
@@ -55,17 +68,30 @@ def plan_camera_view(env,point,*,gripper,distance_m,min_camera_height_m,check=la
             bounds=([0.]*5,[180.]*4+[270.]),max_nfev=150)
         # Recompute FK: an optimiser's success flag or reported residual can
         # never replace the actual geometric constraints.
-        position,optical=geometry(fit.x)
+        position,optical,_,tilt=geometry(fit.x)
         lateral=float(np.linalg.norm(optical[:2]));range_error=abs(float(-optical[2]-distance_m))
         height_deficit=max(float(min_camera_height_m-position[2]),0.)
         cost=lateral+range_error+height_deficit
         if cost<best_cost:
             best_cost=cost;best_errors=(lateral,range_error,height_deficit)
         if optical[2]<-.035 and lateral<=.04 and range_error<=.04 and height_deficit<=.008:
-            candidates.append(CameraViewPlan(np.r_[fit.x,gripper],position,lateral,range_error))
+            if maximum_hand_tilt_deg is not None:
+                if np.rad2deg(tilt)>maximum_hand_tilt_deg:continue
+                # Check the same joint-space segment used by move_angles;
+                # yaw about gravity is allowed, tipping the held cloth is not.
+                count=max(2,int(np.ceil(np.sum(np.abs(fit.x-start))/.5)))
+                allowed=True
+                for fraction in np.linspace(0.,1.,count+1):
+                    check()
+                    if np.rad2deg(geometry(start+(fit.x-start)*fraction)[3])>maximum_hand_tilt_deg:
+                        allowed=False;break
+                if not allowed:continue
+            candidates.append(CameraViewPlan(np.r_[fit.x,gripper],position,lateral,range_error,
+                None if maximum_hand_tilt_deg is None else float(np.rad2deg(tilt))))
     if not candidates:
         lateral,range_error,height_deficit=best_errors
-        raise CameraViewUnavailable('Обзорная поза недостижима: ошибка наведения '
+        qualifier=' с сохранением наклона захвата' if maximum_hand_tilt_deg is not None else ''
+        raise CameraViewUnavailable('Обзорная поза недостижима'+qualifier+': ошибка наведения '
             f'{lateral*100:.1f} см, расстояния {range_error*100:.1f} см, нехватка высоты {height_deficit*100:.1f} см')
     return min(candidates,key=lambda row:row.lateral_error_m+row.range_error_m+
                float(np.linalg.norm(row.command[:5]-start))*.00003)

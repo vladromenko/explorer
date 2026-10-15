@@ -50,7 +50,7 @@
   "remaining": [
     "Select a reachable observation stance for the 30 cm basket using observed rim geometry, collision checks and fresh depth; no assumed cavity.",
     "Qualify temporal placement evidence with actual release renders; full task execution is still not accepted.",
-    "Preserve the verified grip during the free-pitch transport-posture change after the destination survey; the paired current diagnostic now isolates actual material loss at this later motion.",
+    "Select an observed destination viewpoint without tipping the held material. A 1 s stationary comparison isolated delayed loss after the previous survey; the tilt guard preserves the grip but current fixed-base survey poses are unavailable.",
     "Generalize the perception and grasp primitives across the unchanged scene distribution.",
     "Validate two independent ten-scene groups and qualify exact software/artifact checksums before transfer.",
     "Commission real semantic recognition, hand-eye calibration and dynamics separately on hardware."
@@ -157,6 +157,25 @@
     "next": "Avoid the unnecessary free-pitch transport-posture change or plan it with measured hold orientation and clearance; do not relax hold evidence.",
     "qualification": false,
     "whole_task_success": false,
-    "physics_or_acceptance_changed": false
+    "physics_or_acceptance_changed": false,
+    "causal_followup": "The later stationary comparison below supersedes attribution to the transport-posture motion: material was also lost without that motion or any base command."
+  },
+  "held_survey_tilt_guard": {
+    "baseline_stationary_check": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/postsurvey-stationary-hold-1792085236067545000",
+    "retained_transport_trial": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/retained-transport-pose-1792085107412221000",
+    "guarded_trial": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/held-survey-tilt-guard-1792085541794875000",
+    "guarded_stationary_check": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/guarded-postsurvey-stationary-hold-1792085609621816000",
+    "seed": 887401001,
+    "causal_result": "Without changing posture or moving the chassis, the old survey lost the material during the following stationary second. The survey tipped camera pitch from 68.3 to 34.3 degrees. Removing the redundant transport pose alone did not solve this delayed loss.",
+    "change": "Held-camera planning constrains gravity-relative hand tilt to 2 degrees against the original visually verified hold; yaw about gravity is allowed. The joint-space segment is sampled and measured tilt is checked on each movement tick with a 3 degree limit. All camera pose and complete-opening gates remain unchanged.",
+    "transport_change": "Retain an already raised compact own-robot pose. If a change is necessary, plan fixed-orientation translation with unchanged 8 mm IK and 2 degree endpoint limits plus intermediate orientation checks. Recheck measured height, reach, rotation and visible hold before any chassis command. This is not a collision-free path certificate.",
+    "stationary_gate": "Require four distinct fresh RGBD hold checks across one stationary second before driving. Lost, ambiguous or stale evidence refuses transport.",
+    "guarded_stationary_result": "Survey refused all tested viewpoints before tipping the material. One additional stationary second retained both visual association and independent two-pad contact; measured hand-relative material offset changed only 1.26 mm. Independent hold duration 4.85 s.",
+    "remaining": "Current fixed-base held-camera survey cannot confirm the opening with the new motion constraint. Need observed viewpoint/stance planning rather than permitting the former tilt. Full delivery and user 30 cm basket remain unqualified.",
+    "regression_tests": "124 passed and 3 subtests across executor, adapter, workshop/API, perception, planning and placement.",
+    "physics_or_geometry_changed": false,
+    "acceptance_weakened": false,
+    "qualification": false,
+    "whole_task_success": false
   }
 }

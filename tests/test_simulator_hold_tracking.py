@@ -101,3 +101,40 @@ def test_untracked_hold_without_orientation_reference_is_unknown(tmp_path,monkey
         port.scene=lambda ctx:dict(frame_id='later',object_candidates=[candidate(z=.18)])
         assert port.verify_hold(None,probe=False)['outcome']=='unknown'
     finally:port.close()
+
+
+@pytest.mark.parametrize('kind,expected', [('stable','success'),('lost','unknown'),('duplicate','unknown')])
+def test_stationary_hold_requires_a_second_of_fresh_visible_evidence(tmp_path,monkeypatch,kind,expected):
+    port=setup(tmp_path,[candidate(z=.18)],monkeypatch)
+    ticks=[];checks=[]
+    port.tick=lambda arm,ctx=None:ticks.append(arm.copy())
+    def check(ctx,probe=False):
+        checks.append(len(ticks))
+        if kind=='lost' and len(checks)==2:return dict(outcome='unknown',reason='lost')
+        return dict(outcome='success',evidence={'frame_id':'same' if kind=='duplicate' else str(len(ticks))})
+    port.verify_hold=check
+    try:
+        result=port.verify_stationary_hold(None)
+        assert result['outcome']==expected
+        if kind=='stable':
+            assert checks==[5,10,15,20]
+            assert result['evidence']['duration_s']==1.
+        else:assert len(ticks)==10
+    finally:port.close()
+
+
+def test_measured_motion_guard_interrupts_the_arm_segment(tmp_path,monkeypatch):
+    port=setup(tmp_path,[candidate(z=.18)],monkeypatch)
+    port.env.velocity_limit=np.full(6,100.)
+    ticks=[]
+    port.tick=lambda arm,ctx=None:ticks.append(arm.copy())
+    def guard():
+        if len(ticks)==3:raise ValueError('measured hand tilt')
+    try:
+        with pytest.raises(ValueError,match='measured hand tilt'):
+            # setup replaces the instance method for the probe fixture; call
+            # the actual movement loop to verify immediate guarded interruption.
+            SimulatorSkillPort.move_angles(port,np.full(6,90.),None,duration=.2,motion_check=guard)
+        assert len(ticks)==3
+        assert not np.array_equal(ticks[-1],np.full(6,90.))
+    finally:port.close()

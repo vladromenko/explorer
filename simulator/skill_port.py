@@ -22,6 +22,7 @@ class SimulatorSkillPort:
         self.cancelled=cancelled;self.progress=progress;self.sequence=0
         self.target=None;self.destination=None;self.grasp_xyz=None;self.before_hold=None;self.release_xyz=None
         self.destination_views=[];self.surveys=[]
+        self.transport_poses=[]
         self.frames=[];self.handle=(self.folder/'commands.jsonl').open('w')
 
     def check(self,ctx=None):
@@ -43,27 +44,42 @@ class SimulatorSkillPort:
         goal=self.env.solve_ik(xyz,self.env.command[:5],gripper=gripper,downward=downward)
         return self.move_angles(goal,ctx,duration)
 
-    def move_angles(self,goal,ctx,duration=1.5):
+    def move_angles(self,goal,ctx,duration=1.5,*,motion_check=None):
         start=self.env.command[:6].copy()
         count=max(round(duration/PERIOD),round(np.max(abs(goal-start)/self.env.velocity_limit)/PERIOD)+10)
         for n in range(count):
             u=(n+1)/count;blend=u*u*u*(10.-15.*u+6.*u*u)
             self.tick(start+(goal-start)*blend,ctx=ctx)
-        for _ in range(12):self.tick(goal,ctx=ctx)
+            if motion_check is not None:motion_check()
+        for _ in range(12):
+            self.tick(goal,ctx=ctx)
+            if motion_check is not None:motion_check()
         return goal
 
     def look_at(self,point,ctx,*,gripper=None,distance_m=.24,min_camera_height_m=.12):
         """Aim the calibrated wrist camera at an already observed location."""
         from .inspection_planning import plan_camera_view,CameraViewUnavailable
+        from .manipulation_planning import hand_rotation
+        if self.before_hold is not None and not hasattr(self,'hold_rotation'):
+            raise CameraViewUnavailable('Нет исходной ориентации подтверждённого захвата')
+        held_reference=self.hold_rotation.T@np.array([0.,0.,1.]) if self.before_hold is not None else None
         plan=plan_camera_view(self.env,point,
             gripper=float(self.env.command[5] if gripper is None else gripper),distance_m=distance_m,
-            min_camera_height_m=min_camera_height_m,check=lambda:self.check(ctx))
-        self.move_angles(plan.command,ctx)
+            min_camera_height_m=min_camera_height_m,check=lambda:self.check(ctx),
+            maximum_hand_tilt_deg=2. if held_reference is not None else None,
+            reference_hand_gravity=held_reference)
+        def check_tilt():
+            gravity=hand_rotation(self.env).T@np.array([0.,0.,1.])
+            tilt=float(np.arccos(np.clip(held_reference@gravity,-1.,1.)))
+            if not np.isfinite(tilt) or tilt>np.deg2rad(3.):
+                raise CameraViewUnavailable('Во время обзора превышен наклон удерживаемого предмета')
+        self.move_angles(plan.command,ctx,motion_check=check_tilt if held_reference is not None else None)
         # Finite torque and joint tracking can lower a physically settled
         # camera below the kinematic prediction. Do not silently accept it.
         camera=self.env.model.camera('wrist_depth').id
         if float(self.env.data.cam_xpos[camera,2])<min_camera_height_m-.008:
             raise CameraViewUnavailable('После движения камера не достигла рассчитанной высоты обзора')
+        if held_reference is not None:check_tilt()
 
     def observe(self,ctx):
         from src.task_executor import Observation
@@ -144,8 +160,12 @@ class SimulatorSkillPort:
                 hint=frame['container_hypotheses'][0]
                 aims.insert(0,(np.asarray(hint['center']),.45))
         self.surveys.append(dict(outcome='unknown',views=notes))
-        return dict(outcome='unknown',reason='За ограниченный обзор не получены два полных согласованных изображения отверстия корзины',
-                    evidence=dict(source='bounded_rgbd_survey',views=len(notes),new_complete_views=new_complete))
+        needs_new_view=self.before_hold is not None and new_complete==0
+        reason=('Не найден обзор корзины с сохранением удержания; нужна другая точка обзора'
+                if needs_new_view else 'За ограниченный обзор не получены два полных согласованных изображения отверстия корзины')
+        return dict(outcome='unknown',reason=reason,
+                    evidence=dict(source='bounded_rgbd_survey',views=len(notes),new_complete_views=new_complete,
+                        held_object_motion_guard=self.before_hold is not None,needs_new_viewpoint=needs_new_view))
 
     def find(self,ctx):
         self.env.phase='skill_find';self.inspect(ctx)
@@ -299,6 +319,20 @@ class SimulatorSkillPort:
             measured_translation_m=float(np.linalg.norm(hand_moved)),measured_rotation_deg=float(np.rad2deg(rotation_change)),
             semantic_identity='unverified_single_geometric_target'))
 
+    def verify_stationary_hold(self,ctx):
+        """Observe a full second of stationary holding before chassis motion."""
+        frames=[]
+        for _ in range(4):
+            for _ in range(5):self.tick(self.env.command[:6],ctx=ctx)
+            held=self.verify_hold(ctx,probe=False)
+            if held['outcome']!='success':return held
+            frame=held.get('evidence',{}).get('frame_id')
+            if not frame or frame in frames:
+                return dict(outcome='unknown',reason='Нет свежих кадров выдержки удержания')
+            frames.append(frame)
+        return dict(outcome='success',evidence=dict(confirmed=True,
+            source='stationary_multi_frame_rgbd_hold',duration_s=20*PERIOD,frames=frames))
+
     def carry(self,ctx):
         self.env.phase='skill_find_destination'
         # Missing or partial container geometry cannot be replaced by the
@@ -309,10 +343,28 @@ class SimulatorSkillPort:
         if held['outcome']!='success':return held
         box=self.destination
         if float(box['uncertainty_m'])>.02:return dict(outcome='unknown',reason='Граница корзины измерена недостаточно точно')
-        rim=float(box['bounds_max'][2]);pose=np.asarray(self.env.base_pose())
-        direction=np.array([math.cos(pose[2]),math.sin(pose[2])])
-        self.move([*(pose[:2]+.20*direction),max(.18,rim+.09)],170.,ctx,downward=False)
-        held=self.verify_hold(ctx,probe=False)
+        from .manipulation_planning import plan_transport_pose,transport_pose_satisfied,hand_rotation
+        from scipy.spatial.transform import Rotation
+        rim=float(box['bounds_max'][2])
+        transport=plan_transport_pose(self.env,max(.18,rim+.09),check=lambda:self.check(ctx))
+        transport_evidence=dict(simulation_time=float(self.env.data.time),retained=transport.retained,
+            before_jaw=np.asarray(self.env.jaw_center()).tolist(),command=transport.command.tolist(),
+            minimum_height_m=transport.minimum_height_m,maximum_reach_m=transport.maximum_reach_m)
+        self.transport_poses.append(transport_evidence)
+        def check_transport_rotation():
+            angle=Rotation.from_matrix(transport.reference_rotation.T@hand_rotation(self.env)).magnitude()
+            if not np.isfinite(angle) or angle>np.deg2rad(3.):
+                raise ValueError('Во время подготовки к переносу изменился наклон захвата')
+        if not transport.retained:
+            self.move_angles(transport.command,ctx,motion_check=check_transport_rotation)
+        rotation=Rotation.from_matrix(transport.reference_rotation.T@hand_rotation(self.env)).magnitude()
+        transport_evidence.update(after_jaw=np.asarray(self.env.jaw_center()).tolist(),
+            measured_rotation_deg=float(np.rad2deg(rotation)))
+        if (not transport_pose_satisfied(self.env,transport.minimum_height_m,transport.maximum_reach_m)
+            or rotation>np.deg2rad(3.)):
+            return dict(outcome='unknown',reason='Измеренная транспортная поза не сохранила высоту, компактность или ориентацию захвата')
+        held=self.verify_stationary_hold(ctx)
+        transport_evidence['stationary_hold']=held
         if held['outcome']!='success':return held
         self.env.phase='skill_carry'
         half=(np.asarray(box['bounds_max'])-box['bounds_min'])/2
@@ -391,6 +443,7 @@ class SimulatorSkillPort:
         try:self.handle.close()
         finally:
             (self.folder/'destination-surveys.json').write_text(json.dumps(self.surveys,ensure_ascii=False,indent=2))
+            (self.folder/'transport-poses.json').write_text(json.dumps(self.transport_poses,ensure_ascii=False,indent=2))
             (self.folder/'observations.json').write_text(json.dumps(self.frames,ensure_ascii=False,indent=2))
 
     def operations(self):
