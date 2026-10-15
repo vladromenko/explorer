@@ -109,9 +109,8 @@ class SimulatorSkillPort:
                                     (.50,-.35,.20),(.35,.28,.25),(.35,-.28,.25)):
             aims.append((np.r_[pose[:2]+forward*direction+side*lateral,height],.40))
         visited=[];notes=[];new_complete=0
-        for _ in range(max_views):
+        while aims and len(visited)<max_views:
             self.check(ctx)
-            if not aims:break
             point,distance=aims.pop(0)
             if any(np.linalg.norm(point-old[0])<.025 and abs(distance-old[1])<.025 for old in visited):
                 continue

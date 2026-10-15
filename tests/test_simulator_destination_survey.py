@@ -93,6 +93,20 @@ def test_old_cache_cannot_replace_new_complete_measurement(tmp_path):
     finally:port.close()
 
 
+def test_repeated_hint_does_not_consume_budget_for_distinct_views(tmp_path):
+    hint=dict(candidate(),confidence=.3,evidence={'actionable':False})
+    port,calls=make_port(tmp_path,[frame('first',[.23,.13,.28],hints=[hint]),
+        frame('repeated',[.15,.12,.345],hints=[hint]),
+        frame('new-direction',[.1,-.12,.345])])
+    try:
+        result=port.survey_destination(None,max_views=3)
+        assert result['outcome']=='unknown'
+        assert len(calls)==3
+        assert result['evidence']['views']==3
+        np.testing.assert_allclose(calls[2][0][0],[.4,-.24,.15])
+    finally:port.close()
+
+
 def test_look_at_uses_current_closed_gripper_in_fk_and_final_command(tmp_path,monkeypatch):
     from simulator.environment import ExplorerEnv
     from simulator.inspection_planning import CameraViewPlan

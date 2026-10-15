@@ -98,5 +98,19 @@
     "inspection_stance_probes": "A measured-rim approach to 34 cm standoff did not obtain a feasible complete view; all raw observations and commands retained in diagnostics/inspection-stance-*.",
     "scope": "This fixes pose acceptance, not complete high-basket inspection or delivery.",
     "qualification": false
+  },
+  "distinct_survey_budget_fix": {
+    "problem": "Repeated camera hints consumed the view budget, skipping remaining unique directions.",
+    "change": "Only distinct attempted viewpoints count towards max_views. The existing pose, opening, uncertainty and physics gates are unchanged.",
+    "finite_render_check": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/validated-camera-view-1792082183013992000",
+    "low_basket_result": "Success from two complete registered views.",
+    "high_basket_result": "Seven distinct views attempted within a budget of eight. Opening remains unconfirmed; no pickup.",
+    "qualification": false
+  },
+  "high_basket_stance_diagnosis": {
+    "joint_fit": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/joint-inspection-fit-1792081206636737000",
+    "grid": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/inspection-grid-1792081354657867000",
+    "result": "No complete rim plus central-floor view found among examined pose/stance combinations. This bounded search is not proof of physical impossibility.",
+    "next": "Investigate active observations and clearance for alternative viewpoints; do not relax observation requirements or infer an unseen cavity."
   }
 }
