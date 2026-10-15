@@ -25,7 +25,7 @@ def execution_fingerprint():
          'simulator/placement_evidence.py','simulator/inspection_planning.py',
          'simulator/manipulation_planning.py','simulator/observed_free_space.py',
          'simulator/multiview_container.py','simulator/observed_navigation.py','simulator/grasp_planning.py',
-         'simulator/skill_parameters.py','simulator/skill_training.py','simulator/skill_workshop.py',
+         'simulator/skill_parameters.py','simulator/resource_budget.py','simulator/skill_training.py','simulator/skill_workshop.py',
          'simulator/domain_randomization.py','simulator/environment.py','simulator/explorer_model.py',
          'simulator/model_config.json','config/explorer.urdf','config/explorer.srdf',
          'config/arm-motion.json','config/handeye-accepted.json','config/arm_model.json')}

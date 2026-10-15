@@ -17,6 +17,7 @@ import time
 
 import numpy as np
 
+from .resource_budget import memory_budget
 from .learning import write_json
 from .skill_parameters import PARAMETERS,parameters
 from .skill_workshop import execution_fingerprint
@@ -181,17 +182,15 @@ class SkillTraining:
         self.save(state);return state
 
     def _batch(self,state,specs,cancelled,progress):
-        import psutil
         workers=state['options']['workers'];pending=list(specs);results=[];active={}
         previous_state=state['state']
         while True:
-            memory=psutil.virtual_memory()
+            memory=memory_budget()
             # Reserve each worker's measured-order 1.7 GiB footprint BEFORE
             # spawn; workers still starting have not allocated that RAM yet.
-            capacity=min(workers,max(0,int((memory.available-memory.total*.15)/(1.7*2**30))))
+            capacity=min(workers,max(0,int((memory['available_bytes']-memory['total_bytes']*.15)/(1.7*2**30))))
             state['resource_capacity']=capacity
-            state['resource_measurement']=dict(available_bytes=memory.available,total_bytes=memory.total,
-                reserved_bytes_per_worker=int(1.7*2**30),minimum_available_fraction=.15)
+            state['resource_measurement']=memory
             if capacity:
                 state.update(state=previous_state,reason=None);break
             # No worker exists yet: wait within the same finite time budget,
@@ -205,8 +204,8 @@ class SkillTraining:
             try:
                 while pending or active:
                     if cancelled():self.pause.touch(exist_ok=True)
-                    memory=psutil.virtual_memory()
-                    if memory.available/memory.total<.15:
+                    memory=memory_budget()
+                    if memory['available_bytes']/memory['total_bytes']<.15:
                         state['pause_kind']='memory';self.pause.touch(exist_ok=True)
                     while pending and len(active)<capacity and not self.pause.exists():
                         spec=pending.pop(0);slot=next(i for i in range(capacity) if i not in [x['slot'] for x in active.values()])

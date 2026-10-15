@@ -8,6 +8,11 @@ from simulator.skill_parameters import PARAMETERS,parameters
 from simulator.skill_training import (SkillTraining,outcome_score,propose,update_search)
 
 
+@pytest.fixture(autouse=True)
+def deterministic_resource_probe(monkeypatch):
+    monkeypatch.setattr('simulator.resource_budget._mac_available',lambda total:None)
+
+
 def test_learnable_parameters_cannot_change_evidence_physics_or_joint_limits():
     values=parameters()
     assert values['lift_clearance_m']>=.12
