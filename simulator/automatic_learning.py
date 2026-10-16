@@ -82,10 +82,22 @@ class AutomaticLearning:
         value['state']=stage;value['reason']=message
         value['events'].append(dict(at=time.time(),stage=stage,message=message));self.save(value)
 
+    def pause_queue(self,owner_id=None):
+        write_json(self.folder/'queue-pause.json',dict(paused=True,owner_id=owner_id,at=time.time()))
+
+    def pause_info(self):
+        path=self.folder/'queue-pause.json'
+        try:return json.loads(path.read_text())
+        except FileNotFoundError:return None
+
+    def resume_queue(self):
+        (self.folder/'queue-pause.json').unlink(missing_ok=True)
+
     def pause(self,identifier):
         with self.mutex:
             value=self.get(identifier)
             if value['state']=='simulation_qualified':return value
+            self.pause_queue(identifier)
             self.event(value,'pausing' if self.active_id==identifier else 'operator_paused','Останавливаю работников; записи сохраняются')
         return value
 
@@ -104,7 +116,7 @@ class AutomaticLearning:
                             if target<=saved['completed_attempts']:raise ValueError('Достигнут лимит 1000 попыток; нужен разбор причины')
                             saved['options']['attempts']=max(saved['options']['attempts'],target);trainer.save(saved)
             # A fresh time allowance resumes the same tasks/checkpoints.
-            value['elapsed_s']=0.;value.pop('budget_exhausted',None);self.event(value,'queued','Продолжение сохранённой задачи')
+            value['elapsed_s']=0.;value.pop('budget_exhausted',None);self.event(value,'queued','Продолжение сохранённой задачи');self.resume_queue()
         return value
 
     def cancelled(self,identifier):
@@ -216,10 +228,14 @@ class AutomaticLearning:
                         result=dict(simulation_ready=True,archive=cached['archive'],reason='Использован совместимый проверенный навык'))
                     value['tasks'].append(task)
                 self.save(value)
+            if self.pause_info():
+                self.event(value,'waiting_for_current','Общая очередь на паузе');return value
             if self.simulator_busy():
                 if value['state']!='waiting_for_current':self.event(value,'waiting_for_current','Текущая очередь продолжает работу; эта просьба ждёт своей очереди')
                 return value
             for task in value['tasks']:
+                if self.pause_info():
+                    self.event(value,'waiting_for_current','Общая очередь на паузе');return value
                 if task['state']=='simulation_qualified':continue
                 if budget_cancelled():raise InterruptedError('Пауза')
                 if 'scene' not in task:
@@ -298,6 +314,19 @@ class AutomaticLearning:
         temporary.replace(output)
         return dict(path=str(output),sha256=sha256(output),verified=True,physical_ready=False)
 
+    def recover_requests(self):
+        """Called only after claiming the scheduler lease on a fresh boot."""
+        for row in self.list():
+            if row['state'] not in ('planning','building_scene','training','running','validating','packaging','waiting_for_memory','pausing'):continue
+            state='operator_paused' if row['state']=='pausing' else 'interrupted'
+            for task in row.get('tasks',[]):
+                if task.get('progress'):task['progress']['active_workers']=[]
+                identifier=task.get('training_id')
+                if identifier:
+                    folder=self.root/'skill-training'/identity(identifier)
+                    if folder.is_dir():(folder/'pause.request').touch(exist_ok=True)
+            self.event(row,state,'Служба была остановлена; продолжите сохранённую задачу без нового поиска')
+
     def start(self):
         if self.thread and self.thread.is_alive():return
         self.thread=threading.Thread(target=self.work,name='automatic-learning',daemon=True);self.thread.start()
@@ -307,7 +336,9 @@ class AutomaticLearning:
         try:fcntl.flock(owner,fcntl.LOCK_EX|fcntl.LOCK_NB)
         except BlockingIOError:owner.close();return
         try:
+            self.recover_requests()
             while not self.stop.is_set():
+                if self.pause_info():self.stop.wait(.5);continue
                 pending=[v for v in reversed(self.list()) if v['state'] in ACTIVE]
                 if pending:
                     self.active_id=pending[0]['id'];self.advance(self.active_id);self.active_id=None

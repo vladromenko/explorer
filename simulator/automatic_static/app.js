@@ -4,6 +4,7 @@ const labels={queued:'В очереди',planning:'Разбор задачи',wa
 const paused=new Set(['operator_paused','memory_paused','budget_paused','interrupted']);
 const active=new Set(['pausing','queued','planning','waiting_for_current','building_scene','training','running','validating','packaging','waiting_for_memory']);
 const phases={pick:'Захват и подъём',view:'Подъезд и обзор',place:'Размещение'};
+const workerPhases={initializing:'Подготовка сцены',skill_find:'Поиск предмета',skill_find_destination:'Осмотр корзины или подноса',skill_approach:'Подъезд',skill_reobserve:'Повторное измерение',skill_pregrasp:'Подход захвата',skill_grasp:'Захват',skill_lift:'Подъём',skill_verify_hold:'Проверка удержания',skill_carry:'Перенос',skill_reorient_destination:'Проверка обзора над опорой',skill_support:'Подход к месту размещения',skill_release:'Отпускание',skill_withdraw:'Отвод руки',skill_verify_place:'Проверка размещения',skill_view_retreat:'Выбор другого ракурса'};
 let token='',snapshot=null,target=null,parent=null,busy=false,signature='',frameAt=0,workerSignature='',disconnecting=false;
 async function api(path,body,retry=true){const response=await fetch(path,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json','X-Explorer-Sim-Token':token},body:JSON.stringify(body)});if(response.status===403&&retry){token=(await api('/api/session',undefined,false)).token;return api(path,body,false);}if(!response.ok){const error=await response.json().catch(()=>({}));throw Error(error.detail||'Ошибка связи');}return response.json();}
 function notice(message){$('notice').textContent=message;$('notice').hidden=false;setTimeout(()=>$('notice').hidden=true,7000);}
@@ -13,10 +14,14 @@ function showCurrent(s){
  const legacy=s.legacy;
  const liveLegacy=legacy&&active.has(legacy.state);
  let row,kind,id,training;
- if(liveLegacy){row=legacy;kind='legacy';id=legacy.id;training=legacy;}
+ const pausedOwner=s.queue_pause?.owner_id,pausedRequest=s.requests.find(r=>r.id===pausedOwner);
+ if(pausedRequest){row=pausedRequest;kind='requests';id=row.id;training=s.trainings.find(t=>row.tasks?.some(task=>task.training_id===t.id));}
+ else if(s.queue_pause&&legacy?.id===pausedOwner){row=legacy;kind='legacy';id=row.id;training=legacy;}
+ else if(liveLegacy){row=legacy;kind='legacy';id=legacy.id;training=legacy;}
  else if(own){row=own;kind='requests';id=own.id;training=s.trainings.find(t=>own.tasks.some(task=>task.training_id===t.id&&task.state!=='simulation_qualified'));}
  else if(legacy&&paused.has(legacy.state)){row=legacy;kind='legacy';id=legacy.id;training=legacy;}
  else{row=s.requests.find(r=>active.has(r.state));if(row){kind='requests';id=row.id;}else if(!s.requests.length&&legacy){row=legacy;training=legacy;kind='legacy';id=legacy.id;}}
+ if(s.queue_pause&&(!row||row.state==='queued'||row.state==='waiting_for_current')){row={...row,state:'operator_paused',reason:'Очередь на паузе'};kind='queue';}
  target=row?{kind,id,state:row.state}:null;$('current-control').disabled=disconnecting||row?.state==='pausing';$('current-panel').hidden=!row;if(!row)return;
  $('current-title').textContent=row.title||row.plan?.title||'Ваша задача';$('current-status').textContent=row.reason||labels[row.state]||row.state;$('current-cause').textContent=!active.has(row.state)?(row.failure_causes||[]).map(c=>`${c.count} попыток: ${c.reason}`).join(' · '):'';
  const completed=training?.completed||0,total=training?.total||row.budget?.attempts||100;
@@ -27,7 +32,8 @@ function showCurrent(s){
  if(training){
   const views=training.active_workers?.length?training.active_workers:[{slot:0}];
   const key=JSON.stringify([training.id,views.map(w=>[w.slot,w.episode_id])]);
-  if(key!==workerSignature){workerSignature=key;$('cameras').replaceChildren();for(const worker of views){const card=node('div',undefined,'worker'),images=node('div',undefined,'cameras');card.append(node('h3',`Исполнитель ${worker.slot+1}`));for(const camera of ['overview','wrist']){const figure=node('figure'),img=node('img'),waiting=node('div','Подготавливаю кадр…','frame-wait');img.id=`view-${worker.slot}-${camera}`;img.hidden=true;img.alt=camera==='overview'?'Общий вид попытки':'Камера на руке';figure.append(img,waiting,node('figcaption',camera==='overview'?'Физическая симуляция':'Что видит робот'));images.append(figure);}card.append(images);$('cameras').append(card);}}
+  if(key!==workerSignature){workerSignature=key;$('cameras').replaceChildren();for(const worker of views){const card=node('div',undefined,'worker'),images=node('div',undefined,'cameras');card.id=`worker-card-${worker.slot}`;card.append(node('h3',`Исполнитель ${worker.slot+1}`));for(const camera of ['overview','wrist']){const figure=node('figure'),img=node('img'),waiting=node('div','Подготавливаю кадр…','frame-wait');img.id=`view-${worker.slot}-${camera}`;img.hidden=true;img.alt=camera==='overview'?'Общий вид попытки':'Камера на руке';figure.append(img,waiting,node('figcaption',camera==='overview'?'Физическая симуляция':'Что видит робот'));images.append(figure);}card.append(images);$('cameras').append(card);}}
+  for(const worker of views){const heading=$(`worker-card-${worker.slot}`).querySelector('h3');heading.textContent=`Исполнитель ${worker.slot+1} · ${worker.frame_age_s>12?'Планирование или распознавание':workerPhases[worker.phase]||'Расчёт следующего действия'}`;}
   if(Date.now()-frameAt>1800){frameAt=Date.now();for(const worker of views)for(const camera of ['overview','wrist']){const img=$(`view-${worker.slot}-${camera}`);if(!img.dataset.loading){img.dataset.loading='1';img.onload=()=>{delete img.dataset.loading;img.hidden=false;img.parentElement.querySelector('.frame-wait').hidden=true;};img.onerror=()=>{delete img.dataset.loading;img.hidden=true;img.parentElement.querySelector('.frame-wait').hidden=false;};img.src=`/api/frames/${training.id}/${camera}?slot=${worker.slot}&t=${frameAt}`;}}}
  }else{$('cameras').replaceChildren();workerSignature='';}
 }
@@ -42,7 +48,7 @@ function showRequests(s){const next=JSON.stringify(s.requests);if(next===signatu
 }
 async function poll(){if(busy)return;busy=true;try{snapshot=await api('/api/state');$('connection').textContent='На этом Mac · изменения сохраняются';showCurrent(snapshot);showRequests(snapshot);$('models').textContent=snapshot.models.ready?'Модели установлены':'Недостающие модели установятся автоматически';const m=snapshot.memory;$('resources').textContent=`Свободно по оценке системы: ${(m.available_bytes/2**30).toFixed(1)} ГБ · ${snapshot.disk_connected?'диск подключён':'подключите диск ExplorerSim'}`;}catch(e){$('connection').textContent='Переподключаюсь…';}finally{busy=false;}}
 $('learn-form').addEventListener('submit',async event=>{event.preventDefault();if(disconnecting)return;const text=$('request').value.trim();if(!text)return;$('learn').disabled=true;try{await api('/api/learn',{text,parent_id:parent,attempts:100,hours:24});parent=null;$('learn').textContent='Обучить';$('form-status').textContent='Задача сохранена. Текущее обучение не прерывается.';await poll();}catch(e){notice(e.message);}finally{$('learn').disabled=false;}});
-$('current-control').addEventListener('click',async()=>{if(!target)return;const selected={...target};$('current-control').disabled=true;try{await api(`/api/${selected.kind}/${selected.id}/${paused.has(selected.state)?'resume':'pause'}`,{});await poll();}catch(e){notice(e.message);}finally{$('current-control').disabled=false;}});
+$('current-control').addEventListener('click',async()=>{if(!target)return;const selected={...target};$('current-control').disabled=true;try{await api(selected.kind==='queue'?'/api/queue/resume':`/api/${selected.kind}/${selected.id}/${paused.has(selected.state)?'resume':'pause'}`,{});await poll();}catch(e){notice(e.message);}finally{$('current-control').disabled=false;}});
 (async()=>{try{token=(await api('/api/session')).token;await poll();setInterval(poll,1500);}catch(e){notice(e.message);}})();
 
 $('disconnect').addEventListener('click',async()=>{disconnecting=true;$('disconnect').disabled=true;try{const result=await api('/api/disconnect',{});$('form-status').textContent=result.message;$('learn').disabled=true;$('current-control').disabled=true;}catch(e){disconnecting=false;notice(e.message);$('disconnect').disabled=false;}});

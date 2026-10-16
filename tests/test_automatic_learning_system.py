@@ -241,3 +241,38 @@ def test_compatible_old_parameter_search_is_only_an_unverified_warm_start(tmp_pa
     assert started['initialization']['unverified'] is True
     assert started['initialization']['old_episodes_counted_for_qualification'] is False
     assert not started['episodes'] and not started['simulation_ready']
+
+
+def test_restart_recovers_running_request_as_explicit_resume_without_touching_queued_or_user_pause(tmp_path):
+    book=engine(tmp_path)
+    running=book.create('Носок в корзину',attempts=8);running['state']='running'
+    running['tasks']=[dict(task_id='sock_basket',training_id='1'*12,progress=dict(active_workers=[dict(slot=0)]))]
+    book.save(running);folder=tmp_path/'skill-training'/('1'*12);folder.mkdir(parents=True)
+    (folder/'keep-checkpoint').write_text('unchanged')
+    queued=book.create('Следующий навык',attempts=8);paused=book.create('Моя пауза',attempts=8);book.pause(paused['id'])
+    book.recover_requests()
+    assert book.get(running['id'])['state']=='interrupted'
+    assert not book.get(running['id'])['tasks'][0]['progress']['active_workers']
+    assert (folder/'pause.request').exists() and (folder/'keep-checkpoint').read_text()=='unchanged'
+    assert book.get(queued['id'])['state']=='queued'
+    assert book.get(paused['id'])['state']=='operator_paused'
+
+
+def test_pause_holds_pending_queue_and_resume_does_not_remove_other_manual_pauses(tmp_path):
+    book=engine(tmp_path);first=book.create('Первая задача',attempts=8);second=book.create('Следующая задача',attempts=8)
+    manual=book.create('Отдельная ручная пауза',attempts=8);book.pause(manual['id']);book.resume_queue()
+    book.pause(first['id']);assert book.pause_info()['owner_id']==first['id']
+    waiting=book.advance(second['id']);assert waiting['state']=='waiting_for_current' and not any(t.get('scene') for t in waiting['tasks'])
+    book.resume(first['id']);assert book.pause_info() is None
+    assert book.get(manual['id'])['state']=='operator_paused'
+    assert book.advance(first['id'])['state']=='simulation_qualified'
+
+
+def test_worker_phase_comes_from_actual_recording_not_optimizer_group(tmp_path):
+    from simulator.automatic_server import summarized
+    row=dict(id='2'*12,state='running',task_id='sock_basket',completed_attempts=3,options=dict(attempts=100,hours=24),
+        phase_group='place',active_workers=[dict(slot=0,episode_id='3'*12)])
+    folder=tmp_path/'skill-training'/row['id']/'episodes'/('3'*12);folder.mkdir(parents=True)
+    write_json(folder/'progress.json',dict(phase='skill_verify_hold'))
+    result=summarized(row,tmp_path)
+    assert result['phase']=='place' and result['active_workers'][0]['phase']=='skill_verify_hold'

@@ -48,11 +48,19 @@ def ensure_legacy_service():
     raise ValueError('Не удалось запустить службу прежнего обучения; данные сохранены')
 
 
-def summarized(row):
+def summarized(row,root=DEFAULT_ROOT):
     reasons=Counter(r.get('reason') for r in row.get('episodes',[]) if r.get('status')=='complete' and r.get('success') is not True and r.get('reason'))
+    workers=[]
+    for worker in row.get('active_workers',[]):
+        item=dict(worker)
+        try:
+            identity(worker['episode_id']);path=Path(root)/'skill-training'/identity(row['id'])/'episodes'/worker['episode_id']/'progress.json'
+            progress=json.loads(path.read_text());item.update(phase=progress.get('phase','initializing'),frame_age_s=max(0.,time.time()-path.stat().st_mtime))
+        except (OSError,ValueError,KeyError):item.update(phase='initializing',frame_age_s=None)
+        workers.append(item)
     return dict(id=row['id'],state=row['state'],title='Носок → корзина' if row['task_id']=='sock_basket' else row['task_id'],
         completed=row['completed_attempts'],total=max(8,row['options']['attempts']//8*8),hours=row['options']['hours'],
-        phase=row.get('phase_group'),reason=row.get('reason'),failure_causes=[dict(reason=text,count=count) for text,count in reasons.most_common(2)],active_workers=row.get('active_workers',[]),
+        phase=row.get('phase_group'),reason=row.get('reason'),failure_causes=[dict(reason=text,count=count) for text,count in reasons.most_common(2)],active_workers=workers,
         validation_completed=sum(r.get('status')=='complete' and r.get('split') in ('validation','user_validation') for r in row.get('episodes',[])),
         validation_total=10*len(row.get('validation_seeds',[[],[]])),simulation_ready=row.get('simulation_ready',False),physical_ready=False)
 
@@ -88,11 +96,11 @@ def create_app(root=DEFAULT_ROOT,engine_factory=AutomaticLearning,start=True):
     def state(request:Request):
         engine=request.app.state.engine;trainings=list_trainings(engine.root)
         legacy=next((row for row in trainings if row.get('scene_recipe') is None),None)
-        previous=summarized(legacy) if legacy else None
+        previous=summarized(legacy,engine.root) if legacy else None
         if previous and previous['state'] in ('running','waiting_for_memory','validating','packaging'):
             try:legacy_get('/api/session')
             except OSError:previous.update(state='interrupted',active_workers=[],reason='Служба прежней очереди остановлена; продолжите сохранённое обучение')
-        return dict(requests=engine.list(),trainings=[summarized(row) for row in trainings],
+        return dict(queue_pause=engine.pause_info(),requests=engine.list(),trainings=[summarized(row,engine.root) for row in trainings],
             legacy=previous,models=engine.model_status(),
             memory=memory_budget(),disk_connected=engine.root.parent.is_mount(),
             simulation_only=True,physical_ready=False)
@@ -108,6 +116,10 @@ def create_app(root=DEFAULT_ROOT,engine_factory=AutomaticLearning,start=True):
         if action=='resume':return engine.resume(identifier)
         raise HTTPException(404)
 
+    @app.post('/api/queue/resume')
+    def queue_resume(request:Request):
+        request.app.state.engine.resume_queue();return dict(ok=True)
+
     @app.post('/api/legacy/{identifier}/{action}')
     def legacy_control(identifier:str,action:str,request:Request):
         identity(identifier);engine=request.app.state.engine
@@ -118,6 +130,7 @@ def create_app(root=DEFAULT_ROOT,engine_factory=AutomaticLearning,start=True):
             owners=[j for j in snapshot.get('jobs',[]) if j.get('status')=='running']
             if not owners or any((j.get('details') or {}).get('training_id')!=identifier for j in owners):
                 raise HTTPException(409,'Другая очередь владеет вычислениями')
+            engine.pause_queue(identifier)
             return legacy_post('/api/cancel',{})
         if action=='resume':
             if row['state'] not in PAUSED:
@@ -125,22 +138,25 @@ def create_app(root=DEFAULT_ROOT,engine_factory=AutomaticLearning,start=True):
                 except OSError:pass
             if engine.simulator_busy():raise HTTPException(409,'Другая очередь уже работает')
             ensure_legacy_service()
-            return legacy_post('/api/jobs/skill_train',dict(skill_training_id=identifier,task_id=row['task_id'],
+            result=legacy_post('/api/jobs/skill_train',dict(skill_training_id=identifier,task_id=row['task_id'],
                 task_ids=[row['task_id']],count=row['options']['attempts'],hours=row['options']['hours'],
                 workers=row['options']['workers'],learning_mode='skill_search'))
+            engine.resume_queue();return result
         raise HTTPException(404)
 
     @app.post('/api/disconnect')
     def disconnect(request:Request):
         import psutil
         engine=request.app.state.engine
-        for row in engine.list():
-            if row['state'] in ('queued','planning','waiting_for_current','building_scene','training','validating','waiting_for_memory','packaging'):
-                engine.pause(row['id'])
+        if engine.active_id:engine.pause(engine.active_id)
+        else:engine.pause_queue()
         engine.stop.set()
         try:
             snapshot=legacy_get('/api/state?compact=true')
-            if any(j.get('status')=='running' for j in snapshot.get('jobs',[])):legacy_post('/api/cancel',{})
+            owners=[j for j in snapshot.get('jobs',[]) if j.get('status')=='running']
+            if owners:
+                identifier=(owners[-1].get('details') or {}).get('training_id')
+                engine.pause_queue(identifier);legacy_post('/api/cancel',{})
         except OSError:pass
         pids=[os.getpid()]
         for process in psutil.process_iter(['pid','cmdline']):
