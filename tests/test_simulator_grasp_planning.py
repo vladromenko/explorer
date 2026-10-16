@@ -55,6 +55,14 @@ def test_local_hold_patch_requires_real_nonself_rgbd_and_preserves_floor_height(
     assert held_material_patches(record,jaw,reference)==[]
 
 
+def test_material_axis_is_measured_from_nonself_depth_and_not_from_a_label():
+    from simulator.grasp_planning import observed_material_axis
+    record,target=material();axis=observed_material_axis(record,target)
+    assert abs(axis[1])>.95
+    record['robot_depth']=record['depth'].copy()
+    with pytest.raises(ObservationRefused):observed_material_axis(record,target)
+
+
 def test_pick_stance_keeps_chassis_away_from_the_entire_cloth_and_checks_high_lift():
     from simulator.environment import ExplorerEnv
     env=ExplorerEnv(render=False);record,target=material();before=env.data.qpos.copy()

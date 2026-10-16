@@ -17,8 +17,12 @@ from .environment import PERIOD
 
 
 class SimulatorSkillPort:
-    def __init__(self,env,folder,cancelled=lambda:False,progress=lambda value:None,*,parameters=None):
+    def __init__(self,env,folder,cancelled=lambda:False,progress=lambda value:None,*,parameters=None,repair_program=None,experience=None):
         from .skill_parameters import parameters as checked_parameters
+        from .failure_repair import program
+        self.controller_program=program(repair_program);self.experience=experience or {}
+        if set(self.experience)-{'sha256','ik_seeds'}:
+            raise ValueError('Actor historical input must contain only audited robot joint priors')
         self.parameters=checked_parameters(parameters)
         self.env=env;self.folder=Path(folder);self.folder.mkdir(parents=True,exist_ok=False)
         self.cancelled=cancelled;self.progress=progress;self.sequence=0;self.base_motion_sequence=0
@@ -26,9 +30,32 @@ class SimulatorSkillPort:
         self.destination_views=[];self.surveys=[]
         self.transport_poses=[]
         self.grasp_recoveries=[];self.grasp_failures=0
+        self.repair_events=[]
+        self.env.observed_ik_seeds=(self.experience.get('ik_seeds',[]) if self.repair_enabled('history_ik_seeds') else [])
+        self.env.observed_grasp_axis=None
         self.depth_records=[];self.depth_manifest=[]
         (self.folder/'depth').mkdir()
         self.frames=[];self.handle=(self.folder/'commands.jsonl').open('w')
+
+    def repair_enabled(self,name):return name in self.controller_program['operators']
+
+    def move_pick_feedback(self,point,gripper,ctx):
+        """Bounded own-FK feedback; no task truth or unverified contact input."""
+        from .grasp_planning import solve_pick_ik
+        target=np.asarray(point,float);aim=target.copy()
+        for attempt in range(3):
+            self.check(ctx);goal=solve_pick_ik(self.env,aim,gripper,check=lambda:self.check(ctx))
+            self.move_angles(goal,ctx)
+            error=target-np.asarray(self.env.jaw_center(),float)
+            self.repair_events.append(dict(operator='cartesian_feedback',attempt=attempt,
+                desired=target.tolist(),observed_error_m=error.tolist(),source='own_robot_FK'))
+            if np.linalg.norm(error)<=.003:return aim
+            if np.linalg.norm(error)>.012:break
+            correction=np.clip(aim+error-target,-.008,.008)
+            # Never compensate into the floor beyond the originally checked
+            # pad target. The unchanged IK cone and final 3 mm gate still hold.
+            aim=target+correction;aim[2]=max(target[2],aim[2])
+        raise ValueError('Обратная связь не подтвердила точность захвата 3 мм')
 
     def check(self,ctx=None):
         if self.cancelled():raise InterruptedError('Проверка навыков остановлена')
@@ -328,6 +355,7 @@ class SimulatorSkillPort:
         from .grasp_planning import plan_pick_stance
         self.env.phase='skill_approach'
         if self.target is None:return dict(outcome='unknown',reason='Нет наблюдаемой цели')
+        self.update_grasp_axis()
         stance=plan_pick_stance(self.env,self.target,self.depth_records[-1],self.destination,
             check=lambda:self.check(ctx),preferred_fraction=self.parameters['pick_fraction'],
             lift_clearance=self.parameters['lift_clearance_m'],surface_offset=self.parameters['pick_surface_offset_m'],
@@ -372,17 +400,42 @@ class SimulatorSkillPort:
         if self.target and np.linalg.norm(np.asarray(new['center'])-self.target['center'])>.10:
             return dict(outcome='unknown',reason='Свежая цель не совпадает с предыдущим наблюдением')
         from .grasp_planning import observed_pick_patch
-        self.target=new;self.grasp_xyz=observed_pick_patch(self.depth_records[-1],new,self.env.base_pose(),
-            fraction=getattr(self,'pick_fraction',.25),lateral_fraction=self.parameters['pick_lateral_fraction'],
-            preferred_xyz=getattr(self,'planned_pick_xyz',None))
+        self.target=new
+        try:
+            self.grasp_xyz=observed_pick_patch(self.depth_records[-1],new,self.env.base_pose(),
+                fraction=getattr(self,'pick_fraction',.25),lateral_fraction=self.parameters['pick_lateral_fraction'],
+                preferred_xyz=getattr(self,'planned_pick_xyz',None))
+        except ObservationRefused:
+            if not self.repair_enabled('reacquire_surface'):raise
+            previous=np.asarray(self.target['center'],float)
+            self.look_at(previous,ctx);fresh=self.estimate(ctx,'object')
+            if np.linalg.norm(np.asarray(fresh['center'])-previous)>.10:
+                return dict(outcome='unknown',reason='После нового обзора цель не совпала')
+            self.target=new=fresh
+            self.grasp_xyz=observed_pick_patch(self.depth_records[-1],new,self.env.base_pose(),
+                fraction=getattr(self,'pick_fraction',.25),lateral_fraction=self.parameters['pick_lateral_fraction'])
+            self.repair_events.append(dict(operator='reacquire_surface',new_frame_id=new['frame_id'],
+                new_measured_point=self.grasp_xyz.tolist()))
         return dict(outcome='success',target=new,evidence=dict(frame_id=new['frame_id'],
             measured_pick_point_m=self.grasp_xyz.tolist()))
+
+    def update_grasp_axis(self):
+        if not self.repair_enabled('surface_axis_grasp'):return
+        from .grasp_planning import observed_material_axis
+        from .rgbd_observation import ObservationRefused
+        try:axis=observed_material_axis(self.depth_records[-1],self.target)
+        except (ObservationRefused,ValueError) as error:
+            self.env.observed_grasp_axis=None
+            self.repair_events.append(dict(operator='surface_axis_grasp',applied=False,reason=str(error)));return
+        self.env.observed_grasp_axis=axis
+        self.repair_events.append(dict(operator='surface_axis_grasp',applied=True,measured_axis=axis.tolist()))
 
     def pregrasp(self,ctx):
         from .grasp_planning import solve_pick_ik,plan_gripper_closure,observed_pick_patch
         from .rgbd_observation import ObservationRefused
         self.env.phase='skill_pregrasp'
         if self.grasp_xyz is None:return dict(outcome='unknown',reason='Нет свежей точки захвата')
+        self.update_grasp_axis()
         # Base tracking and a fresh crop can change IK feasibility. Re-plan
         # from the newly measured cloud while the arm is still above it.
         points=[self.grasp_xyz.copy()]
@@ -415,7 +468,10 @@ class SimulatorSkillPort:
         xyz=self.grasp_xyz.copy();xyz[2]=max(.017,float(xyz[2])+self.parameters['pick_surface_offset_m'])
         # Recheck before any descent, including partial retries/resumes.
         path=plan_gripper_closure(self.env,xyz,check=lambda:self.check(ctx))
-        self.move_angles(path[0],ctx,duration=1.5)
+        if self.repair_enabled('cartesian_feedback'):
+            compensated=self.move_pick_feedback(xyz,30.,ctx)
+            path=plan_gripper_closure(self.env,compensated,check=lambda:self.check(ctx))
+        else:self.move_angles(path[0],ctx,duration=1.5)
         # Follow one continuous smooth closure, without stopping at every IK
         # waypoint. Preserve the same velocity/acceleration/jerk controller.
         duration=max(self.parameters['closure_duration_s'],float(np.max(np.sum(abs(np.diff(path,axis=0)),axis=0)/self.env.velocity_limit))*2.)
@@ -497,8 +553,11 @@ class SimulatorSkillPort:
                 frame_id=frame['frame_id'],comparison_frame='arm5',relative_displacement_m=displacement))
         from .manipulation_planning import plan_hold_probe,hand_rotation
         from scipy.spatial.transform import Rotation
-        probe_plan=plan_hold_probe(self.env,check=lambda:self.check(ctx),
-            lowest_material_height_m=float(first['bounds_min'][2]))
+        probe_kwargs=dict(check=lambda:self.check(ctx),lowest_material_height_m=float(first['bounds_min'][2]))
+        if self.repair_enabled('extended_hold_probe'):probe_kwargs['extended']=True
+        if self.repair_enabled('extended_hold_probe') or self.repair_enabled('probe_feasible_view'):
+            probe_kwargs['obstacle']=self.destination
+        probe_plan=plan_hold_probe(self.env,**probe_kwargs)
         self.move_angles(probe_plan.command,ctx)
         second=self.scene(ctx);new_jaw=np.asarray(self.env.jaw_center())
         observed=second.get('held_candidates')
@@ -554,7 +613,13 @@ class SimulatorSkillPort:
         from scipy.spatial.transform import Rotation
         pose=np.asarray(self.env.base_pose());direction=np.array([math.cos(pose[2]),math.sin(pose[2])])
         xyz=[*(pose[:2]+.16*direction),getattr(self,'pick_lift_height',.24)]
-        goal=self.env.solve_ik(xyz,self.env.command[:5],gripper=170.,downward=False)
+        if self.repair_enabled('visibility_planned_lift'):
+            from .repair_motion import plan_visible_lift
+            relative=self.hold_rotation.T@(np.asarray(self.before_hold['center'])-self.hold_jaw)
+            goal,count=plan_visible_lift(self.env,xyz,relative,check=lambda:self.check(ctx))
+            self.repair_events.append(dict(operator='visibility_planned_lift',reserved_view_samples=count,
+                predicted_visibility_is_not_hold_evidence=True))
+        else:goal=self.env.solve_ik(xyz,self.env.command[:5],gripper=170.,downward=False)
         last=hand_rotation(self.env);ticks=0
         def guard():
             nonlocal last,ticks
@@ -675,6 +740,10 @@ class SimulatorSkillPort:
                     minimum_jaw_height_m=float(box['bounds_max'][2])+.115 if transport_required else None,
                     maximum_jaw_reach_m=.192 if transport_required else None)
                 check_observed_box_path(self.env,candidate.command,box,check=lambda:self.check(ctx))
+                if self.repair_enabled('probe_feasible_view'):
+                    from .manipulation_planning import probe_at_command
+                    probe_at_command(self.env,candidate.command,lowest_material_height_m=None,
+                        extended=self.repair_enabled('extended_hold_probe'),obstacle=box,check=lambda:self.check(ctx))
                 plan=candidate;break
             except ValueError as error:errors.append(str(error))
         if plan is None:return dict(outcome='unknown',reason='Нет пути изменения обзора: '+errors[-1])
@@ -828,6 +897,8 @@ class SimulatorSkillPort:
             (self.folder/'destination-surveys.json').write_text(json.dumps(self.surveys,ensure_ascii=False,indent=2))
             (self.folder/'transport-poses.json').write_text(json.dumps(self.transport_poses,ensure_ascii=False,indent=2))
             (self.folder/'grasp-recoveries.json').write_text(json.dumps(self.grasp_recoveries,ensure_ascii=False,indent=2))
+            (self.folder/'controller-repairs.json').write_text(json.dumps(dict(program=self.controller_program,
+                events=self.repair_events,experience_sha256=self.experience.get('sha256')),ensure_ascii=False,indent=2))
             (self.folder/'depth-records.json').write_text(json.dumps(self.depth_manifest,ensure_ascii=False,indent=2))
             (self.folder/'observations.json').write_text(json.dumps(self.frames,ensure_ascii=False,indent=2))
 

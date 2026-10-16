@@ -1,0 +1,65 @@
+"""Bounded, cancellable client for a shared pinned-model RGB inference process."""
+import hashlib
+import json
+import os
+from pathlib import Path
+import socket
+import subprocess
+import time
+
+
+def endpoint(root):
+    source=Path(__file__).resolve().parents[1]
+    script=source/'bin/simulator-grounding-service.py';lock=source/'config/grounding-model.json'
+    key=hashlib.sha256(script.read_bytes()+lock.read_bytes()).hexdigest()[:12]
+    return Path(root)/'maintenance'/('vision-'+key+'.sock'),script
+
+
+def request(endpoint,message,*,cancelled=lambda:False,timeout=60.):
+    end=time.monotonic()+timeout;data=b''
+    with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as connection:
+        connection.settimeout(.25);connection.connect(str(endpoint))
+        connection.sendall(json.dumps(message).encode()+b'\n')
+        while b'\n' not in data:
+            if cancelled():raise InterruptedError('Распознавание остановлено')
+            if time.monotonic()>end:raise TimeoutError('Persistent vision worker timeout')
+            try:block=connection.recv(4096)
+            except socket.timeout:continue
+            if not block:raise OSError('Vision worker disconnected')
+            data+=block
+            if len(data)>16384:raise ValueError('Oversized vision reply')
+    reply=json.loads(data)
+    if reply.get('error'):raise ValueError(reply['error'])
+    return reply
+
+
+def infer(root,folder,*,cancelled=lambda:False):
+    from .semantic_vision import vision_python
+    root=Path(root);folder=Path(folder);socket_path,script=endpoint(root)
+    socket_path.parent.mkdir(exist_ok=True);spawned=None;deadline=time.monotonic()+120.
+    while True:
+        if cancelled():raise InterruptedError('Распознавание остановлено')
+        try:return request(socket_path,dict(kind='infer',folder=str(folder.resolve())),cancelled=cancelled,timeout=60.)
+        except (FileNotFoundError,ConnectionRefusedError):
+            if time.monotonic()>deadline:raise TimeoutError('Persistent vision service did not start')
+            if spawned is None:
+                with (root/'maintenance/vision-cache.log').open('ab') as log:
+                    spawned=subprocess.Popen([str(vision_python(root)),str(script),str(root),str(socket_path)],
+                        stdout=log,stderr=log,start_new_session=True,
+                        env=dict(os.environ,HF_HUB_OFFLINE='1',HF_HUB_DISABLE_TELEMETRY='1',OMP_NUM_THREADS='2'))
+            elif spawned.poll() not in (None,0):raise RuntimeError('Persistent vision service failed; vision-cache.log')
+            time.sleep(.1)
+
+
+def stop_servers(root):
+    """Drain only this storage root's read-only model workers, not any actors."""
+    import psutil
+    root=Path(root).resolve();processes=[]
+    for process in psutil.process_iter(['pid','cmdline']):
+        args=process.info['cmdline'] or []
+        if len(args)<4 or not any(Path(a).name=='simulator-grounding-service.py' for a in args):continue
+        if args[-2]!=str(root) or not Path(args[-1]).is_relative_to(root/'maintenance'):continue
+        try:process.terminate();processes.append(process)
+        except psutil.Error:continue
+    _,alive=psutil.wait_procs(processes,timeout=5)
+    return [p.pid for p in alive]

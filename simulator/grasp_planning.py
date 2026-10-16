@@ -37,13 +37,33 @@ def solve_pick_ik(env,point,gripper,*,check=lambda:None):
         return env.jaw_center(scratch)-target,scratch.body('arm5').xmat.reshape(3,3)[:,2]
     def residual(angles):
         position,axis=errors(angles)
-        return np.r_[position*100.,(axis-[0.,0.,-1.])*.65,(angles-seed)*.00003]
+        alignment=[]
+        if getattr(env,'observed_grasp_axis',None) is not None:
+            pads=scratch.geom_xpos[env.pad_ids[1]]-scratch.geom_xpos[env.pad_ids[0]]
+            pads=pads[:2]/max(1e-9,np.linalg.norm(pads[:2]));wanted=env.observed_grasp_axis
+            alignment=[(pads[0]*wanted[1]-pads[1]*wanted[0])*.65]
+        return np.r_[position*100.,(axis-[0.,0.,-1.])*.65,(angles-seed)*.00003,alignment]
     plans=[]
-    for start in (seed,[90.,125.,165.,150.,90.],[90.,45.,20.,45.,90.]):
+    starts=[seed,[90.,125.,165.,150.,90.],[90.,45.,20.,45.,90.]]
+    # Old successful poses seed an IK solver; no old world coordinate or
+    # action is replayed. Current FK and EVERY existing acceptance gate apply.
+    priors=getattr(env,'observed_ik_seeds',[])
+    ranked=[]
+    for prior in priors:
+        prior=np.asarray(prior,float)
+        if prior.shape!=(5,) or not np.isfinite(prior).all():continue
+        if np.any(prior<0) or np.any(prior>[180.,180.,180.,180.,270.]):continue
+        ranked.append((float(np.linalg.norm(errors(prior)[0])),prior))
+    starts.extend(p for _,p in sorted(ranked,key=lambda row:row[0])[:3])
+    for start in starts:
         check();fit=least_squares(residual,np.clip(start,.001,[179.999]*4+[269.999]),
             bounds=([0.]*5,[180.]*4+[270.]),max_nfev=150)
         position,axis=errors(fit.x)
-        if np.linalg.norm(position)<=.003 and -axis[2]>=np.cos(np.deg2rad(15.)):
+        alignment_ok=True
+        if getattr(env,'observed_grasp_axis',None) is not None:
+            pads=scratch.geom_xpos[env.pad_ids[1],:2]-scratch.geom_xpos[env.pad_ids[0],:2]
+            alignment_ok=abs(float(pads@env.observed_grasp_axis))/max(1e-9,float(np.linalg.norm(pads)))>=np.cos(np.deg2rad(10.))
+        if np.linalg.norm(position)<=.003 and -axis[2]>=np.cos(np.deg2rad(15.)) and alignment_ok:
             plans.append((float(np.linalg.norm(residual(fit.x))),fit.x))
     if not plans:raise ValueError('Нет точного захвата в допустимом наклоне кисти')
     return np.r_[min(plans,key=lambda row:row[0])[1],gripper]
@@ -64,6 +84,22 @@ def plan_gripper_closure(env,point,*,check=lambda:None):
         commands.append(command);branch.command[:6]=command
     commands=np.asarray(commands)
     return commands
+
+
+def observed_material_axis(record,target):
+    """Minor PCA axis of measured non-self floor material, with ambiguity gate."""
+    frame=record['frame'];depth=np.asarray(record['depth'],float);robot=np.asarray(record['robot_depth'],float)
+    if robot.shape!=depth.shape:raise ObservationRefused('Нет собственного фильтра для ориентации захвата')
+    points=deproject_depth(depth,frame['intrinsics'],frame['optical_to_world'])
+    lo,hi=np.asarray(target['bounds_min']),np.asarray(target['bounds_max'])
+    valid=(np.isfinite(points).all(-1)&(depth>=.035)&(depth<=2.5)&
+        np.all(points>=lo-.003,axis=-1)&np.all(points<=hi+.003,axis=-1)&
+        ~(np.isfinite(robot)&(robot>0)&(abs(depth-robot)<=.008)))
+    cloud=points[valid]
+    if len(cloud)<100:raise ObservationRefused('Недостаточно материала для измерения направления')
+    values,vectors=np.linalg.eigh(np.cov(cloud[:,:2].T))
+    if values[-1]<1.5*max(values[0],1e-9):raise ObservationRefused('Направление участка неоднозначно')
+    return vectors[:,0]
 
 
 def observed_pick_patch(record,target,base_pose,*,fraction=.25,lateral_fraction=.5,preferred_xyz=None):

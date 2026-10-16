@@ -41,6 +41,8 @@ try:
         if not remaining:break
         time.sleep(.2)
     else:raise RuntimeError('Службы ещё завершают работу. Диск не отключён.')
+    from simulator.semantic_cache import stop_servers
+    if stop_servers(volume/'ExplorerSim'):raise RuntimeError('Модель зрения ещё завершает работу. Диск не отключён.')
     result=subprocess.run(['/usr/sbin/diskutil','unmount',str(volume)],capture_output=True,text=True,timeout=30)
     if result.returncode:raise RuntimeError('Службы остановлены, но диск занят другой программой. Извлеките его через Finder после её закрытия.')
     value=dict(ok=True,message='ExplorerSim отключён. Теперь можно отсоединить диск.',at=time.time())

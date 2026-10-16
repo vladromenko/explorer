@@ -1,0 +1,231 @@
+{
+  "at": 1792192523.6021068,
+  "scope": "Mac-only causal controller-program repair; no robot connection",
+  "current_request": "df2e4c28ca74",
+  "current_training": "dfc212a8fb5b",
+  "current_training_not_interrupted": true,
+  "observed_old_state": "running",
+  "observed_old_attempts": 132,
+  "old_service_pid": 10013,
+  "new_algorithm": "observed_causal_program_repair_v4",
+  "new_controller": {
+    "files": {
+      "src/task_executor.py": "5d3e5e5be75389891ccf5540b0aa57100aadf193a85590b6058836738f1ccc06",
+      "simulator/skill_port.py": "e59b1fed9d0452e321efe06d30d83edaf892110f8d51f2402940c99980a2a8ea",
+      "simulator/rgbd_observation.py": "8fe1545b2897a403f856f2fe89f66ac00b4b3f1791b1cc581d82ea57aa0083f0",
+      "simulator/placement_evidence.py": "a17c63cabbc3e942f18edbc85609cbabf29872414146b1bda4e0aef8b1141ae6",
+      "simulator/inspection_planning.py": "aa9850c66d987e7bb40fb730e1959c83f60af09099ea3845b1e3798b07cf085e",
+      "simulator/manipulation_planning.py": "9810b1c2519af44347333cebe19e68af08141edcf6d5217ea138dd48e8a98919",
+      "simulator/observed_free_space.py": "361d8411aa223a45783a4a45b7ef26aec75bb1300098081b20e39d4f198e915d",
+      "simulator/multiview_container.py": "cdaa324efa32632e1cff01a08b17570a3a443ad2cd232291d5ea1c39cab8f81c",
+      "simulator/observed_navigation.py": "2c5763b630c49e0db8c0dab6bb13e45558037aec2be457bd8ce43602e29d612c",
+      "simulator/grasp_planning.py": "82f53f8bd8befcfb8dbe687e4d36ff29dfd0d6faf917fe96399c4bb25e491a9c",
+      "simulator/skill_parameters.py": "8c96ce8e6244f006aab2befd8d7f10a070a837deb143e284e60310b125902af4",
+      "simulator/resource_budget.py": "7e63ffc1788032a9e6cdf6d246ec4f5be1805ee96c9899bcd9ae1015ab2fc68e",
+      "simulator/skill_training.py": "2e545fe21b7841249c90226d33bb4594ff903a14df84741a9d995e848575f472",
+      "simulator/skill_workshop.py": "9a3bd99984717755d31396ef3f16b70d5e22b014fa313564cfe869603e129a37",
+      "simulator/failure_repair.py": "409ca3d486e8e873ea293903b33e59b630f33727ae7fc44ccc573bd581699dcc",
+      "simulator/experience_memory.py": "e5e52f5fbf0f4326b85536014d787574bbd2ba913d23b69d54322b20f3b6132d",
+      "simulator/repair_acceptance.py": "670283ea34aade3c1f56c0257496062366e7df1a6f7e3643ec1b1e3bdc10534f",
+      "simulator/repair_motion.py": "cac3e749b9ba878703ebc91b788d59dfad4912d02e3d7152887b4909728f9a8b",
+      "simulator/domain_randomization.py": "c0c04eb46b55dd74c6773170fe125adb34ba4270d887ee39c8c71b477b3e0870",
+      "simulator/scene_recipes.py": "02b6c02cb00de5ca4b8804059b8d48d85d0bca780933da80faf340eddce8e211",
+      "simulator/semantic_vision.py": "9fff6e4d40b0e8de880566c5410f027c63ab054ac431f8545a9ac9156e605c20",
+      "simulator/semantic_cache.py": "b8c8d9f2c1627e619eae3f9d77e66b355beac02000527b4179220664676d2c3f",
+      "simulator/grounded_skill_port.py": "6048879d41d565a37a75b84e475f272cbae8834e632c73a6b77798a51406f6a9",
+      "simulator/surface_destination.py": "549412a2e1b85292effc7c16674667b08a44d27134bda6be5fca8e4fa74ed1fd",
+      "simulator/scan_navigation.py": "6cbcbd5ed8f175f641e48f7d034cd78e8637ed7cf7b77d8cc81b1277bc2eac80",
+      "bin/simulator-grounding.py": "b2e89e87b7c0cc5558098f7e8719aeacf378b54622dfea47023784bc4891bb60",
+      "bin/simulator-grounding-service.py": "33b102870c0d2903cf143db0bc33e19c33ee42a05b607e6898547f8f8463ce11",
+      "config/grounding-model.json": "ac1b4efe3347243a1602dde82a1b8dab6755f3649dd4bd4a5d30c8bbda8043df",
+      "simulator/environment.py": "23ef394c8f6e37ae8b2b491f4885f9e223afdfc1fc869e7ee8866f33ce65647b",
+      "simulator/explorer_model.py": "9c0289da7ea01fd7442f3da9db387b65b9a39e247cb0e0404d29e96fd8484270",
+      "simulator/model_config.json": "4ba8966fbea5837c300145e1c57fa05a817d2240ffa67ee0e786b14eada56e48",
+      "config/explorer.urdf": "9ee94f15a2473ba04c84c552bae47f7dd2bd734b8b3700f3fe25d752c3eace4b",
+      "config/explorer.srdf": "dba83e73a95a6a85e936f0900d2aefadbb434b89302da92d680b56f983b023a7",
+      "config/arm-motion.json": "8ab3bc35a2d88f78050c720d1af8c97dcfffb500f20fcc04fee6a95a8dd4ca3a",
+      "config/handeye-accepted.json": "89c3370055d6436911de5f394048ac2d1d3892585e1fc773c6eb666070d07a77",
+      "config/arm_model.json": "842dfe7960fd01be18992e62dabe293added502d0df3715a9d31944b60317d4f"
+    },
+    "sha256": "5844f221c78dcab45041794f7e7b685fba49c1718530fff9564f24ca74074312"
+  },
+  "repair_space": {
+    "structural_operators": {
+      "history_ik_seeds": "Повторно решить кинематику с проверенными прежними положениями руки",
+      "cartesian_feedback": "Исправлять ошибку положения по измеренной кинематике перед смыканием",
+      "surface_axis_grasp": "Ориентировать пальцы поперёк измеренного участка ткани",
+      "extended_hold_probe": "Найти проверочное движение также в боковых направлениях",
+      "probe_feasible_view": "Проверить достижимость обзора вместе с последующим контрольным движением",
+      "visibility_planned_lift": "Спланировать высокий подъём с видимым участком ткани на всём пути",
+      "reacquire_surface": "Получить новый обзор закрытого участка ткани"
+    },
+    "pairwise_compositions": true,
+    "removal_tests": true,
+    "arbitrary_source_code_editing": false,
+    "numeric_policy_also_learned": true
+  },
+  "promotion_protocol": [
+    "Post-stop sensor and independent physical outcome diagnosis; ambiguity retained",
+    "Control and candidate use identical numeric parameters and paired failed training scenes",
+    "Positive candidate must replicate without regression on two new training scenes",
+    "Unused final independent scenes and exact user-basket checks remain mandatory"
+  ],
+  "historical_memory": {
+    "path": "/Volumes/ExplorerSim/ExplorerSim/maintenance/historical-joint-memory-sock_basket.json",
+    "sha256": "9ec1063b66bd7489aa8639c4cbceef1a4cb2ee65e2bf1dbc1317afada5c8e7f2",
+    "scanned": 1025,
+    "successful_records": 506,
+    "failure_hypotheses": 304,
+    "diverse_postures": 6,
+    "qualification_credit": 0,
+    "old_ACT_weights_executed": false,
+    "actor_fields": [
+      "ik_seeds",
+      "sha256"
+    ]
+  },
+  "initial_diagnosed_causes": [
+    {
+      "code": "vision_timeout",
+      "title": "Модель зрения не успела обработать кадр",
+      "count": 35,
+      "operators": []
+    },
+    {
+      "code": "ik_infeasible",
+      "title": "Недостижимая траектория захвата",
+      "count": 34,
+      "operators": [
+        "history_ik_seeds",
+        "cartesian_feedback"
+      ]
+    },
+    {
+      "code": "held_but_unseen",
+      "title": "Физическое удержание есть, камера его не подтверждает",
+      "count": 29,
+      "operators": [
+        "visibility_planned_lift",
+        "probe_feasible_view",
+        "extended_hold_probe"
+      ]
+    },
+    {
+      "code": "probe_infeasible",
+      "title": "Нет достижимого проверочного движения",
+      "count": 14,
+      "operators": [
+        "extended_hold_probe",
+        "probe_feasible_view",
+        "history_ik_seeds"
+      ]
+    },
+    {
+      "code": "hold_lost_or_occluded",
+      "title": "После подъёма потеряно удержание либо его видимость",
+      "count": 6,
+      "operators": [
+        "visibility_planned_lift",
+        "surface_axis_grasp"
+      ]
+    },
+    {
+      "code": "missed_material",
+      "title": "Ткань физически не поднята",
+      "count": 4,
+      "operators": [
+        "surface_axis_grasp",
+        "cartesian_feedback"
+      ]
+    },
+    {
+      "code": "surface_occluded",
+      "title": "Выбранный участок ткани закрыт после подъезда",
+      "count": 3,
+      "operators": [
+        "reacquire_surface",
+        "history_ik_seeds"
+      ]
+    },
+    {
+      "code": "compute_deadline",
+      "title": "Вычисление не уложилось во время этапа",
+      "count": 3,
+      "operators": []
+    }
+  ],
+  "initial_candidate_programs": [
+    {
+      "schema": 1,
+      "operators": []
+    },
+    {
+      "schema": 1,
+      "operators": [
+        "history_ik_seeds"
+      ]
+    },
+    {
+      "schema": 1,
+      "operators": [
+        "cartesian_feedback"
+      ]
+    },
+    {
+      "schema": 1,
+      "operators": [
+        "visibility_planned_lift"
+      ]
+    }
+  ],
+  "resource_bounds": {
+    "original_search_limit_not_final_stop_for_untried_repairs": true,
+    "extra_causal_trials_maximum": 256,
+    "wall_time_hours_maximum": 24,
+    "operator_pause_never_cleared": true
+  },
+  "handoff": {
+    "mode": "idle-only one-shot background program",
+    "source_staged": false,
+    "started": false,
+    "no_codex_automation": true,
+    "never_cancels_active_jobs": true
+  },
+  "physics_changed": false,
+  "geometry_changed": false,
+  "evidence_thresholds_relaxed": false,
+  "simulation_ready": false,
+  "physical_ready": false,
+  "full_new_program_task_cycle_verified": false,
+  "validation": {
+    "targeted_full_suite_pending": false,
+    "browser_contract_passed": true,
+    "browser_real_mutations": 0,
+    "passed": 244,
+    "subtests_passed": 3
+  },
+  "runtime_remediations": [
+    {
+      "cause": "vision_timeout",
+      "action": "shared_pinned_vision_and_same_scene_retry_with_lower_parallelism",
+      "motion_reward_excluded": true
+    },
+    {
+      "cause": "compute_deadline",
+      "action": "shared_pinned_vision_and_same_scene_retry_with_lower_parallelism",
+      "motion_reward_excluded": true
+    }
+  ],
+  "vision_cache_conformance": {
+    "original": "/Volumes/ExplorerSim/ExplorerSim/skill-training/dfc212a8fb5b/episodes/4d5eb8f621ac/skill-workshops/attempt/execution/recognition/1792189302130412000",
+    "clone": "/Volumes/ExplorerSim/ExplorerSim/maintenance/vision-cache-conformance-1792192338497828000",
+    "same_pinned_model": true,
+    "exact_detection_equality": true,
+    "cold_seconds": 3.883459958000458,
+    "warm_seconds": 1.5290974579984322,
+    "thresholds_unchanged": true,
+    "no_training_commands_sent": true,
+    "four_requests_seconds": 8.30354104199796,
+    "four_requests_exact_equality": true
+  }
+}

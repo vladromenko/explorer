@@ -119,13 +119,14 @@ class AutomaticLearning:
         return value
 
     def revision_available(self,value):
-        if value['state'] not in ('needs_diagnosis','validation_failed','failed'):return False
+        if value['state'] not in {'needs_diagnosis','validation_failed','failed'}|PAUSED:return False
         from .skill_workshop import execution_fingerprint
         current=execution_fingerprint()['sha256']
         for task in value.get('tasks',[]):
             path=self.root/'skill-training'/identity(task['training_id'])/'state.json'
-            if path.is_file() and json.loads(path.read_text()).get('controller',{}).get('sha256')!=current:
-                return True
+            if path.is_file():
+                previous=json.loads(path.read_text()).get('controller',{}).get('sha256')
+                if isinstance(previous,str) and previous and previous!=current:return True
         return False
 
     def resume(self,identifier,*,attempts=None):
@@ -197,7 +198,7 @@ class AutomaticLearning:
         python=vision_python(self.root)
         return dict(vision=vision,language=language,vision_runtime=python.is_file(),
             ready=vision and language and python.is_file(),planner='Qwen3.5 4B',perception='GroundingDINO tiny',
-            learner='Observed skill parameter policy search',universal_policy=False)
+            learner='Observed causal controller-program repair and policy search',universal_policy=False)
 
     def ensure_models(self,value):
         if self.model_status()['ready']:return
@@ -317,7 +318,13 @@ class AutomaticLearning:
                         total=state['options']['attempts'],generation=state['generation'],phase=state['phase_group'],
                         active_workers=state.get('active_workers',[]))
                     value['state']='validating' if state['state'] in ('validating','packaging') else state['state']
-                    value['reason']=state.get('reason') or ('Обучаю: '+task['recipe']['title']);value['elapsed_s']=elapsed+time.monotonic()-started;self.save(value)
+                    reason=state.get('reason') or ('Обучаю: '+task['recipe']['title'])
+                    if state.get('search_mode') in ('causal_repair','repair_confirmation'):
+                        causes=state.get('diagnosis',{}).get('causes',[])
+                        if causes:
+                            reason=('Перепроверяю исправление на новых сценах: ' if state['search_mode']=='repair_confirmation'
+                                else 'Сравниваю исправление причины: ')+(state.get('repair_target') or causes[0]['title'])
+                    value['reason']=reason;value['elapsed_s']=elapsed+time.monotonic()-started;self.save(value)
                 saved['options']['hours']=min(24.,remaining);trainer.save(saved)
                 result=trainer.run(cancelled=budget_cancelled,progress=progress,resume=True)
                 task.update(state=result['state'],result=dict(simulation_ready=result['simulation_ready'],

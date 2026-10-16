@@ -1,9 +1,7 @@
 """Observed RGB-only semantics; detections are hypotheses, not scene labels."""
 import itertools
 import json
-import os
 from pathlib import Path
-import subprocess
 import sys
 import time
 
@@ -50,23 +48,11 @@ class SemanticDetector:
         Image.fromarray(np.asarray(image,dtype=np.uint8)).save(folder/'image.png')
         request=dict(query=query,frame_id=frame_id,model=str(self.root/'models/grounding-dino-tiny'))
         (folder/'request.json').write_text(json.dumps(request))
-        python=vision_python(self.root)
-        script=Path(__file__).resolve().parents[1]/'bin/simulator-grounding.py'
-        with (folder/'log.txt').open('w') as log:
-            process=subprocess.Popen([str(python),str(script),str(folder)],stdout=log,stderr=log,
-                env=dict(os.environ,HF_HUB_OFFLINE='1',HF_HUB_DISABLE_TELEMETRY='1',OMP_NUM_THREADS='2'))
-            deadline=time.monotonic()+60
-            try:
-                while process.poll() is None:
-                    if self.cancelled():raise InterruptedError('Распознавание остановлено')
-                    if time.monotonic()>deadline:raise TimeoutError('Модель зрения не ответила за 60 секунд')
-                    time.sleep(.1)
-                if process.returncode:raise ValueError('Ошибка модели зрения; журнал: '+str(folder/'log.txt'))
-            finally:
-                if process.poll() is None:
-                    process.terminate()
-                    try:process.wait(timeout=3)
-                    except subprocess.TimeoutExpired:process.kill();process.wait()
+        from .semantic_cache import infer
+        try:infer(self.root,folder,cancelled=self.cancelled)
+        except (InterruptedError,TimeoutError):raise
+        except (OSError,RuntimeError,ValueError) as error:
+            raise RuntimeError('Vision backend unavailable: '+str(error)) from error
         result=json.loads((folder/'result.json').read_text())
         if result.get('frame_id')!=frame_id:raise ValueError('Semantic frame mismatch')
         return result['detections']

@@ -63,12 +63,16 @@ def _plan_oriented_translation(env,target,reference,*,check,check_path=False):
     return None
 
 
-def plan_hold_probe(env,*,check=lambda:None,lowest_material_height_m=None):
+def plan_hold_probe(env,*,check=lambda:None,lowest_material_height_m=None,extended=False,obstacle=None):
     jaw=np.asarray(env.jaw_center(),float);reference=hand_rotation(env)
     radial=jaw[:2]-np.asarray(env.base_pose()[:2])
     directions=[('up',np.array([0.,0.,.02]))]
     if np.linalg.norm(radial)>.19:
         directions.append(('toward_base',np.r_[-.02*radial/np.linalg.norm(radial),0.]))
+    if extended:
+        for name,delta in (('side_left',[0.,.02,0.]),('side_right',[0.,-.02,0.]),
+                           ('forward',[.02,0.,0.]),('backward',[-.02,0.,0.])):
+            directions.append((name,np.asarray(delta)))
     # Near the upper workspace boundary an upward probe may be impossible.
     # A downward probe needs an actual observed material lower bound, leaving
     # 20 mm movement plus a 20 mm reserve above the unchanged 45 mm floor gate.
@@ -79,8 +83,27 @@ def plan_hold_probe(env,*,check=lambda:None,lowest_material_height_m=None):
         target=jaw+delta
         command=_plan_oriented_translation(env,target,reference,check=check,check_path=True)
         if command is not None:
+            if obstacle is not None:
+                from .inspection_planning import check_observed_box_path
+                try:check_observed_box_path(env,command,obstacle,check=check)
+                except ValueError:continue
             return HoldProbePlan(command,target,reference,name)
     raise ValueError('Проверочное движение недостижимо без изменения ориентации захвата')
+
+
+def probe_at_command(env,command,*,lowest_material_height_m,extended=False,obstacle=None,check=lambda:None):
+    """Reserve the follow-up proof at a proposed view using only own FK."""
+    import copy
+    import mujoco
+    from .explorer_model import servo_to_joint
+    branch=copy.copy(env);branch.data=mujoco.MjData(env.model);branch.data.qpos[:]=env.data.qpos
+    branch.command=env.command.copy();branch.command[:6]=command
+    q=servo_to_joint(command);branch.data.qpos[env.joint_q]=q
+    for name,m in (('rlink2_Joint',1),('llink1_Joint',1),('llink2_Joint',-1),('rlink3_Joint',-1),('llink3_Joint',1)):
+        branch.data.qpos[env.model.joint(name).qposadr[0]]=m*q[5]
+    mujoco.mj_kinematics(env.model,branch.data)
+    return plan_hold_probe(branch,lowest_material_height_m=lowest_material_height_m,extended=extended,
+        obstacle=obstacle,check=check)
 
 
 @dataclass(frozen=True)

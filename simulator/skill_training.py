@@ -22,6 +22,10 @@ from .learning import write_json
 from .skill_parameters import PARAMETERS,parameters
 from .skill_workshop import execution_fingerprint
 
+ADAPTIVE={'observed_curriculum_cross_entropy_v3','observed_causal_program_repair_v4'}
+CURRICULUM=ADAPTIVE|{'observed_curriculum_cross_entropy_v2'}
+REPAIR='observed_causal_program_repair_v4'
+
 
 def identity(value):
     if not isinstance(value,str) or len(value)!=12 or any(c not in '0123456789abcdef' for c in value):
@@ -114,7 +118,7 @@ def propose(state):
     incumbent=parameters(state['incumbent']);group=state['phase_group']
     rng=np.random.default_rng(state['seed']+state['generation']*1009)
     population=[incumbent]
-    adaptive=state.get('algorithm')=='observed_curriculum_cross_entropy_v3'
+    adaptive=state.get('algorithm') in ADAPTIVE
     mode,names=search_mode(state) if adaptive else ('legacy',tuple(k for k,s in PARAMETERS.items() if s[3]==group))
     if adaptive:state['search_mode']=mode
     for index in range(3):
@@ -130,12 +134,21 @@ def propose(state):
     return population
 
 
-def update_search(state,reports):
+def update_search(state,reports,*,preview=False):
     searched_group=state['phase_group']
     grouped={i:[] for i in range(4)}
     for row in reports:grouped[row['candidate']].append(row)
     if any(len(rows)!=2 for rows in grouped.values()):raise ValueError('Paired search batch incomplete')
-    adaptive=state.get('algorithm')=='observed_curriculum_cross_entropy_v3'
+    causal=state.get('algorithm')==REPAIR and state['batch'].get('repair_programs')
+    if causal:
+        from .failure_repair import program
+        populations=state['batch']['population']
+        if any(p!=populations[0] for p in populations):raise RuntimeError('Repair attribution requires identical numeric policy')
+        seeds={r['seed'] for r in grouped[0]}
+        if len(seeds)!=2 or any({r['seed'] for r in rows}!=seeds for rows in grouped.values()):
+            raise RuntimeError('Repair attribution requires identical paired scene seeds')
+        if causal[0]!=program(state.get('controller_program')):raise RuntimeError('Causal control differs from incumbent program')
+    adaptive=state.get('algorithm') in ADAPTIVE
     def rank(index):
         scores=[row['score'] for row in grouped[index]]
         if adaptive:
@@ -150,9 +163,17 @@ def update_search(state,reports):
         for base,row in zip(sorted(grouped[0],key=lambda r:r.get('seed',0)),sorted(grouped[index],key=lambda r:r.get('seed',0))):
             if base.get('phase_credit',{}).get('pick',0)>=9 and row.get('phase_credit',{}).get('pick',0)<9:return False
         return True
-    eligible=[i for i in grouped if rank(i)[0]>=baseline[0] and preserves_learned_pick(i)]
+    rejected=set(state['batch'].get('rejected_candidates',[]))
+    if state['batch'].get('repair_programs'):
+        programs=state['batch']['repair_programs']
+        for i in range(1,len(programs)):
+            if programs[i] in programs[:i]:rejected.add(i)
+    eligible=[i for i in grouped if i not in rejected and rank(i)[0]>=baseline[0] and preserves_learned_pick(i)]
     chosen=max(eligible,key=lambda i:(rank(i),-i) if adaptive else (rank(i)[1],rank(i)[0],-i))
     improved=rank(chosen)>baseline if adaptive else rank(chosen)[1]>baseline[1]
+    if causal and improved and causal[chosen]!=causal[0] and not preview:
+        confirmation=state['batch'].get('confirmations',{}).get(str(chosen),{})
+        if confirmation.get('status')!='accepted':raise RuntimeError('Repair promotion requires new-scene confirmation')
     if improved:
         state['incumbent']=dict(state['batch']['population'][chosen]);state['stagnation']=0
     else:state['stagnation']+=1
@@ -193,6 +214,11 @@ def update_search(state,reports):
             state.setdefault('recovery_history',[]).append(action)
             for name,(lo,hi,_,phase) in PARAMETERS.items():
                 if phase==searched_group:state['std'][name]=.4*(hi-lo)
+    if state.get('algorithm')==REPAIR and state['batch'].get('repair_programs'):
+        from .failure_repair import record_trial
+        record_trial(state,state['batch']['repair_programs'],chosen,improved)
+        state['last_selection'].update(causal_comparison='same_scenes_same_numeric_policy',
+            selected_program=state.get('controller_program'))
     return all(row['success'] is True for row in chosen_rows)
 
 
@@ -221,17 +247,28 @@ def episode(spec):
         write_json(folder/'progress.json',dict(phase=env.phase,simulation_time=float(env.data.time),
             seed=spec['scene_seed'],candidate=spec['candidate']))
     try:
+        experience=None
+        if spec.get('experience_path'):
+            from .experience_memory import checked_memory,actor_prior
+            memory=checked_memory(spec['experience_path'])
+            if memory['sha256']!=spec['experience_sha256']:raise RuntimeError('Experience changed before worker start')
+            experience=actor_prior(memory)
         report=trial(env,folder,'attempt',spec.get('task_id','sock_basket'),spec['scene_seed'],
             spec.get('scene_profile','sock_variants_v1'),cancelled,progress,parameters=spec['parameters'],
             scene_recipe=spec.get('scene_recipe'),semantic_root=spec.get('semantic_root'),
-            validation=spec.get('split','train')=='validation')
+            validation=spec.get('split','train')=='validation',repair_program=spec.get('controller_program'),experience=experience)
         # Outcome and scene provenance become feedback only after trial stops.
         result=dict(episode_id=spec['episode_id'],candidate=spec['candidate'],seed=spec['scene_seed'],
             split=spec.get('split','train'),
             status='paused' if report['state']=='paused' else 'complete',success=report.get('success') is True,
             score=outcome_score(report),phase_credit=phase_credit(report),failure_group=failure_group(report),stage=report.get('phase'),
             reason=report.get('reason'),report=str(folder/'skill-workshops/attempt/state.json'),
+            controller_program=report.get('controller_program'),
             domain_variation=env.domain_variation)
+        from .failure_repair import infrastructure_failure
+        runtime_failure=infrastructure_failure(report)
+        if runtime_failure and result['status']=='complete':
+            result.update(status='infrastructure_failed',infrastructure_failure=runtime_failure)
         write_json(folder/'result.json',result);return result
     finally:env.close()
 
@@ -262,13 +299,23 @@ class SkillTraining:
         values=parameters()
         state=dict(schema=1,id=self.id,created=time.time(),state='queued',task_id=task_id,scene_recipe=scene_recipe,
             scene_profile='sock_variants_v1' if task_id in ('sock_basket','cloth_basket') else 'baseline',
-            algorithm='observed_curriculum_cross_entropy_v3',seed=seed,generation=0,
+            algorithm=REPAIR,seed=seed,generation=0,
             options=dict(attempts=attempts,hours=hours,workers=workers),phase_group='pick',stagnation=0,
             phase_stagnation={},curriculum_pairs_passed=0,
             incumbent=values,mean=dict(values),std={k:(s[1]-s[0])*.30 for k,s in PARAMETERS.items()},
             episodes=[],active_workers=[],completed_attempts=0,simulation_ready=False,physical_ready=False,
             automatic_hardware_execution=False,controller=execution_fingerprint(),
             validation_seeds=[list(range(1300160000,1300160010)),list(range(1400160000,1400160010))])
+        from .failure_repair import program
+        state.update(controller_program=program(),initial_attempt_budget=attempts,repair_trials=[],historical_diagnostics=[])
+        memory=self.root/'maintenance'/('historical-joint-memory-'+task_id+'.json')
+        if memory.is_file():
+            from .experience_memory import checked_memory
+            experience=checked_memory(memory)
+            write_json(self.folder/'experience.json',experience)
+            state['experience']={key:experience[key] for key in ('sha256','ik_seeds','admitted','scanned')}
+            state['experience']['source_seeds']=sorted({s['seed'] for s in experience['sources'] if type(s.get('seed')) is int})
+            state['historical_cause_priors']=dict(Counter(s['cause_prior'] for s in experience.get('failure_summaries',[])))
         if scene_recipe is not None:
             critical=('src/task_executor.py','simulator/skill_port.py','simulator/skill_parameters.py',
                 'simulator/grasp_planning.py','simulator/manipulation_planning.py','simulator/inspection_planning.py',
@@ -288,6 +335,26 @@ class SkillTraining:
                 break
         if scene_recipe is not None and len(scene_recipe['request'])>1:
             state['validation_seeds'].append(list(range(1500160000,1500160010)))
+        # Reuse previous post-stop failure evidence and numeric best policies
+        # as UNVERIFIED starting hints. Old episodes never count as new tests.
+        seeds=[]
+        for old in list_trainings(self.root):
+            if old.get('id')==self.id or old.get('task_id')!=task_id:continue
+            if (old.get('scene_recipe') or {}).get('sha256')!=(scene_recipe or {}).get('sha256'):continue
+            source=old.get('controller',{}).get('files',{})
+            own_files=state['controller']['files']
+            if any(source.get(n)!=own_files.get(n) for n in ('simulator/environment.py','simulator/explorer_model.py',
+                    'simulator/model_config.json','config/explorer.urdf','config/handeye-accepted.json')):continue
+            if not state.get('initialization') and old.get('algorithm') in ADAPTIVE|{REPAIR}:
+                try:values=parameters(old['incumbent'])
+                except (KeyError,ValueError):continue
+                state.update(incumbent=values,mean=dict(values),initialization=dict(kind='unverified_historical_policy_hint',
+                    from_training_id=old['id'],old_episodes_counted_for_qualification=False))
+            for row in reversed(old.get('episodes',[])):
+                if row.get('status')!='complete' or row.get('split','train')!='train' or row.get('success') is True:continue
+                if len(state['historical_diagnostics'])<128:state['historical_diagnostics'].append(row)
+                if type(row.get('seed')) is int and row['seed']<1_000_000_000 and row['seed'] not in seeds:seeds.append(row['seed'])
+        state['historical_challenge_pairs']=[seeds[i:i+2] for i in range(0,min(6,len(seeds))-1,2)]
         self.save(state);return state
 
     def _batch(self,state,specs,cancelled,progress):
@@ -312,13 +379,15 @@ class SkillTraining:
             if cancelled() or self.pause.exists():raise InterruptedError('Ожидание памяти остановлено')
             time.sleep(2.)
         with ProcessPoolExecutor(max_workers=capacity,mp_context=multiprocessing.get_context('spawn')) as pool:
+            launch_limit=min(capacity,state.get('effective_workers',capacity))
+            runtime_events_before=len(state.get('infrastructure_events',[]))
             try:
                 while pending or active:
                     if cancelled():self.pause.touch(exist_ok=True)
                     memory=memory_budget()
                     if memory['available_bytes']/memory['total_bytes']<.15:
                         state['pause_kind']='memory';self.pause.touch(exist_ok=True)
-                    while pending and len(active)<capacity and not self.pause.exists():
+                    while pending and len(active)<launch_limit and not self.pause.exists():
                         spec=pending.pop(0);slot=next(i for i in range(capacity) if i not in [x['slot'] for x in active.values()])
                         spec['slot']=slot;spec['owner_pid']=os.getpid();active[pool.submit(episode,spec)]=spec
                     state['active_workers']=[dict(slot=s['slot'],episode_id=s['episode_id'],seed=s['scene_seed'],
@@ -339,7 +408,22 @@ class SkillTraining:
                                 try:other.result()
                                 except Exception:pass
                             raise
-                        results.append(result);state['episodes'].append(result)
+                        state['episodes'].append(result)
+                        if result.get('status')=='infrastructure_failed':
+                            state.setdefault('infrastructure_events',[]).append(result)
+                            retries=spec.get('infrastructure_retries',0)
+                            if retries>=2:raise RuntimeError('Сбой вычислений повторился после восстановления: '+str(result.get('reason')))
+                            old=dict(spec)
+                            fresh=self._spec(state,spec['parameters'],spec['candidate'],spec['scene_seed'],
+                                split=spec.get('split','train'),controller_program=spec.get('controller_program'))
+                            fresh['infrastructure_retries']=retries+1;spec.update(fresh);pending.append(spec)
+                            launch_limit=max(1,launch_limit//2);state['effective_workers']=launch_limit
+                            state.setdefault('runtime_recoveries',[]).append(dict(cause=result['infrastructure_failure'],
+                                old_episode=old['episode_id'],replacement=spec['episode_id'],
+                                action='retry_same_scene_same_policy_reduce_parallelism',workers=launch_limit,
+                                excluded_from_learning_reward=True))
+                            self.save(state);continue
+                        results.append(result)
                         state['completed_attempts']=sum(r['status']=='complete' and r.get('split','train')=='train'
                             for r in state['episodes'])
                         self.save(state)
@@ -350,15 +434,24 @@ class SkillTraining:
                 self.pause.touch(exist_ok=True)
                 raise
         if pending or any(r['status']!='complete' for r in results):raise InterruptedError('Обучение сохранено на паузе')
+        if len(state.get('infrastructure_events',[]))==runtime_events_before:
+            state['stable_resource_batches']=state.get('stable_resource_batches',0)+1
+            if state['stable_resource_batches']>=3 and launch_limit<capacity:
+                state['effective_workers']=min(capacity,launch_limit+1);state['stable_resource_batches']=0
+        else:state['stable_resource_batches']=0
         return results
 
-    def _spec(self,state,params,candidate,scene_seed,*,split='train'):
+    def _spec(self,state,params,candidate,scene_seed,*,split='train',controller_program=None):
         token=secrets.token_hex(6)
+        from .failure_repair import program
         return dict(episode_id=token,folder=str(self.folder/'episodes'/token),storage=str(self.root),
             pause_file=str(self.pause),parameters=parameters(params),candidate=candidate,scene_seed=scene_seed,
             controller_sha256=state['controller']['sha256'],split=split,owner_pid=os.getpid(),
             task_id=state['task_id'],scene_recipe=state.get('scene_recipe'),semantic_root=str(self.root),
-            scene_profile=state.get('scene_profile','sock_variants_v1'))
+            scene_profile=state.get('scene_profile','sock_variants_v1'),
+            controller_program=program(controller_program if controller_program is not None else state.get('controller_program')),
+            experience_path=str(self.folder/'experience.json') if state.get('experience') else None,
+            experience_sha256=state.get('experience',{}).get('sha256'))
 
     def run(self,*,cancelled=lambda:False,progress=lambda state:None,resume=False):
         state=json.loads(self.path.read_text())
@@ -382,25 +475,50 @@ class SkillTraining:
             if state.get('validation_pending'):
                 self._qualify(state,stopped,progress)
                 if not self._continue_after_validation(state):return state
-            while state.get('batch') is not None or state['completed_attempts']+8<=state['options']['attempts']:
+            while True:
                 if stopped():raise InterruptedError('Обучение сохранено на паузе')
+                if state.get('batch') is None and state['completed_attempts']+8>state['options']['attempts']:
+                    if not self._extend_for_repair(state):break
                 batch=state.get('batch')
                 if batch is None:
                     population=propose(state)
+                    repair_programs=None
+                    if state['algorithm']==REPAIR:
+                        from .failure_repair import diagnosis,repair_proposals,repair_target,CAUSES
+                        rows=state['episodes'][-64:] or state.get('historical_diagnostics',[])
+                        analysis=diagnosis(rows,self.root);state['diagnosis']=analysis
+                        known={c['code'] for c in analysis['causes']}
+                        for code,count in state.get('historical_cause_priors',{}).items():
+                            if code not in known and code in CAUSES:
+                                analysis['causes'].append(dict(code=code,title=CAUSES[code][0],count=count,
+                                    operators=list(CAUSES[code][1]),certainty='historical_hypothesis_requires_new_A_B_test'))
+                        write_json(self.folder/'diagnosis.json',analysis)
+                        if state.get('force_repair') or state.get('stagnation',0)>=2 or state['generation']==0:
+                            repair_programs=repair_proposals(state,analysis)
+                            if repair_programs:
+                                population=[dict(state['incumbent']) for _ in range(4)]
+                                state['search_mode']='causal_repair'
+                                state['repair_target']=repair_target(repair_programs[0],repair_programs[1],analysis)
+                        state.pop('force_repair',None)
                     # Paired candidates use identical scenes. User basket and
                     # varied socks are followed by the unchanged wider profile.
-                    if state['algorithm'] in ('observed_curriculum_cross_entropy_v2','observed_curriculum_cross_entropy_v3'):
+                    if state['algorithm'] in CURRICULUM:
                         # Keep a paired training challenge until it is solved.
                         # Otherwise every round changes BOTH the policy and
                         # its failure scene, destroying a meaningful curriculum.
                         offset=state.get('curriculum_pairs_passed',0)*100+state.get('validation_round',0)*1000
-                        seeds=[state['seed']+4+offset,state['seed']+14+offset]
+                        pairs=state.get('historical_challenge_pairs',[])
+                        index=state.get('curriculum_pairs_passed',0)
+                        seeds=(pairs[index] if state.get('validation_round',0)==0 and index<len(pairs)
+                            else [state['seed']+4+offset,state['seed']+14+offset])
                     else:
                         offset=(state['generation']%3)*10
                         seeds=([state['seed']+4+offset,state['seed']+14+offset]
                             if state['generation']<3 else [state['seed']+100+state['generation']*2+i for i in range(2)])
-                    specs=[self._spec(state,params,i,seed) for i,params in enumerate(population) for seed in seeds]
-                    batch=dict(population=population,specs=specs,results=[]);state['batch']=batch;self.save(state)
+                    specs=[self._spec(state,params,i,seed,controller_program=repair_programs[i] if repair_programs else None)
+                        for i,params in enumerate(population) for seed in seeds]
+                    batch=dict(population=population,specs=specs,results=[],repair_programs=repair_programs)
+                    state['batch']=batch;self.save(state)
                 done={r['episode_id'] for r in state['episodes'] if r['status']=='complete'}
                 finished=[r for r in state['episodes'] if r['episode_id'] in {s['episode_id'] for s in batch['specs']} and r['status']=='complete']
                 specs=[]
@@ -409,12 +527,20 @@ class SkillTraining:
                     if Path(spec['folder']).exists():
                         # Preserve a partial recording; retry in a NEW folder.
                         old=spec['episode_id'];fresh=self._spec(state,spec['parameters'],spec['candidate'],spec['scene_seed'],
-                            split=spec.get('split','train'))
+                            split=spec.get('split','train'),controller_program=spec.get('controller_program'))
                         state.setdefault('partial_attempts',[]).append(dict(episode_id=old,folder=spec['folder']))
                         spec.update(fresh)
                     specs.append(spec)
                 self.save(state)
                 results=finished+self._batch(state,specs,stopped,progress)
+                if batch.get('repair_programs'):
+                    import copy
+                    while True:
+                        preview=copy.deepcopy(state);update_search(preview,results,preview=True)
+                        winner=preview['last_selection']['candidate']
+                        if not preview['last_selection']['improved'] or winner==0:break
+                        if self._confirm_program(state,winner,stopped,progress):break
+                        batch.setdefault('rejected_candidates',[]).append(winner);self.save(state)
                 all_success=update_search(state,results)
                 state.setdefault('generations',[]).append(dict(index=state['generation'],selection=state['last_selection'],
                     episode_ids=[r['episode_id'] for r in results],phase_group=state['phase_group']))
@@ -424,17 +550,18 @@ class SkillTraining:
                 write_json(self.folder/'policy.json',dict(schema=1,algorithm=state['algorithm'],task_id=state['task_id'],
                     scene_recipe=state.get('scene_recipe'),observation_contract='registered_RGBD_own_FK_odometry_lidar',
                     parameters=state['incumbent'],controller_sha256=state['controller']['sha256'],
+                    controller_program=state.get('controller_program'),experience_sha256=state.get('experience',{}).get('sha256'),
                     simulation_ready=False,physical_ready=False))
                 self.save(state);progress(state)
                 if all_success:
                     state['curriculum_pairs_passed']=state.get('curriculum_pairs_passed',0)+1
-                    if state['algorithm'] not in ('observed_curriculum_cross_entropy_v2','observed_curriculum_cross_entropy_v3') or state['curriculum_pairs_passed']>=3:
+                    if state['algorithm'] not in CURRICULUM or state['curriculum_pairs_passed']>=3:
                         self._qualify(state,stopped,progress)
                         if not self._continue_after_validation(state):return state
                         continue
                     state.update(phase_stagnation={},stagnation=0,phase_group='pick')
                     self.save(state)
-                if state['stagnation']>=8 and state['algorithm']!='observed_curriculum_cross_entropy_v3':
+                if state['stagnation']>=8 and state['algorithm'] not in ADAPTIVE:
                     state.update(state='needs_diagnosis',reason='Восемь поисковых раундов одного этапа не улучшили результат: '+state['phase_group']+'; требуется исправление причины')
                     self.save(state);return state
             state.update(state='budget_paused',reason='Бюджет попыток завершён; все результаты и лучшая политика сохранены')
@@ -447,8 +574,78 @@ class SkillTraining:
         except Exception as error:
             self.pause.touch(exist_ok=True);state.update(state='failed',reason=str(error));self.save(state);raise
         finally:
-            state['active_workers']=[];self.save(state);fcntl.flock(lock,fcntl.LOCK_UN);lock.close()
+            state['active_workers']=[]
+            try:
+                self.save(state)
+                if state.get('algorithm')==REPAIR:
+                    from .semantic_cache import stop_servers
+                    remaining=stop_servers(self.root)
+                    if remaining:state['model_cleanup_pending']=remaining;self.save(state)
+            finally:fcntl.flock(lock,fcntl.LOCK_UN);lock.close()
         return state
+
+    def _confirm_program(self,state,candidate,cancelled,progress):
+        """Replicate a proposed repair on two NEW training scenes before use."""
+        from .failure_repair import digest,repair_target
+        from .repair_acceptance import confirms_nonregression
+        batch=state['batch'];choices=batch['repair_programs']
+        ledger=batch.setdefault('confirmations',{})
+        key=str(candidate)
+        if key not in ledger:
+            if state['completed_attempts']+4>state['options']['attempts']:
+                extra=state['completed_attempts']+4-state['options']['attempts']
+                if state['options']['attempts']+extra>state.get('initial_attempt_budget',1000)+256:return False
+                state['options']['attempts']+=extra
+            used={r['seed'] for r in state['episodes'] if type(r.get('seed')) is int}
+            seed=200_000_000+int(state['id'],16)%650_000_000+state['generation']*20+candidate*2
+            seeds=[]
+            while len(seeds)<2:
+                if seed not in used:seeds.append(seed)
+                seed+=1
+            specs=[self._spec(state,state['incumbent'],i,seed,controller_program=choices[index])
+                for i,index in enumerate((0,candidate)) for seed in seeds]
+            ledger[key]=dict(specs=specs,program_sha256=digest(choices[candidate]),
+                split='train',status='pending',final_holdout=False)
+            self.save(state)
+        entry=ledger[key]
+        if entry['status'] in ('accepted','rejected'):return entry['status']=='accepted'
+        ids={s['episode_id'] for s in entry['specs']}
+        rows=[r for r in state['episodes'] if r['episode_id'] in ids and r['status']=='complete']
+        done={r['episode_id'] for r in rows};pending=[]
+        for spec in entry['specs']:
+            if spec['episode_id'] in done:continue
+            if Path(spec['folder']).exists():
+                state.setdefault('partial_attempts',[]).append(dict(episode_id=spec['episode_id'],folder=spec['folder']))
+                spec.update(self._spec(state,spec['parameters'],spec['candidate'],spec['scene_seed'],
+                    controller_program=spec['controller_program']))
+            pending.append(spec)
+        self.save(state);state['search_mode']='repair_confirmation'
+        state['repair_target']=repair_target(choices[0],choices[candidate],state.get('diagnosis',{}))
+        rows+=self._batch(state,pending,cancelled,progress)
+        accepted,reason=confirms_nonregression(rows,state['phase_group'])
+        entry.update(status='accepted' if accepted else 'rejected',reason=reason,
+            episode_ids=[r['episode_id'] for r in rows],no_evidence_gates_changed=True)
+        folder=self.folder/'repair-confirmations';folder.mkdir(exist_ok=True)
+        write_json(folder/f'{state["generation"]:04d}-{candidate}.json',entry)
+        self.save(state);return accepted
+
+    def _extend_for_repair(self,state):
+        """The initial search cap is not a terminal diagnosis for an untested fix.
+
+        Allocate only finite, evidence-led A/B tests; never increase the wall
+        time allowance, repeat an exhausted program set or reset user pauses.
+        """
+        if state.get('algorithm')!=REPAIR:return False
+        if state.get('pause_kind')=='operator' or state.get('state')=='operator_paused' or self.pause.exists():return False
+        from .failure_repair import diagnosis,repair_proposals
+        if state['options']['attempts']>=state.get('initial_attempt_budget',1000)+256:return False
+        analysis=diagnosis(state['episodes'][-64:],self.root)
+        if repair_proposals(state,analysis) is None:return False
+        state['options']['attempts']+=8;state['force_repair']=True
+        state.setdefault('recovery_history',[]).append(dict(generation=state['generation'],
+            action='allocate_causal_repair_trial',new_attempt_budget=state['options']['attempts'],
+            wall_time_extended=False,evidence_thresholds_changed=False))
+        self.save(state);return True
 
     def _continue_after_validation(self,state):
         """Failed tests trigger NEW training challenges, never test leakage.
@@ -457,7 +654,7 @@ class SkillTraining:
         replay them as demonstrations. The next final check uses entirely new
         independent scenes and the SAME unchanged acceptance criteria.
         """
-        if (state.get('algorithm')!='observed_curriculum_cross_entropy_v3' or
+        if (state.get('algorithm') not in ADAPTIVE or
             state['state']!='validation_failed' or state['completed_attempts']+8>state['options']['attempts']):return False
         used=[r for group in state.get('validation',[]) for r in group.get('results',[])]
         failures=Counter(r['failure_group'] for r in used if not r.get('success') and r.get('failure_group'))
@@ -482,6 +679,7 @@ class SkillTraining:
         state['state']='validating';state['validation_pending']=True
         state.setdefault('validation',[]);state.setdefault('validation_batches',[]);self.save(state)
         training={r['seed'] for r in state['episodes'] if r.get('split','train')=='train'}
+        training.update(state.get('experience',{}).get('source_seeds',[]))
         reserved=[seed for group in state['validation_seeds'] for seed in group]
         if len(set(reserved))!=10*len(state['validation_seeds']) or training.intersection(reserved):raise RuntimeError('Validation scene overlap')
         quarantined={seed for old in state.get('validation_history',[]) for group in old['seeds'] for seed in group}

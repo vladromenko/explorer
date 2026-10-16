@@ -112,9 +112,15 @@ def plan_camera_view(env,point,*,gripper,distance_m,min_camera_height_m,check=la
             [max(minimum_jaw_height_m-jaw_height,0.)*30.] if minimum_jaw_height_m is not None else np.empty(0),
             [max(reach-maximum_jaw_reach_m,0.)*30.] if maximum_jaw_reach_m is not None else np.empty(0),
             (gravity-reference_gravity)*8. if maximum_hand_tilt_deg is not None else np.empty(0)]
-    seeds=(start,[90.,90.,90.,90.,90.],
+    seeds=[start,[90.,90.,90.,90.,90.],
            [50.,120.,30.,0.,90.],[130.,120.,30.,0.,90.],
-           [50.,45.,120.,120.,90.],[130.,45.,120.,120.,90.])
+           [50.,45.,120.,120.,90.],[130.,45.,120.,120.,90.]]
+    priors=[]
+    for prior in getattr(env,'observed_ik_seeds',[]):
+        prior=np.asarray(prior,float)
+        if prior.shape!=(5,) or not np.isfinite(prior).all() or np.any(prior<0) or np.any(prior>[180.,180.,180.,180.,270.]):continue
+        priors.append((float(np.linalg.norm(residual(prior))),prior))
+    seeds.extend(p for _,p in sorted(priors,key=lambda row:row[0])[:3])
     candidates=[];best_errors=None;best_cost=float('inf')
     for seed in seeds:
         check()

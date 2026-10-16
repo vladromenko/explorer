@@ -26,9 +26,10 @@ def execution_fingerprint():
          'simulator/manipulation_planning.py','simulator/observed_free_space.py',
          'simulator/multiview_container.py','simulator/observed_navigation.py','simulator/grasp_planning.py',
          'simulator/skill_parameters.py','simulator/resource_budget.py','simulator/skill_training.py','simulator/skill_workshop.py',
-         'simulator/domain_randomization.py','simulator/scene_recipes.py','simulator/semantic_vision.py',
+         'simulator/failure_repair.py','simulator/experience_memory.py','simulator/repair_acceptance.py','simulator/repair_motion.py',
+         'simulator/domain_randomization.py','simulator/scene_recipes.py','simulator/semantic_vision.py','simulator/semantic_cache.py',
          'simulator/grounded_skill_port.py','simulator/surface_destination.py',
-         'simulator/scan_navigation.py','bin/simulator-grounding.py','config/grounding-model.json',
+         'simulator/scan_navigation.py','bin/simulator-grounding.py','bin/simulator-grounding-service.py','config/grounding-model.json',
          'simulator/environment.py','simulator/explorer_model.py',
          'simulator/model_config.json','config/explorer.urdf','config/explorer.srdf',
          'config/arm-motion.json','config/handeye-accepted.json','config/arm_model.json')}
@@ -99,7 +100,8 @@ def prepare(root,identifier,task_id,cancelled=None,progress=None):
     return state
 
 
-def trial(env,root,identifier,task_id,seed,scene_profile='sock_variants_v1',cancelled=None,progress=None,parameters=None,scene_recipe=None,semantic_root=None,validation=False):
+def trial(env,root,identifier,task_id,seed,scene_profile='sock_variants_v1',cancelled=None,progress=None,parameters=None,scene_recipe=None,semantic_root=None,validation=False,
+          repair_program=None,experience=None):
     from src.task_executor import TaskExecutor
     from .skill_port import SimulatorSkillPort
     from .explorer_model import model_metadata
@@ -112,6 +114,9 @@ def trial(env,root,identifier,task_id,seed,scene_profile='sock_variants_v1',canc
     report['execution_fingerprint']=execution_fingerprint()
     from .skill_parameters import parameters as checked_parameters
     report['policy_parameters']=checked_parameters(parameters)
+    from .failure_repair import program
+    report['controller_program']=program(repair_program)
+    report['experience_sha256']=(experience or {}).get('sha256')
     write_json(folder/'state.json',report)
     port=None
     try:
@@ -122,6 +127,8 @@ def trial(env,root,identifier,task_id,seed,scene_profile='sock_variants_v1',canc
             report['scene_recipe']=scene_recipe
         env.reset(seed=seed,options=reset)
         options={} if parameters is None else dict(parameters=parameters)
+        if repair_program is not None:options['repair_program']=program(repair_program)
+        if experience is not None:options['experience']=experience
         port_type=SimulatorSkillPort
         if scene_recipe is not None and scene_recipe.get('semantic_recognition_required'):
             from .grounded_skill_port import GroundedSkillPort
