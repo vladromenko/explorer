@@ -32,7 +32,7 @@ def _plan_oriented_translation(env,target,reference,*,check,check_path=False):
         q=servo_to_joint([*angles,gripper]);scratch.qpos[env.joint_q]=q
         for link,multiplier in (('rlink2_Joint',1),('llink1_Joint',1),('llink2_Joint',-1),('rlink3_Joint',-1),('llink3_Joint',1)):
             scratch.qpos[env.model.joint(link).qposadr[0]]=multiplier*q[5]
-        mujoco.mj_forward(env.model,scratch)
+        mujoco.mj_kinematics(env.model,scratch)
         position=env.jaw_center(scratch)-target
         rotation=reference.T@scratch.body('arm5').xmat.reshape(3,3)
         return position,Rotation.from_matrix(rotation).as_rotvec()
@@ -120,3 +120,95 @@ def plan_transport_pose(env,minimum_height_m,*,maximum_reach_m=.20,check=lambda:
     if command is None:
         raise ValueError('Транспортная поза недостижима с сохранением ориентации захвата')
     return TransportPosePlan(command,reference,False,minimum_height_m,maximum_reach_m)
+
+
+@dataclass(frozen=True)
+class ReleaseHoverPlan:
+    command: np.ndarray
+    target: np.ndarray
+    via_command: np.ndarray | None = None
+    open_command: np.ndarray | None = None
+    withdraw_command: np.ndarray | None = None
+    roll_commands: tuple = ()
+
+
+def plan_release_hover(env,box,*,fraction,margin,via_command=None,roll_deg=12.,withdraw_height=.07,check=lambda:None):
+    """Find a reachable placement pose whose whole robot clears the rim.
+
+    A low point above the rim can put the wrist housing THROUGH the wall.
+    Search alternative arm branches and higher hover positions, retaining the
+    same observed obstacle margin and full swept-geometry check. Inputs are a
+    measured destination and own FK, never simulated cloth/bin body states.
+    """
+    from .inspection_planning import check_observed_box_path
+    import copy
+    import mujoco
+    from .explorer_model import servo_to_joint
+    lo,hi=np.asarray(box['bounds_min']),np.asarray(box['bounds_max'])
+    inset=max(.02,float(box['uncertainty_m'])+.012)
+    if np.any(hi[:2]-lo[:2]<=2*inset):raise ValueError('Нет наблюдаемого места для отпускания')
+    fractions=sorted(set((float(fraction),.18,.22,.30,.40)),key=lambda f:abs(f-fraction))
+    heights=sorted(set((float(margin),.09,.11,.13,.15)),key=lambda h:abs(h-margin))
+    seeds=(env.command[:5].copy(),[90.,30.,140.,40.,90.],[90.,50.,100.,50.,90.])
+    def at_pose(command):
+        branch=copy.copy(env);branch.command=env.command.copy();branch.command[:6]=command
+        branch.data=mujoco.MjData(env.model);branch.data.qpos[:]=env.data.qpos
+        q=servo_to_joint(command);branch.data.qpos[env.joint_q]=q
+        for name,m in (('rlink2_Joint',1),('llink1_Joint',1),('llink2_Joint',-1),('rlink3_Joint',-1),('llink3_Joint',1)):
+            branch.data.qpos[env.model.joint(name).qposadr[0]]=m*q[5]
+        mujoco.mj_kinematics(env.model,branch.data)
+        return branch
+    def complete_plan(command,point,via_command):
+        closed=at_pose(command)
+        try:
+            # At release the arm should stay still while the linkage opens.
+            # Keeping the OPEN pads' midpoint at the former CLOSED midpoint
+            # would instead move the wrist housing toward/through the rim.
+            opened=command.copy();opened[5]=30.
+            check_observed_box_path(closed,opened,box,check=check)
+        except ValueError:return None
+        opened_pose=at_pose(opened);rolls=[];rolling=opened_pose
+        # Prefer the learned release motion; if it cannot clear the measured
+        # rim, select a smaller finite motion before executing ANY placement.
+        for amplitude in (float(roll_deg),float(roll_deg)/2,0.):
+            proposed=[];rolling=opened_pose
+            try:
+                for offset in ((amplitude,-amplitude,0.) if amplitude else ()):
+                    goal=opened.copy();goal[4]=float(np.clip(opened[4]+offset,0.,270.))
+                    check_observed_box_path(rolling,goal,box,check=check)
+                    proposed.append(goal);rolling=at_pose(goal)
+            except ValueError:continue
+            rolls=proposed;break
+        for retreat,height in ((.035,withdraw_height),(.05,.04),(.065,.02),(.065,0.)):
+            try:
+                withdrawal=rolling.solve_ik(rolling.jaw_center()+[-retreat,0.,height],gripper=30.,downward=False)
+                check_observed_box_path(rolling,withdrawal,box,check=check)
+            except ValueError:continue
+            return ReleaseHoverPlan(command,point,via_command,opened,withdrawal,tuple(rolls))
+        return None
+    via=None
+    if via_command is not None:
+        via_command=np.asarray(via_command,float)
+        check_observed_box_path(env,via_command,box,check=check)
+        via=at_pose(via_command)
+    for f in fractions:
+        for height in heights:
+            point=np.array([np.clip(lo[0]+f*(hi[0]-lo[0]),lo[0]+inset,hi[0]-inset),
+                (lo[1]+hi[1])/2,hi[2]+height])
+            for seed in seeds:
+                check()
+                try:
+                    command=env.solve_ik(point,seed,gripper=170.,downward=False)
+                except ValueError:continue
+                try:
+                    check_observed_box_path(env,command,box,check=check)
+                    plan=complete_plan(command,point,None)
+                    if plan is not None:return plan
+                    continue
+                except ValueError:
+                    if via is None:continue
+                try:check_observed_box_path(via,command,box,check=check)
+                except ValueError:continue
+                plan=complete_plan(command,point,via_command)
+                if plan is not None:return plan
+    raise ValueError('Нет достижимой позы размещения с проверенным зазором корпуса руки над бортиком')

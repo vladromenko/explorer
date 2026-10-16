@@ -9,8 +9,10 @@ PARAMETERS={
     'view_baseline_m':(.03,.06,.035,'view'),
     'reorientation_distance_m':(.22,.42,.40,'place'),
     'reorientation_camera_height_m':(.30,.38,.30,'place'),
-    'release_fraction':(.30,.65,.35,'place'),
-    'release_margin_m':(.035,.075,.035,'place'),
+    'destination_standoff_m':(.21,.29,.23,'place'),
+    'release_fraction':(.15,.65,.22,'place'),
+    'release_margin_m':(.035,.16,.12,'place'),
+    'release_roll_deg':(0.,25.,12.,'place'),
     'withdraw_height_m':(.07,.12,.07,'place'),
 }
 

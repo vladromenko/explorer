@@ -12,6 +12,20 @@ from .rgbd_observation import ObservationRefused,deproject_depth
 from .observed_free_space import DepthFreeSpace
 
 
+def opening_displacement(first,second):
+    """Compare the observed opening, not the midpoint of a cropped wall.
+
+    The lower visible wall changes with camera height. It cannot move the
+    identity anchor of the same fixed rim up or down by half that crop.
+    """
+    def anchor(box):
+        lo,hi=np.asarray(box['bounds_min'],float),np.asarray(box['bounds_max'],float)
+        if lo.shape!=(3,) or hi.shape!=(3,) or not np.isfinite(np.r_[lo,hi]).all() or np.any(hi<=lo):
+            raise ObservationRefused('Некорректная измеренная граница корзины')
+        return np.r_[(lo[:2]+hi[:2])/2,hi[2]]
+    return float(np.linalg.norm(anchor(first)-anchor(second)))
+
+
 def _position(record):
     return np.asarray(record['frame']['optical_to_world'],float)[:3,3]
 

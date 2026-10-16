@@ -27,7 +27,7 @@ def frame(name,position,containers=None,hints=None):
 
 def make_port(tmp_path,frames):
     env=SimpleNamespace(command=np.r_[np.ones(5)*90.,170.,0.,0.,0.],
-        pending_command=np.zeros(9),data=SimpleNamespace(ctrl=np.zeros(4)),wheel_ids=[0,1,2,3],
+        pending_command=np.zeros(9),data=SimpleNamespace(ctrl=np.zeros(4),time=1.),wheel_ids=[0,1,2,3],
         phase='',last_error=None,base_pose=lambda:[0.,0.,0.])
     port=SimulatorSkillPort(env,tmp_path/'execution')
     sequence=iter(frames);port.scene=lambda ctx:next(sequence)
@@ -113,7 +113,7 @@ def test_look_at_uses_current_closed_gripper_in_fk_and_final_command(tmp_path,mo
     env=ExplorerEnv(render=False)
     port=SimulatorSkillPort(env,tmp_path/'execution')
     env.command[5]=170.
-    goals=[];port.move_angles=lambda goal,ctx:goals.append(goal)
+    goals=[];port.move_angles=lambda goal,ctx,**kwargs:goals.append(goal)
     monkeypatch.setattr('simulator.inspection_planning.plan_camera_view',lambda env,point,**kwargs:
         CameraViewPlan(np.r_[np.ones(5)*90.,kwargs['gripper']],np.array([0.,0.,.5]),0.,0.))
     try:

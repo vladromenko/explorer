@@ -244,6 +244,32 @@ def test_compatible_old_parameter_search_is_only_an_unverified_warm_start(tmp_pa
     assert not started['episodes'] and not started['simulation_ready']
 
 
+def test_corrected_controller_continuation_is_linked_idempotent_and_preserves_old_results(tmp_path):
+    book=engine(tmp_path);old=book.advance(book.create('Убрать носок')['id'])
+    old.update(state='needs_diagnosis',simulation_ready=False);book.save(old)
+    path=tmp_path/'skill-training'/old['tasks'][0]['training_id']/'state.json'
+    saved=json.loads(path.read_text());saved.update(state='needs_diagnosis',controller={'sha256':'old-revision'},simulation_ready=False)
+    write_json(path,saved);before=path.read_bytes()
+    resumed=book.resume(old['id'],attempts=1000)
+    assert resumed['id']!=old['id'] and resumed['parent_id']==old['id']
+    assert resumed['text']==old['text'] and resumed['budget']['attempts']==1000
+    assert resumed['tasks'][0]['training_id']!=old['tasks'][0]['training_id']
+    assert resumed['tasks'][0]['recipe']==old['tasks'][0]['recipe']
+    assert not resumed['simulation_ready'] and resumed['state']=='queued'
+    assert book.resume(old['id'])['id']==resumed['id']
+    assert len(book.list())==2 and path.read_bytes()==before
+
+
+def test_same_failed_controller_cannot_be_blindly_restarted(tmp_path):
+    from simulator.skill_workshop import execution_fingerprint
+    book=engine(tmp_path);old=book.advance(book.create('Убрать носок')['id'])
+    old.update(state='needs_diagnosis',simulation_ready=False);book.save(old)
+    path=tmp_path/'skill-training'/old['tasks'][0]['training_id']/'state.json'
+    saved=json.loads(path.read_text());saved['controller']=execution_fingerprint();write_json(path,saved)
+    with pytest.raises(ValueError,match='разбора причины'):book.resume(old['id'])
+    assert len(book.list())==1
+
+
 def test_restart_recovers_running_request_as_explicit_resume_without_touching_queued_or_user_pause(tmp_path):
     book=engine(tmp_path)
     running=book.create('Носок в корзину',attempts=8);running['state']='running'

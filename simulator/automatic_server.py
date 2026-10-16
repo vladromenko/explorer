@@ -95,12 +95,14 @@ def create_app(root=DEFAULT_ROOT,engine_factory=AutomaticLearning,start=True):
     @app.get('/api/state')
     def state(request:Request):
         engine=request.app.state.engine;trainings=list_trainings(engine.root)
+        requests=engine.list()
+        for row in requests:row['can_resume_after_update']=engine.revision_available(row)
         legacy=next((row for row in trainings if row.get('scene_recipe') is None),None)
         previous=summarized(legacy,engine.root) if legacy else None
         if previous and previous['state'] in ('running','waiting_for_memory','validating','packaging'):
             try:legacy_get('/api/session')
             except OSError:previous.update(state='interrupted',active_workers=[],reason='Служба прежней очереди остановлена; продолжите сохранённое обучение')
-        return dict(queue_pause=engine.pause_info(),requests=engine.list(),trainings=[summarized(row,engine.root) for row in trainings],
+        return dict(queue_pause=engine.pause_info(),requests=requests,trainings=[summarized(row,engine.root) for row in trainings],
             legacy=previous,models=engine.model_status(),
             memory=memory_budget(),disk_connected=engine.root.parent.is_mount(),
             simulation_only=True,physical_ready=False)

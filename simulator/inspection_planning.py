@@ -59,7 +59,7 @@ def check_observed_box_path(env,command,obstacle,*,check=lambda:None):
         check();q=servo_to_joint(start+(command-start)*fraction);scratch.qpos[env.joint_q]=q
         for name,m in (('rlink2_Joint',1),('llink1_Joint',1),('llink2_Joint',-1),('rlink3_Joint',-1),('llink3_Joint',1)):
             scratch.qpos[env.model.joint(name).qposadr[0]]=m*q[5]
-        mujoco.mj_forward(env.model,scratch)
+        mujoco.mj_kinematics(env.model,scratch);mujoco.mj_camlight(env.model,scratch)
         rotation=np.asarray(scratch.geom_xmat[own],float).reshape(-1,3,3)
         world=np.einsum('nvj,nij->nvi',corners,rotation)+scratch.geom_xpos[own,None,:]
         if not np.isfinite(world).all():raise CameraViewUnavailable('Некорректная геометрия пути обзора')
@@ -68,7 +68,8 @@ def check_observed_box_path(env,command,obstacle,*,check=lambda:None):
 
 
 def plan_camera_view(env,point,*,gripper,distance_m,min_camera_height_m,check=lambda:None,
-                     maximum_hand_tilt_deg=None,reference_hand_gravity=None,minimum_jaw_height_m=None):
+                     maximum_hand_tilt_deg=None,reference_hand_gravity=None,minimum_jaw_height_m=None,
+                     maximum_jaw_reach_m=None):
     import mujoco
     from scipy.optimize import least_squares
     from .explorer_model import servo_to_joint
@@ -81,6 +82,8 @@ def plan_camera_view(env,point,*,gripper,distance_m,min_camera_height_m,check=la
         raise ValueError('Некорректный предел наклона удерживаемого предмета')
     if minimum_jaw_height_m is not None and (not np.isfinite(minimum_jaw_height_m) or minimum_jaw_height_m<.045):
         raise ValueError('Некорректная высота удерживаемого предмета')
+    if maximum_jaw_reach_m is not None and (not np.isfinite(maximum_jaw_reach_m) or not .10<=maximum_jaw_reach_m<=.30):
+        raise ValueError('Некорректная компактность удерживаемого предмета')
     scratch=mujoco.MjData(env.model);scratch.qpos[:]=env.data.qpos
     camera=env.model.camera('wrist_depth').id
     start=env.command[:5].copy()
@@ -94,17 +97,20 @@ def plan_camera_view(env,point,*,gripper,distance_m,min_camera_height_m,check=la
         q=servo_to_joint([*angles,gripper]);scratch.qpos[env.joint_q]=q
         for name,multiplier in (('rlink2_Joint',1),('llink1_Joint',1),('llink2_Joint',-1),('rlink3_Joint',-1),('llink3_Joint',1)):
             scratch.qpos[env.model.joint(name).qposadr[0]]=multiplier*q[5]
-        mujoco.mj_forward(env.model,scratch)
+        mujoco.mj_kinematics(env.model,scratch);mujoco.mj_camlight(env.model,scratch)
         position=scratch.cam_xpos[camera].copy()
         optical=scratch.cam_xmat[camera].reshape(3,3).T@(point-position)
         gravity=scratch.body('arm5').xmat.reshape(3,3).T@np.array([0.,0.,1.])
         tilt=float(np.arccos(np.clip(reference_gravity@gravity,-1.,1.)))
-        return position,optical,gravity,tilt,float(env.jaw_center(scratch)[2])
+        jaw=env.jaw_center(scratch)
+        reach=float(np.linalg.norm(jaw[:2]-np.asarray(env.base_pose())[:2]))
+        return position,optical,gravity,tilt,float(jaw[2]),reach
     def residual(angles):
-        position,optical,gravity,_,jaw_height=geometry(angles)
+        position,optical,gravity,_,jaw_height,reach=geometry(angles)
         return np.r_[optical[:2]*3.,(-optical[2]-distance_m),
             max(min_camera_height_m-position[2],0.)*30.,(angles-start)*.00003,
             [max(minimum_jaw_height_m-jaw_height,0.)*30.] if minimum_jaw_height_m is not None else np.empty(0),
+            [max(reach-maximum_jaw_reach_m,0.)*30.] if maximum_jaw_reach_m is not None else np.empty(0),
             (gravity-reference_gravity)*8. if maximum_hand_tilt_deg is not None else np.empty(0)]
     seeds=(start,[90.,90.,90.,90.,90.],
            [50.,120.,30.,0.,90.],[130.,120.,30.,0.,90.],
@@ -116,7 +122,7 @@ def plan_camera_view(env,point,*,gripper,distance_m,min_camera_height_m,check=la
             bounds=([0.]*5,[180.]*4+[270.]),max_nfev=150)
         # Recompute FK: an optimiser's success flag or reported residual can
         # never replace the actual geometric constraints.
-        position,optical,_,tilt,jaw_height=geometry(fit.x)
+        position,optical,_,tilt,jaw_height,reach=geometry(fit.x)
         lateral=float(np.linalg.norm(optical[:2]));range_error=abs(float(-optical[2]-distance_m))
         height_deficit=max(float(min_camera_height_m-position[2]),0.)
         cost=lateral+range_error+height_deficit
@@ -124,6 +130,7 @@ def plan_camera_view(env,point,*,gripper,distance_m,min_camera_height_m,check=la
             best_cost=cost;best_errors=(lateral,range_error,height_deficit)
         if optical[2]<-.035 and lateral<=.04 and range_error<=.04 and height_deficit<=.008:
             if minimum_jaw_height_m is not None and jaw_height<minimum_jaw_height_m-.008:continue
+            if maximum_jaw_reach_m is not None and reach>maximum_jaw_reach_m:continue
             if maximum_hand_tilt_deg is not None:
                 if np.rad2deg(tilt)>maximum_hand_tilt_deg:continue
                 # Check the same joint-space segment used by move_angles;

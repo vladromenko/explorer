@@ -164,3 +164,38 @@ def test_internal_viewpoint_drive_is_declared_to_shared_executor(tmp_path,monkey
     port.support=support
     try:assert port.operations()['support'](None)==dict(outcome='success',base_moved=True)
     finally:port.close()
+
+
+@pytest.mark.parametrize('time,evidence',[(0.,{}),(130.,{'shape':'raised_walls_with_visible_opening'})])
+def test_navigation_requires_observed_recent_destination_even_if_camera_points_up(tmp_path,monkeypatch,time,evidence):
+    port=setup(tmp_path,[],monkeypatch)
+    port.env.data.time=time
+    port.env.model=SimpleNamespace(camera=lambda name:SimpleNamespace(id=0))
+    port.env.data.cam_xmat=np.array([np.diag([1.,1.,-1.]).ravel()])
+    port.destination={'bounds_max':[.6,.4,.30],'evidence':evidence,'simulation_time':0.}
+    port.survey_destination=lambda *args,**kwargs:pytest.fail('No navigation hint is permitted')
+    try:
+        result=port.carry(None)
+        assert result['outcome']=='unknown'
+        assert 'измеренного положения' in result['reason']
+    finally:port.close()
+
+
+def test_unreachable_preferred_optical_distance_does_not_prevent_a_safe_view(tmp_path,monkeypatch):
+    port=setup(tmp_path,[],monkeypatch)
+    port.env.command=np.r_[np.full(5,90.),170.,0.,0.,0.]
+    port.destination=dict(center=[.6,.3,.2],bounds_max=[.7,.4,.3])
+    calls=[]
+    def view(env,point,**kwargs):
+        calls.append(kwargs['distance_m'])
+        if len(calls)<3:raise ValueError('Requested optical distance is outside the arm workspace')
+        return SimpleNamespace(command=env.command[:6].copy())
+    monkeypatch.setattr('simulator.inspection_planning.plan_camera_view',view)
+    monkeypatch.setattr('simulator.inspection_planning.check_observed_box_path',lambda *a,**kw:None)
+    port.verify_hold=lambda *a,**kw:dict(outcome='success',evidence={'frame_id':'tracked'})
+    port.verify_stationary_hold=port.verify_hold
+    port.move_angles=lambda *a,**kw:None
+    try:
+        assert port.reorient_for_destination(None)['outcome']=='success'
+        assert len(calls)==3 and len(set(calls))==3
+    finally:port.close()

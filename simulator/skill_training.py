@@ -92,6 +92,7 @@ def propose(state):
 
 
 def update_search(state,reports):
+    searched_group=state['phase_group']
     grouped={i:[] for i in range(4)}
     for row in reports:grouped[row['candidate']].append(row)
     if any(len(rows)!=2 for rows in grouped.values()):raise ValueError('Paired search batch incomplete')
@@ -105,6 +106,11 @@ def update_search(state,reports):
     if improved:
         state['incumbent']=dict(state['batch']['population'][chosen]);state['stagnation']=0
     else:state['stagnation']+=1
+    # Lack of progress in grasp, navigation and placement are different
+    # diagnoses. The former shared counter stopped after eight TOTAL rounds,
+    # even if a newly reached stage had barely been explored.
+    counters=state.setdefault('phase_stagnation',{})
+    counters[searched_group]=0 if improved else counters.get(searched_group,0)+1
     elite=sorted(eligible,key=rank,reverse=True)[:2]
     for name,(lo,hi,_,phase) in PARAMETERS.items():
         if phase!=state['phase_group']:continue
@@ -115,6 +121,7 @@ def update_search(state,reports):
     chosen_rows=grouped[chosen]
     groups=Counter(row['failure_group'] for row in chosen_rows if row['success'] is not True)
     if groups:state['phase_group']=groups.most_common(1)[0][0]
+    state['stagnation']=counters.get(state['phase_group'],0)
     state['last_selection']=dict(candidate=chosen,improved=improved,
         baseline_scores=[r['score'] for r in grouped[0]],selected_scores=[r['score'] for r in chosen_rows])
     return all(row['success'] is True for row in chosen_rows)
@@ -186,8 +193,9 @@ class SkillTraining:
         values=parameters()
         state=dict(schema=1,id=self.id,created=time.time(),state='queued',task_id=task_id,scene_recipe=scene_recipe,
             scene_profile='sock_variants_v1' if task_id in ('sock_basket','cloth_basket') else 'baseline',
-            algorithm='phase_local_cross_entropy_policy_search_v1',seed=seed,generation=0,
-            options=dict(attempts=attempts,hours=hours,workers=workers),phase_group='place',stagnation=0,
+            algorithm='observed_curriculum_cross_entropy_v2',seed=seed,generation=0,
+            options=dict(attempts=attempts,hours=hours,workers=workers),phase_group='pick',stagnation=0,
+            phase_stagnation={},curriculum_pairs_passed=0,
             incumbent=values,mean=dict(values),std={k:(s[1]-s[0])*.30 for k,s in PARAMETERS.items()},
             episodes=[],active_workers=[],completed_attempts=0,simulation_ready=False,physical_ready=False,
             automatic_hardware_execution=False,controller=execution_fingerprint(),
@@ -311,9 +319,16 @@ class SkillTraining:
                     population=propose(state)
                     # Paired candidates use identical scenes. User basket and
                     # varied socks are followed by the unchanged wider profile.
-                    offset=(state['generation']%3)*10
-                    seeds=([state['seed']+4+offset,state['seed']+14+offset]
-                        if state['generation']<3 else [state['seed']+100+state['generation']*2+i for i in range(2)])
+                    if state['algorithm']=='observed_curriculum_cross_entropy_v2':
+                        # Keep a paired training challenge until it is solved.
+                        # Otherwise every round changes BOTH the policy and
+                        # its failure scene, destroying a meaningful curriculum.
+                        offset=state.get('curriculum_pairs_passed',0)*100
+                        seeds=[state['seed']+4+offset,state['seed']+14+offset]
+                    else:
+                        offset=(state['generation']%3)*10
+                        seeds=([state['seed']+4+offset,state['seed']+14+offset]
+                            if state['generation']<3 else [state['seed']+100+state['generation']*2+i for i in range(2)])
                     specs=[self._spec(state,params,i,seed) for i,params in enumerate(population) for seed in seeds]
                     batch=dict(population=population,specs=specs,results=[]);state['batch']=batch;self.save(state)
                 done={r['episode_id'] for r in state['episodes'] if r['status']=='complete'}
@@ -342,9 +357,13 @@ class SkillTraining:
                     simulation_ready=False,physical_ready=False))
                 self.save(state);progress(state)
                 if all_success:
-                    self._qualify(state,stopped,progress);return state
+                    state['curriculum_pairs_passed']=state.get('curriculum_pairs_passed',0)+1
+                    if state['algorithm']!='observed_curriculum_cross_entropy_v2' or state['curriculum_pairs_passed']>=3:
+                        self._qualify(state,stopped,progress);return state
+                    state.update(phase_stagnation={},stagnation=0,phase_group='pick')
+                    self.save(state)
                 if state['stagnation']>=8:
-                    state.update(state='needs_diagnosis',reason='Восемь разных поисковых раундов не улучшили результат; бесконечный повтор остановлен')
+                    state.update(state='needs_diagnosis',reason='Восемь поисковых раундов одного этапа не улучшили результат: '+state['phase_group']+'; требуется исправление причины')
                     self.save(state);return state
             state.update(state='budget_paused',reason='Бюджет попыток завершён; все результаты и лучшая политика сохранены')
         except InterruptedError:

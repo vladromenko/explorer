@@ -41,7 +41,7 @@ def test_proposals_change_only_empirically_blocked_skill_and_are_reproducible(tm
     assert len({json.dumps(p,sort_keys=True) for p in population})==4
     for p in population:
         assert parameters(p)==p
-        assert all(p[k]==state['incumbent'][k] for k,spec in PARAMETERS.items() if spec[3]!='place')
+        assert all(p[k]==state['incumbent'][k] for k,spec in PARAMETERS.items() if spec[3]!=state['phase_group'])
 
 
 def paired(state,scores):
@@ -56,6 +56,49 @@ def test_search_cannot_improve_average_by_regressing_worst_paired_scene(tmp_path
     assert not update_search(state,reports)
     assert state['last_selection']['candidate']==2
     assert state['incumbent']==state['batch']['population'][2]
+
+
+def test_stagnation_is_local_to_the_stage_instead_of_stopping_a_new_skill(tmp_path):
+    state=SkillTraining(tmp_path,'a1'*6).create(attempts=100)
+    for _ in range(7):
+        state['phase_group']='pick'
+        rows=paired(state,[[3,3]]*4)
+        for row in rows:row['failure_group']='pick'
+        update_search(state,rows)
+    assert state['stagnation']==7
+    rows=paired(state,[[11,11]]*4)
+    update_search(state,rows)
+    assert state['phase_group']=='place' and state['stagnation']==0
+    assert state['phase_stagnation']['pick']==8
+
+
+def test_curriculum_solves_three_training_pairs_before_independent_qualification(tmp_path,monkeypatch):
+    trainer=SkillTraining(tmp_path,'b1'*6);trainer.create(attempts=24)
+    seeds=[];qualified=[]
+    def batch(state,specs,*args):
+        seeds.append({s['scene_seed'] for s in specs})
+        rows=[dict(episode_id=s['episode_id'],candidate=s['candidate'],seed=s['scene_seed'],
+            status='complete',split='train',score=100.,success=True,failure_group='place') for s in specs]
+        state['episodes']+=rows;state['completed_attempts']+=len(rows);return rows
+    monkeypatch.setattr(trainer,'_batch',batch)
+    monkeypatch.setattr(trainer,'_qualify',lambda state,*args:qualified.append(state['curriculum_pairs_passed']))
+    result=trainer.run()
+    assert qualified==[3] and result['completed_attempts']==24
+    assert len(set.union(*seeds))==6
+    assert not set.union(*seeds).intersection(seed for group in result['validation_seeds'] for seed in group)
+
+
+def test_unsolved_curriculum_reuses_same_pair_for_comparable_policy_updates(tmp_path,monkeypatch):
+    trainer=SkillTraining(tmp_path,'c1'*6);trainer.create(attempts=16)
+    seen=[]
+    def batch(state,specs,*args):
+        seen.append({s['scene_seed'] for s in specs})
+        rows=[dict(episode_id=s['episode_id'],candidate=s['candidate'],seed=s['scene_seed'],status='complete',
+            split='train',score=3.,success=False,failure_group='pick') for s in specs]
+        state['episodes']+=rows;state['completed_attempts']+=len(rows);return rows
+    monkeypatch.setattr(trainer,'_batch',batch)
+    trainer.run()
+    assert len(seen)==2 and seen[0]==seen[1]
 
 
 def test_budget_is_finite_and_saves_policy_without_claiming_readiness(tmp_path,monkeypatch):

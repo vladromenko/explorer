@@ -118,9 +118,46 @@ class AutomaticLearning:
             self.event(value,'pausing' if self.active_id==identifier else 'operator_paused','Останавливаю работников; записи сохраняются')
         return value
 
-    def resume(self,identifier):
+    def revision_available(self,value):
+        if value['state'] not in ('needs_diagnosis','validation_failed','failed'):return False
+        from .skill_workshop import execution_fingerprint
+        current=execution_fingerprint()['sha256']
+        for task in value.get('tasks',[]):
+            path=self.root/'skill-training'/identity(task['training_id'])/'state.json'
+            if path.is_file() and json.loads(path.read_text()).get('controller',{}).get('sha256')!=current:
+                return True
+        return False
+
+    def resume(self,identifier,*,attempts=None):
         with self.mutex:
             value=self.get(identifier)
+            if value.get('superseded_by'):return self.get(value['superseded_by'])
+            if self.revision_available(value):
+                # A code correction is a NEW controller experiment, not a
+                # retroactive change to old failed episodes/checksums. Keep
+                # one linked continuation and make retries idempotent.
+                import copy
+                from .skill_workshop import execution_fingerprint
+                controller=execution_fingerprint()['sha256']
+                new_id=hashlib.sha256((identifier+':'+controller).encode()).hexdigest()[:12]
+                target=self.folder/(new_id+'.json')
+                if target.is_file():updated=self.get(new_id)
+                else:
+                    budget=copy.deepcopy(value['budget'])
+                    if attempts is not None:
+                        if type(attempts) is not int or not 8<=attempts<=1000:raise ValueError('Некорректный бюджет продолжения')
+                        budget['attempts']=attempts
+                    tasks=[dict(task_id=t['task_id'],recipe=validate_recipe(t['recipe']),
+                        training_id=secrets.token_hex(6),state='queued') for t in value['tasks']]
+                    updated=dict(schema=1,id=new_id,text=value['text'],created=time.time(),state='queued',
+                        parent_id=identifier,budget=budget,tasks=tasks,events=[],elapsed_s=0.,
+                        plan=copy.deepcopy(value['plan']),compiled=copy.deepcopy(value['compiled']),
+                        simulation_ready=False,physical_ready=False,automatic_hardware_execution=False,
+                        implementation_update=dict(controller_sha256=controller,previous_request=identifier,
+                            historical_attempts_counted_for_qualification=False))
+                    self.event(updated,'queued','Продолжение после исправления исполнителя; прежние результаты сохранены')
+                value['superseded_by']=new_id;self.save(value);self.resume_queue()
+                return updated
             if value['state'] not in PAUSED:raise ValueError('Эту задачу нельзя продолжить без разбора причины')
             if self.active_id==identifier:raise ValueError('Дождитесь полной остановки работников')
             if value['state']=='budget_paused':

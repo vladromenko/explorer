@@ -7,6 +7,16 @@ from simulator.multiview_container import combine_registered_container
 from simulator.rgbd_observation import extract_candidates,ObservationRefused
 
 
+def test_cropped_lower_wall_does_not_move_the_observed_opening():
+    from simulator.multiview_container import opening_displacement
+    first=dict(bounds_min=[.32,.20,.08],bounds_max=[.57,.45,.30])
+    cropped=dict(bounds_min=[.32,.20,.22],bounds_max=[.57,.45,.30])
+    assert opening_displacement(first,cropped)==pytest.approx(0.)
+    for shift in ([.07,0.,0.],[0.,0.,.07]):
+        moved={k:(np.asarray(v)+shift).tolist() for k,v in first.items()}
+        assert opening_displacement(first,moved)>.06
+
+
 def capture(identifier,bx,shift,stamp,*,hole=True):
     k=dict(fx=100.,fy=100.,cx=63.5,cy=63.5)
     pose=np.diag([1.,-1.,-1.,1.]);pose[:3,3]=[bx,0.,1.]

@@ -13,7 +13,12 @@ class GroundedSkillPort(SimulatorSkillPort):
         if kind!='object':return super().estimate(ctx,kind)
         frame=self.scene(ctx)
         detections=self.detector.detect(self.env.render_rgb('wrist'),self.query,frame['frame_id'])
-        item=associate(detections,frame['low_objects'],frame)
+        try:item=associate(detections,frame['low_objects'],frame)
+        except ValueError as error:
+            # An ambiguous crop needs a new sensor viewpoint. It must not
+            # bypass the existing bounded re-observation/reframing protocol.
+            from .rgbd_observation import ObservationRefused
+            raise ObservationRefused(str(error)) from error
         self.semantic_frames.append(frame['frame_id'])
         return dict(item,frame_id=frame['frame_id'],simulation_time=frame['simulation_time'])
 

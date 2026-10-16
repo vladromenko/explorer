@@ -349,7 +349,10 @@ class ExplorerEnv(gym.Env):
                                      ("llink2_Joint", -1), ("rlink3_Joint", -1),
                                      ("llink3_Joint", 1)):
                 scratch.qpos[self.model.joint(name).qposadr[0]] = multiplier*q[5]
-            mujoco.mj_forward(self.model, scratch)
+            # IK consumes only own-robot geometry. Computing contacts, cloth
+            # constraints and dynamics at every optimiser evaluation is both
+            # unnecessary and very costly; actual actions still use mj_step.
+            mujoco.mj_kinematics(self.model, scratch)
             position = (self.jaw_center(scratch)-target)*10.
             axis = scratch.body("arm5").xmat.reshape(3, 3)[:, 2]
             orientation = (axis-np.array([0., 0., -1.]))*.65 if downward else np.zeros(3)

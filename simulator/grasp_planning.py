@@ -33,7 +33,7 @@ def solve_pick_ik(env,point,gripper,*,check=lambda:None):
         q=servo_to_joint([*angles,gripper]);scratch.qpos[env.joint_q]=q
         for name,m in (('rlink2_Joint',1),('llink1_Joint',1),('llink2_Joint',-1),('rlink3_Joint',-1),('llink3_Joint',1)):
             scratch.qpos[env.model.joint(name).qposadr[0]]=m*q[5]
-        mujoco.mj_forward(env.model,scratch)
+        mujoco.mj_kinematics(env.model,scratch)
         return env.jaw_center(scratch)-target,scratch.body('arm5').xmat.reshape(3,3)[:,2]
     def residual(angles):
         position,axis=errors(angles)
@@ -47,6 +47,23 @@ def solve_pick_ik(env,point,gripper,*,check=lambda:None):
             plans.append((float(np.linalg.norm(residual(fit.x))),fit.x))
     if not plans:raise ValueError('Нет точного захвата в допустимом наклоне кисти')
     return np.r_[min(plans,key=lambda row:row[0])[1],gripper]
+
+
+def plan_gripper_closure(env,point,*,check=lambda:None):
+    """Compensate the four-bar jaw translation throughout closure.
+
+    Interpolating just the two endpoint joint poses sweeps the pads away from
+    the measured material patch. Each waypoint instead solves the same world
+    point at the actual linkage opening. Only own-robot FK is consulted.
+    """
+    branch=copy.copy(env);branch.command=env.command.copy()
+    commands=[]
+    for opening in np.linspace(30.,170.,29):
+        check()
+        command=solve_pick_ik(branch,point,float(opening),check=check)
+        commands.append(command);branch.command[:6]=command
+    commands=np.asarray(commands)
+    return commands
 
 
 def observed_pick_patch(record,target,base_pose,*,fraction=.25,preferred_xyz=None):
@@ -161,29 +178,44 @@ def plan_pick_stance(env,target,record,destination,*,check=lambda:None,preferred
         q=servo_to_joint(command);scratch.qpos[env.joint_q]=q
         for name,m in (('rlink2_Joint',1),('llink1_Joint',1),('llink2_Joint',-1),('rlink3_Joint',-1),('llink3_Joint',1)):
             scratch.qpos[env.model.joint(name).qposadr[0]]=m*q[5]
-        mujoco.mj_forward(env.model,scratch)
+        mujoco.mj_kinematics(env.model,scratch)
         if np.linalg.norm(branch.jaw_center(scratch)-point)>.003:
             raise ValueError('No remaining IK margin for odometry and fresh depth correction')
-    for fraction in (.12,.20,.30,.40,.50):
+    # Use the actual learnable fraction, rather than snapping every proposal
+    # to one of five hard-coded percentiles. Mecanum translation can also
+    # approach the middle from a side instead of always pinching the near end.
+    low_bounds=_chassis_geometry_bounds(env,env.data,maximum_height=hi[2]+uncertainty+.012)
+    basket_bounds=_chassis_geometry_bounds(env,env.data,
+        maximum_height=float(destination['bounds_max'][2])+float(destination['uncertainty_m'])+.012)
+    def swept_clearance(bounds,base,obstacle):
+        delta=base-pose[:2]
+        lower=bounds[:,0,:2]+np.minimum(delta,0.)
+        upper=bounds[:,1,:2]+np.maximum(delta,0.)
+        padding=float(obstacle['uncertainty_m'])
+        gaps=np.maximum(np.maximum(np.asarray(obstacle['bounds_min'])[:2]-padding-upper,
+            lower-np.asarray(obstacle['bounds_max'])[:2]-padding),0.)
+        return float(np.linalg.norm(gaps,axis=1).min())
+    fractions=sorted(set((.12,.20,.30,.40,.50,float(preferred_fraction))),
+        key=lambda f:abs(f-preferred_fraction))
+    for fraction in fractions:
         point=observed_pick_patch(record,target,pose,fraction=fraction)
         grasp=np.r_[point[:2],max(.017,float(point[2])+surface_offset)]
-        for stand_off in (.24,.22,.26,.20,.28,.18):
-            check();base=point[:2]-stand_off*body_direction
-            if np.linalg.norm(base-pose[:2])>.22:continue
-            branch.data.qpos[address:address+2]=base;mujoco.mj_forward(branch.model,branch.data)
-            clearance=low_chassis_clearance(branch,branch.data,target)
-            if clearance<.04:continue
-            # Reserve the 20 mm verification probe and physical tracking sag
-            # above the existing rim + 90 mm transport requirement.
-            lift=np.r_[base+.16*body_direction,max(.24,float(destination['bounds_max'][2])+lift_clearance)]
-            try:
-                reserve_ik(grasp,30.);reserve_ik(grasp,170.)
-                reserve_ik([*point[:2],.10],170.)
-                reserve_ik(lift,170.,downward=False)
-            except ValueError:continue
-            # Prefer a supported middle section rather than the cloth's narrow
-            # end merely because it saves a few centimetres of driving.
-            choices.append(((abs(fraction-preferred_fraction),float(np.linalg.norm(base-pose[:2]))),
-                PickStance(base,point,lift,fraction,clearance)))
-    if not choices:raise ObservationRefused('Не найден подъезд без наезда на ткань с достижимым захватом и подъёмом')
-    return min(choices,key=lambda choice:choice[0])[1]
+        choices=[]
+        for angle in (0.,-40.,40.,-65.,65.):
+            yaw=pose[2]+np.deg2rad(angle);direction=np.array([np.cos(yaw),np.sin(yaw)])
+            for stand_off in (.24,.22,.26,.20,.28,.18):
+                check();base=point[:2]-stand_off*direction
+                if np.linalg.norm(base-pose[:2])>.22:continue
+                clearance=swept_clearance(low_bounds,base,target)
+                if clearance<.04 or swept_clearance(basket_bounds,base,destination)<.012:continue
+                branch.data.qpos[address:address+2]=base;mujoco.mj_kinematics(branch.model,branch.data)
+                lift=np.r_[base+.16*body_direction,max(.24,float(destination['bounds_max'][2])+lift_clearance)]
+                try:
+                    reserve_ik(grasp,30.);reserve_ik(grasp,170.)
+                    reserve_ik([*point[:2],.10],170.)
+                    reserve_ik(lift,170.,downward=False)
+                except ValueError:continue
+                choices.append(((float(np.linalg.norm(base-pose[:2])),abs(angle)),
+                    PickStance(base,point,lift,fraction,clearance)))
+        if choices:return min(choices,key=lambda choice:choice[0])[1]
+    raise ObservationRefused('Не найден подъезд без наезда на ткань с достижимым захватом и подъёмом')

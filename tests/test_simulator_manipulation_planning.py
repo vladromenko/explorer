@@ -16,6 +16,49 @@ def apply_kinematic_pose(env,command):
     mujoco.mj_forward(env.model,env.data)
 
 
+def test_geometry_only_planning_matches_full_forward_without_changing_physics():
+    env=ExplorerEnv(render=False)
+    try:
+        fast=mujoco.MjData(env.model);full=mujoco.MjData(env.model)
+        for command in ([90.,30.,140.,40.,81.,170.],[50.,110.,40.,10.,120.,30.]):
+            fast.qpos[:]=env.data.qpos;full.qpos[:]=env.data.qpos
+            q=servo_to_joint(command);fast.qpos[env.joint_q]=q;full.qpos[env.joint_q]=q
+            mujoco.mj_kinematics(env.model,fast);mujoco.mj_camlight(env.model,fast)
+            mujoco.mj_forward(env.model,full)
+            np.testing.assert_allclose(fast.geom_xpos,full.geom_xpos,atol=1e-12)
+            np.testing.assert_allclose(fast.geom_xmat,full.geom_xmat,atol=1e-12)
+            np.testing.assert_allclose(fast.cam_xpos,full.cam_xpos,atol=1e-12)
+            np.testing.assert_allclose(fast.cam_xmat,full.cam_xmat,atol=1e-12)
+            np.testing.assert_array_equal(fast.qpos,full.qpos)
+    finally:env.close()
+
+
+def test_release_hover_keeps_wrist_housing_clear_of_a_tall_observed_rim():
+    from simulator.manipulation_planning import plan_release_hover
+    from simulator.inspection_planning import check_observed_box_path
+    env=ExplorerEnv(render=False)
+    try:
+        base=env.model.joint('base_free').qposadr[0]
+        env.data.qpos[base:base+2]=[.09,.325]
+        env.command[:6]=[90.,131.,34.,28.,81.,170.]
+        apply_kinematic_pose(env,env.command[:6]);before=env.data.qpos.copy()
+        box=dict(bounds_min=[.32,.20,.08],bounds_max=[.575,.45,.30],uncertainty_m=.012)
+        plan=plan_release_hover(env,box,fraction=.22,margin=.12)
+        assert .344<=plan.target[0]<=.551 and plan.target[2]>=.335
+        assert plan.command[5]==170.
+        check_observed_box_path(env,plan.command,box)
+        apply_kinematic_pose(env,plan.command)
+        assert np.linalg.norm(env.jaw_center()-plan.target)<=.008
+        np.testing.assert_allclose(plan.open_command[:5],plan.command[:5])
+        assert plan.open_command[5]==30. and plan.withdraw_command[5]==30.
+        env.command[:6]=plan.command
+        for command in [plan.open_command,*plan.roll_commands,plan.withdraw_command]:
+            check_observed_box_path(env,command,box)
+            env.command[:6]=command;apply_kinematic_pose(env,command)
+        env.data.qpos[:]=before
+    finally:env.close()
+
+
 def test_hold_probe_preserves_orientation_instead_of_using_free_pitch():
     env=ExplorerEnv(render=False)
     try:

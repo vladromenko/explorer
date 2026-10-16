@@ -39,11 +39,12 @@ def test_pick_stance_keeps_chassis_away_from_the_entire_cloth_and_checks_high_li
     from simulator.environment import ExplorerEnv
     env=ExplorerEnv(render=False);record,target=material();before=env.data.qpos.copy()
     try:
-        stance=plan_pick_stance(env,target,record,{'bounds_max':[.59,.47,.3]})
+        stance=plan_pick_stance(env,target,record,{'bounds_min':[.33,.21,.08],
+            'bounds_max':[.59,.47,.3],'uncertainty_m':.012})
         assert stance.chassis_clearance_m>=.04
         assert stance.lift_xyz[2]==pytest.approx(.42)
         assert np.linalg.norm(stance.base_xy-np.asarray(env.base_pose()[:2]))<=.22
-        assert stance.grasp_xyz[0]<target['center'][0]
+        assert target['bounds_min'][0]<stance.grasp_xyz[0]<target['bounds_max'][0]
         np.testing.assert_array_equal(env.data.qpos,before)
     finally:env.close()
 
@@ -66,4 +67,30 @@ def test_position_first_pick_reaches_material_without_trading_position_for_wrist
         assert -scratch.body('arm5').xmat.reshape(3,3)[2,2]>=np.cos(np.deg2rad(15.))
         np.testing.assert_array_equal(env.data.qpos,before)
         with pytest.raises(ValueError):solve_pick_ik(env,[.6,0.,.017],gripper)
+    finally:env.close()
+
+
+def test_closure_keeps_pad_center_on_observed_material_throughout_linkage_motion():
+    import mujoco
+    from simulator.environment import ExplorerEnv
+    from simulator.explorer_model import servo_to_joint
+    from simulator.grasp_planning import plan_gripper_closure
+    env=ExplorerEnv(render=False);before=env.data.qpos.copy();commands=env.command.copy()
+    point=np.array([.21,0.,.017])
+    try:
+        path=plan_gripper_closure(env,point)
+        assert path[0,5]==30. and path[-1,5]==170.
+        assert np.all(np.diff(path[:,5])>0.)
+        scratch=mujoco.MjData(env.model);scratch.qpos[:]=before
+        # Include interior positions actually followed by the controller, not
+        # just the optimised waypoints. Never read cloth state or contacts.
+        for a,b in zip(path[:-1],path[1:]):
+            for u in (0.,.5,1.):
+                q=servo_to_joint(a+(b-a)*u);scratch.qpos[env.joint_q]=q
+                for name,m in (('rlink2_Joint',1),('llink1_Joint',1),('llink2_Joint',-1),('rlink3_Joint',-1),('llink3_Joint',1)):
+                    scratch.qpos[env.model.joint(name).qposadr[0]]=m*q[5]
+                mujoco.mj_forward(env.model,scratch)
+                assert np.linalg.norm(env.jaw_center(scratch)-point)<=.003
+        np.testing.assert_array_equal(env.data.qpos,before)
+        np.testing.assert_array_equal(env.command,commands)
     finally:env.close()
