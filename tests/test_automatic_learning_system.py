@@ -21,6 +21,7 @@ def deterministic_memory(monkeypatch):
     probe=lambda:dict(total_bytes=24*2**30,available_bytes=12*2**30)
     monkeypatch.setattr('simulator.resource_budget.memory_budget',probe)
     monkeypatch.setattr('simulator.skill_training.memory_budget',probe)
+    monkeypatch.setattr('simulator.automatic_learning.keep_awake',lambda:None)
 
 
 def interpretation(tasks=('sock_basket',),**changes):

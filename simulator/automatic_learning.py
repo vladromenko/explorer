@@ -38,6 +38,12 @@ def legacy_post(route,body):
     with urllib.request.urlopen(request,timeout=5) as response:return json.load(response)
 
 
+def keep_awake():
+    if sys.platform!='darwin':return None
+    try:return subprocess.Popen(['/usr/bin/caffeinate','-i','-w',str(__import__('os').getpid())],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    except OSError:return None
+
+
 class AutomaticLearning:
     def __init__(self,root,*,planner=None,trainer_factory=SkillTraining,scene_builder=None):
         self.root=Path(root);self.folder=self.root/'automatic-requests';self.folder.mkdir(parents=True,exist_ok=True)
@@ -209,12 +215,13 @@ class AutomaticLearning:
     def advance(self,identifier):
         value=self.get(identifier)
         if value['state'] in PAUSED|TERMINAL:return value
-        started=time.monotonic();elapsed=value.get('elapsed_s',0.)
+        started=time.monotonic();elapsed=value.get('elapsed_s',0.);awake=None
         def budget_cancelled():
             if elapsed+time.monotonic()-started>=value['budget']['hours']*3600:
                 value['budget_exhausted']=True;return True
             return self.cancelled(identifier)
         try:
+            if 'plan' not in value or not self.simulator_busy():awake=keep_awake()
             self.ensure_models(value)
             if 'plan' not in value:
                 from .resource_budget import memory_budget
@@ -296,6 +303,10 @@ class AutomaticLearning:
             self.event(value,'budget_paused' if value.get('budget_exhausted') else 'operator_paused','Вычисления остановлены; прогресс сохранён')
         except Exception as error:self.event(value,'operator_paused' if self.cancelled(identifier) else 'failed',str(error))
         finally:
+            if awake is not None and awake.poll() is None:
+                awake.terminate()
+                try:awake.wait(timeout=2)
+                except subprocess.TimeoutExpired:awake.kill();awake.wait()
             value['elapsed_s']=elapsed+time.monotonic()-started;self.save(value)
         return value
 
