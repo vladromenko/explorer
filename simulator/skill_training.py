@@ -304,7 +304,7 @@ class SkillTraining:
             state.update(state='running',reason=None,pause_kind=None);self.save(state)
             if state.get('validation_pending'):
                 self._qualify(state,stopped,progress);return state
-            while state['completed_attempts']+8<=state['options']['attempts']:
+            while state.get('batch') is not None or state['completed_attempts']+8<=state['options']['attempts']:
                 if stopped():raise InterruptedError('Обучение сохранено на паузе')
                 batch=state.get('batch')
                 if batch is None:

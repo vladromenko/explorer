@@ -160,3 +160,20 @@ def test_service_restart_preserves_results_and_exposes_explicit_resume(tmp_path)
     assert recovered['state']=='interrupted' and recovered['episodes']==state['episodes']
     assert trainer.pause.exists()
     assert trainer.run()['state']=='interrupted'
+
+
+def test_resume_finishes_existing_paired_batch_near_budget_without_adding_attempts(tmp_path,monkeypatch):
+    trainer=SkillTraining(tmp_path,'4'*12);state=trainer.create(attempts=100)
+    specs=[trainer._spec(state,state['incumbent'],i,906160004+j) for i in range(4) for j in range(2)]
+    state.update(state='operator_paused',completed_attempts=93,generation=11,
+        batch=dict(population=propose(state),specs=specs,results=[]))
+    prior=[dict(episode_id='prior'+str(i),seed=i,status='complete',split='train') for i in range(88)]
+    current=[dict(episode_id=s['episode_id'],candidate=s['candidate'],seed=s['scene_seed'],status='complete',split='train',score=3.,success=False,failure_group='pick') for s in specs[:5]]
+    state['episodes']=prior+current;trainer.save(state);sizes=[]
+    def batch(saved,pending,*args):
+        sizes.append(len(pending));rows=[dict(episode_id=s['episode_id'],candidate=s['candidate'],seed=s['scene_seed'],status='complete',split='train',score=3.,success=False,failure_group='pick') for s in pending]
+        saved['episodes']+=rows;saved['completed_attempts']+=len(rows);return rows
+    monkeypatch.setattr(trainer,'_batch',batch)
+    result=trainer.run(resume=True)
+    assert sizes==[3] and result['completed_attempts']==96 and result['options']['attempts']==100
+    assert result['state']=='budget_paused' and not result.get('batch')
