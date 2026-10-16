@@ -3,3 +3,5 @@
 .worker-cameras{display:grid;gap:24px}.worker h3{font-size:14px;color:#9db0c9;margin-bottom:12px}.worker-cameras:has(.worker:nth-child(2)){grid-template-columns:1fr 1fr}.worker-cameras:has(.worker:nth-child(2)) .cameras{grid-template-columns:1fr}.worker-cameras:has(.worker:nth-child(2)) figure:nth-child(2){display:none}@media(max-width:720px){.worker-cameras:has(.worker:nth-child(2)){grid-template-columns:1fr}}
 
 footer button{background:#223147;color:#aebed2;font-size:12px;font-weight:500;padding:9px 13px}footer button:hover{background:#304258}
+
+.frame-wait{aspect-ratio:4/3;display:grid;place-items:center;color:#8da1bc;font-size:13px}
