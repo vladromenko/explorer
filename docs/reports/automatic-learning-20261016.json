@@ -1,7 +1,7 @@
 {
-  "at": 1792110362.237587,
+  "at": 1792112274.138904,
   "scope": "Automated simulation learning on Mac; no robot connection",
-  "installed": false,
+  "installed": true,
   "model_readiness": {
     "planner": "Qwen3.5 4B local existing model",
     "vision": "IDEA-Research/grounding-dino-tiny",
@@ -47,23 +47,65 @@
     "subtests_passed": 3,
     "language_intent_real_model": true,
     "explicit_dimensions_compiled": true,
-    "source_checks": true
+    "source_checks": true,
+    "browser_contracts_passed": true,
+    "browser_test_real_mutations": 0,
+    "production_camera_jpeg_verified": true,
+    "real_pause_resume_passed": true,
+    "pause_signals_independent_of_progress": true,
+    "restart_recovery_and_queue_pause_tested": true,
+    "interrupted_paired_batch_budget_regression_passed": true
   },
   "evidence": {
     "grounding": "/Volumes/ExplorerSim/ExplorerSim/maintenance/grounding-smoke-20261016/result.json",
-    "language_scene": "/Volumes/ExplorerSim/ExplorerSim/maintenance/automatic-language-scene-20261016.json"
+    "language_scene": "/Volumes/ExplorerSim/ExplorerSim/maintenance/automatic-language-scene-20261016.json",
+    "pause_resume": "/Volumes/ExplorerSim/ExplorerSim/maintenance/automatic-real-pause-resume-20261016.json",
+    "maintenance_preserved_history": "/Volumes/ExplorerSim/ExplorerSim/maintenance/automatic-control-maintenance-20261016.json",
+    "ui_screenshot": "/Volumes/ExplorerSim/ExplorerSim/maintenance/automatic-learning-final-20261016.png",
+    "actual_scene": "/Volumes/ExplorerSim/ExplorerSim/automatic-scenes/e256de3e4d76/sock_basket"
   },
   "current_legacy_queue": {
     "id": "535d5aa82e3f",
-    "state": "running",
-    "completed_attempts": 56,
+    "state": "needs_diagnosis",
+    "completed_attempts": 64,
     "interrupted": false,
-    "actor_code_modified": false
+    "actor_code_modified": false,
+    "reason": "Eight search rounds without improvement; stopped naturally"
   },
   "release_gates": {
     "new_real_end_to_end_physics_success": false,
     "model_training_complete": false,
     "simulation_ready": false,
-    "physical_ready": false
-  }
+    "physical_ready": false,
+    "automated_request_to_physics_execution_verified": true
+  },
+  "url": "http://127.0.0.1:8767/",
+  "installed_source": "/Users/vladromenko/Library/Application Support/ExplorerSimulator/automatic-source-a097080a6819",
+  "installed_revision": "99a990b9b3f070ceb6a5786cb008003534fbb68d",
+  "installed_files_sha256_verified": 421,
+  "current_automatic_request": {
+    "id": "e256de3e4d76",
+    "training_id": "a53a81f5f24e",
+    "state": "running",
+    "completed_attempts": 34,
+    "paired_search_budget": 96,
+    "active_workers": 3,
+    "required_independent_validation_scenes": 30,
+    "recipe_sha256": "9c00b1e131127da35831ce1dda24058d83ea97e45bf830d1b8498573eaa3d0cc",
+    "dimensions_cm": {
+      "task_id": "sock_basket",
+      "basket_height_cm": 30.0,
+      "basket_diameter_cm": 25.0
+    },
+    "model_weights_training": false,
+    "method": "closed-loop skill control parameter search; pretrained language and vision inference",
+    "old_parameter_warm_start": "compatible critical motion hashes; historical attempts not counted toward new validation"
+  },
+  "limitations": [
+    "Four checked task families; no arbitrary new actions generated",
+    "Other task families wired and tested but not physically qualified across held-out scenes",
+    "Shutdown/unmount UI contract tested with mutations intercepted; active training not unmounted",
+    "No robot connection or hardware acceptance performed",
+    "Stopping on bounded failure is intentional; failed training is never packaged as a ready skill"
+  ]
 }
