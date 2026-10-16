@@ -68,9 +68,45 @@ def outcome_score(report):
 def failure_group(report):
     stage=report.get('execution',{}).get('stage',report.get('phase'))
     if stage=='find':return 'view'
-    if stage=='carry':return 'pick' if 'Транспортная поза' in str(report.get('reason')) else 'view'
+    if stage=='carry':
+        reason=str(report.get('reason','')).lower()
+        return 'view' if any(s in reason for s in ('маршрут','лидар','проход','положения корзины')) else 'pick'
     if stage in ('support','release','withdraw','verify_place'):return 'place'
     return 'pick'
+
+
+def phase_credit(report):
+    """Diagnostic learning feedback AFTER stopping, not acceptance evidence.
+
+    A previously placed object on one easy scene must not outweigh a better
+    pickup on the hard scene. Command completion provides small shaping
+    credits; verified physical pickup has a separate, protected tier.
+    """
+    execution=report.get('execution',{});truth=report.get('independent_physics_outcome',{})
+    passed={e['stage'] for e in execution.get('events',[]) if e['result'].get('outcome')=='success'}
+    pick=sum(s in passed for s in ('find','approach','reobserve','pregrasp','grasp','lift'))
+    if truth.get('lifted') is True:pick=8
+    if execution.get('held_verified') is True and truth.get('lifted') is True:pick=9
+    place=sum(s in passed for s in ('support','release','withdraw'))
+    if truth.get('success') is True:place=4
+    if report.get('success') is True and execution.get('placed_verified') is True and truth.get('success') is True:place=5
+    return dict(pick=float(pick),view=float(sum(s in passed for s in ('find','carry'))),place=float(place))
+
+
+def search_mode(state):
+    """A stalled controller changes its search subspace, not its physics."""
+    group=state['phase_group'];rounds=state.get('phase_stagnation',{}).get(group,0)
+    if group=='pick':
+        modes=(('geometry',('pick_fraction','pick_lateral_fraction','pick_standoff_m','pick_approach_angle_deg')),
+               ('contact',('pick_fraction','pick_lateral_fraction','pick_surface_offset_m','closure_duration_s')),
+               ('hold_view',('initial_lift_height_m','lift_clearance_m','pick_fraction')))
+    elif group=='place':
+        modes=(('inspection',('reorientation_distance_m','reorientation_camera_height_m','destination_standoff_m',
+                              'verification_distance_m','verification_aim_fraction')),
+               ('release',('release_fraction','release_margin_m','release_roll_deg')),
+               ('withdraw',('withdraw_height_m','verification_distance_m','verification_aim_fraction')))
+    else:modes=(('view',('view_baseline_m','inspection_reach_m','inspection_height_m')),)
+    return modes[(rounds//2)%len(modes)]
 
 
 def propose(state):
@@ -78,10 +114,13 @@ def propose(state):
     incumbent=parameters(state['incumbent']);group=state['phase_group']
     rng=np.random.default_rng(state['seed']+state['generation']*1009)
     population=[incumbent]
+    adaptive=state.get('algorithm')=='observed_curriculum_cross_entropy_v3'
+    mode,names=search_mode(state) if adaptive else ('legacy',tuple(k for k,s in PARAMETERS.items() if s[3]==group))
+    if adaptive:state['search_mode']=mode
     for index in range(3):
         choice=dict(incumbent)
         for name,(lo,hi,_,phase) in PARAMETERS.items():
-            if phase!=group:continue
+            if phase!=group or name not in names:continue
             # Regular exploration across the full permitted range prevents
             # a collapsed distribution from repeating identical failed moves.
             value=(rng.uniform(lo,hi) if index==2 or state['stagnation']>=3 else
@@ -96,13 +135,24 @@ def update_search(state,reports):
     grouped={i:[] for i in range(4)}
     for row in reports:grouped[row['candidate']].append(row)
     if any(len(rows)!=2 for rows in grouped.values()):raise ValueError('Paired search batch incomplete')
+    adaptive=state.get('algorithm')=='observed_curriculum_cross_entropy_v3'
     def rank(index):
         scores=[row['score'] for row in grouped[index]]
+        if adaptive:
+            credits=sorted(row.get('phase_credit',{}).get(searched_group,row['score']) for row in grouped[index])
+            return (*credits,min(scores),sum(scores)/len(scores))
         return min(scores),sum(scores)/len(scores)
     baseline=rank(0)
-    eligible=[i for i in grouped if rank(i)[0]>=baseline[0]]
-    chosen=max(eligible,key=lambda i:(rank(i)[1],rank(i)[0],-i))
-    improved=rank(chosen)[1]>baseline[1]
+    def preserves_learned_pick(index):
+        # Preserve a proven pickup on EACH paired scene; downstream scores
+        # can vary while refining the blocked phase. No seed enters the actor.
+        if not adaptive:return True
+        for base,row in zip(sorted(grouped[0],key=lambda r:r.get('seed',0)),sorted(grouped[index],key=lambda r:r.get('seed',0))):
+            if base.get('phase_credit',{}).get('pick',0)>=9 and row.get('phase_credit',{}).get('pick',0)<9:return False
+        return True
+    eligible=[i for i in grouped if rank(i)[0]>=baseline[0] and preserves_learned_pick(i)]
+    chosen=max(eligible,key=lambda i:(rank(i),-i) if adaptive else (rank(i)[1],rank(i)[0],-i))
+    improved=rank(chosen)>baseline if adaptive else rank(chosen)[1]>baseline[1]
     if improved:
         state['incumbent']=dict(state['batch']['population'][chosen]);state['stagnation']=0
     else:state['stagnation']+=1
@@ -120,10 +170,29 @@ def update_search(state,reports):
         if state['stagnation']>=3:state['std'][name]=.35*(hi-lo)
     chosen_rows=grouped[chosen]
     groups=Counter(row['failure_group'] for row in chosen_rows if row['success'] is not True)
-    if groups:state['phase_group']=groups.most_common(1)[0][0]
+    if groups:
+        state['phase_group']=(next(g for g in ('pick','view','place') if g in groups) if adaptive else groups.most_common(1)[0][0])
     state['stagnation']=counters.get(state['phase_group'],0)
     state['last_selection']=dict(candidate=chosen,improved=improved,
         baseline_scores=[r['score'] for r in grouped[0]],selected_scores=[r['score'] for r in chosen_rows])
+    if adaptive:
+        state['last_selection'].update(objective='lexicographic_worst_phase_first',phase=searched_group,
+            baseline_credit=list(baseline),selected_credit=list(rank(chosen)),search_mode=state.get('search_mode'))
+        # Keep a bounded archive of empirically useful policies and the
+        # concrete failure that caused automatic exploration/restart.
+        if improved:
+            archive=state.setdefault('skill_archive',{}).setdefault(searched_group,[])
+            archive.append(dict(generation=state['generation'],parameters=dict(state['incumbent']),
+                episode_ids=[r.get('episode_id') for r in chosen_rows],credit=list(rank(chosen))))
+            del archive[:-16]
+        if not improved and counters[searched_group]%2==0:
+            action=dict(generation=state['generation'],phase=searched_group,
+                from_mode=state.get('search_mode'),next_mode=search_mode(state)[0],
+                reasons=dict(Counter(str(r.get('reason','unknown')) for r in chosen_rows if not r['success'])),
+                action='change_search_subspace_and_expand',evidence_thresholds_changed=False)
+            state.setdefault('recovery_history',[]).append(action)
+            for name,(lo,hi,_,phase) in PARAMETERS.items():
+                if phase==searched_group:state['std'][name]=.4*(hi-lo)
     return all(row['success'] is True for row in chosen_rows)
 
 
@@ -160,7 +229,7 @@ def episode(spec):
         result=dict(episode_id=spec['episode_id'],candidate=spec['candidate'],seed=spec['scene_seed'],
             split=spec.get('split','train'),
             status='paused' if report['state']=='paused' else 'complete',success=report.get('success') is True,
-            score=outcome_score(report),failure_group=failure_group(report),stage=report.get('phase'),
+            score=outcome_score(report),phase_credit=phase_credit(report),failure_group=failure_group(report),stage=report.get('phase'),
             reason=report.get('reason'),report=str(folder/'skill-workshops/attempt/state.json'),
             domain_variation=env.domain_variation)
         write_json(folder/'result.json',result);return result
@@ -193,7 +262,7 @@ class SkillTraining:
         values=parameters()
         state=dict(schema=1,id=self.id,created=time.time(),state='queued',task_id=task_id,scene_recipe=scene_recipe,
             scene_profile='sock_variants_v1' if task_id in ('sock_basket','cloth_basket') else 'baseline',
-            algorithm='observed_curriculum_cross_entropy_v2',seed=seed,generation=0,
+            algorithm='observed_curriculum_cross_entropy_v3',seed=seed,generation=0,
             options=dict(attempts=attempts,hours=hours,workers=workers),phase_group='pick',stagnation=0,
             phase_stagnation={},curriculum_pairs_passed=0,
             incumbent=values,mean=dict(values),std={k:(s[1]-s[0])*.30 for k,s in PARAMETERS.items()},
@@ -311,7 +380,8 @@ class SkillTraining:
                 return self.pause.exists()
             state.update(state='running',reason=None,pause_kind=None);self.save(state)
             if state.get('validation_pending'):
-                self._qualify(state,stopped,progress);return state
+                self._qualify(state,stopped,progress)
+                if not self._continue_after_validation(state):return state
             while state.get('batch') is not None or state['completed_attempts']+8<=state['options']['attempts']:
                 if stopped():raise InterruptedError('Обучение сохранено на паузе')
                 batch=state.get('batch')
@@ -319,11 +389,11 @@ class SkillTraining:
                     population=propose(state)
                     # Paired candidates use identical scenes. User basket and
                     # varied socks are followed by the unchanged wider profile.
-                    if state['algorithm']=='observed_curriculum_cross_entropy_v2':
+                    if state['algorithm'] in ('observed_curriculum_cross_entropy_v2','observed_curriculum_cross_entropy_v3'):
                         # Keep a paired training challenge until it is solved.
                         # Otherwise every round changes BOTH the policy and
                         # its failure scene, destroying a meaningful curriculum.
-                        offset=state.get('curriculum_pairs_passed',0)*100
+                        offset=state.get('curriculum_pairs_passed',0)*100+state.get('validation_round',0)*1000
                         seeds=[state['seed']+4+offset,state['seed']+14+offset]
                     else:
                         offset=(state['generation']%3)*10
@@ -358,11 +428,13 @@ class SkillTraining:
                 self.save(state);progress(state)
                 if all_success:
                     state['curriculum_pairs_passed']=state.get('curriculum_pairs_passed',0)+1
-                    if state['algorithm']!='observed_curriculum_cross_entropy_v2' or state['curriculum_pairs_passed']>=3:
-                        self._qualify(state,stopped,progress);return state
+                    if state['algorithm'] not in ('observed_curriculum_cross_entropy_v2','observed_curriculum_cross_entropy_v3') or state['curriculum_pairs_passed']>=3:
+                        self._qualify(state,stopped,progress)
+                        if not self._continue_after_validation(state):return state
+                        continue
                     state.update(phase_stagnation={},stagnation=0,phase_group='pick')
                     self.save(state)
-                if state['stagnation']>=8:
+                if state['stagnation']>=8 and state['algorithm']!='observed_curriculum_cross_entropy_v3':
                     state.update(state='needs_diagnosis',reason='Восемь поисковых раундов одного этапа не улучшили результат: '+state['phase_group']+'; требуется исправление причины')
                     self.save(state);return state
             state.update(state='budget_paused',reason='Бюджет попыток завершён; все результаты и лучшая политика сохранены')
@@ -378,6 +450,33 @@ class SkillTraining:
             state['active_workers']=[];self.save(state);fcntl.flock(lock,fcntl.LOCK_UN);lock.close()
         return state
 
+    def _continue_after_validation(self,state):
+        """Failed tests trigger NEW training challenges, never test leakage.
+
+        Quarantine used holdouts permanently. Do not fit to their poses or
+        replay them as demonstrations. The next final check uses entirely new
+        independent scenes and the SAME unchanged acceptance criteria.
+        """
+        if (state.get('algorithm')!='observed_curriculum_cross_entropy_v3' or
+            state['state']!='validation_failed' or state['completed_attempts']+8>state['options']['attempts']):return False
+        used=[r for group in state.get('validation',[]) for r in group.get('results',[])]
+        failures=Counter(r['failure_group'] for r in used if not r.get('success') and r.get('failure_group'))
+        state.setdefault('validation_history',[]).append(dict(round=state.get('validation_round',0),
+            validation=state['validation'],seeds=state['validation_seeds'],parameters=dict(state['incumbent']),
+            training_use_forbidden=True))
+        state['validation_round']=state.get('validation_round',0)+1
+        shift=state['validation_round']*1_000_000
+        state['validation_seeds']=[list(range(base+shift,base+shift+10)) for base in
+            (1300160000,1400160000,1500160000)[:len(state['validation_seeds'])]]
+        phase=next((g for g in ('pick','view','place') if g in failures),'pick')
+        state.update(state='running',validation=[],validation_batches=[],validation_pending=False,
+            curriculum_pairs_passed=0,phase_group=phase,phase_stagnation={},stagnation=0,
+            reason='Проверка выявила слабый этап; продолжаю на новых учебных сценах: '+phase)
+        state.setdefault('recovery_history',[]).append(dict(generation=state['generation'],phase=phase,
+            action='fresh_curriculum_after_failed_holdout',validation_round=state['validation_round'],
+            old_holdouts_quarantined=True,evidence_thresholds_changed=False))
+        self.save(state);return True
+
     def _qualify(self,state,cancelled,progress):
         from .curriculum import report_passes
         state['state']='validating';state['validation_pending']=True
@@ -385,6 +484,8 @@ class SkillTraining:
         training={r['seed'] for r in state['episodes'] if r.get('split','train')=='train'}
         reserved=[seed for group in state['validation_seeds'] for seed in group]
         if len(set(reserved))!=10*len(state['validation_seeds']) or training.intersection(reserved):raise RuntimeError('Validation scene overlap')
+        quarantined={seed for old in state.get('validation_history',[]) for group in old['seeds'] for seed in group}
+        if quarantined.intersection(reserved):raise RuntimeError('Previously examined holdout reused for final qualification')
         for index,seeds in enumerate(state['validation_seeds']):
             if len(state['validation'])>index:continue
             if len(state['validation_batches'])<=index:

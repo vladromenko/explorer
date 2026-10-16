@@ -18,6 +18,38 @@ class ObservationRefused(RuntimeError):
     """The camera evidence cannot support an unambiguous fresh target."""
 
 
+def held_material_patches(record,jaw_xyz,reference_rgb):
+    """Measure local non-self material near the pads, not a cloth centroid.
+
+    A deforming cloth's whole silhouette may include a tail on the floor.
+    That centroid cannot track a grasp. These are explicitly LOCAL patches;
+    they prove neither that the whole item is clear nor its semantic identity.
+    The unchanged hold motion/freshness/pixel/floor gates run at the caller.
+    """
+    if record.get('rgb') is None:return None
+    frame=record['frame'];depth=np.asarray(record['depth'],float)
+    robot=np.asarray(record['robot_depth'],float);rgb=np.asarray(record['rgb'])
+    if robot.shape!=depth.shape or rgb.shape!=(*depth.shape,3):return []
+    reference=np.asarray(reference_rgb,float);jaw=np.asarray(jaw_xyz,float)
+    if reference.shape!=(3,) or jaw.shape!=(3,) or not np.isfinite(np.r_[reference,jaw]).all():return []
+    points=deproject_depth(depth,frame['intrinsics'],frame['optical_to_world'])
+    colors=rgb.astype(float)/255.;chromatic=colors/np.maximum(colors.sum(-1,keepdims=True),.05)
+    reference=reference/max(.05,float(reference.sum()))
+    selected=(np.isfinite(points).all(-1)&(depth>=.035)&(depth<=2.5)&
+        np.all(abs(points-jaw)<[.04,.04,.035],axis=-1)&
+        (np.linalg.norm(chromatic-reference,axis=-1)<.08)&
+        ~(np.isfinite(robot)&(robot>0)&(abs(depth-robot)<=.008)))
+    result=[]
+    for cloud,pixels in _clusters(points,selected,min_pixels=100):
+        lo,hi=np.quantile(cloud,[.02,.98],axis=0)
+        result.append(dict(center=np.median(cloud,axis=0).tolist(),bounds_min=lo.tolist(),bounds_max=hi.tolist(),
+            uncertainty_m=.012,appearance=dict(rgb_median=np.median(colors[tuple(pixels.T)],axis=0).tolist()),
+            evidence=dict(visible_pixels=len(pixels),self_occlusion_not_resolved=False,
+                source='registered_RGBD_local_material_patch',whole_object_clearance_proven=False,
+                semantic_identity_proven=False)))
+    return result
+
+
 def deproject_depth(depth, intrinsics, optical_to_world):
     """Return HxWx3 world points; depth is metric optical Z, not ray length."""
     depth = np.asarray(depth, dtype=float)
@@ -264,7 +296,7 @@ def observe_environment(env,*,raw_output=None) -> dict[str, Any]:
     stamp = float(env.data.time)
     digest = hashlib.sha256(matrix.tobytes()+depth.tobytes()).hexdigest()[:16]
     if raw_output is not None:
-        raw_output.update(depth=depth.copy(),robot_depth=None if robot_depth is None else robot_depth.copy())
+        raw_output.update(depth=depth.copy(),robot_depth=None if robot_depth is None else robot_depth.copy(),rgb=rgb.copy())
     return dict(schema=1, frame_id=f'wrist_depth:{stamp:.9f}:{digest}',
                 simulation_time=stamp, captured_monotonic=time.monotonic(),
                 intrinsics=intrinsics, optical_to_world=matrix.tolist(),

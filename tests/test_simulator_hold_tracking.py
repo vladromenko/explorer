@@ -199,3 +199,61 @@ def test_unreachable_preferred_optical_distance_does_not_prevent_a_safe_view(tmp
         assert port.reorient_for_destination(None)['outcome']=='success'
         assert len(calls)==3 and len(set(calls))==3
     finally:port.close()
+
+
+def test_empty_grasp_requires_two_fresh_unambiguous_floor_observations(tmp_path,monkeypatch):
+    port=setup(tmp_path,[],monkeypatch)
+    floor=candidate(z=.015);floor['bounds_min'][2]=.005;floor['bounds_max'][2]=.025
+    port.target=dict(floor);port.env.data.time=0.
+    frames=iter([dict(frame_id='floor1',simulation_time=0.,object_candidates=[floor]),
+                 dict(frame_id='floor2',simulation_time=.5,object_candidates=[floor])])
+    port.scene=lambda ctx:next(frames)
+    port.tick=lambda *a,**kw:setattr(port.env.data,'time',port.env.data.time+.05)
+    try:
+        result=port.verify_hold(None)
+        assert result['outcome']=='failure'
+        assert result['evidence']['source']=='two_frame_ground_reacquisition'
+        assert result['evidence']['frames']==['floor1','floor2']
+        assert port.before_hold is None
+    finally:port.close()
+
+
+@pytest.mark.parametrize('second',['same_frame','different_color','two_objects','missing'])
+def test_uncertain_floor_reacquisition_cannot_authorise_opening_or_retry(tmp_path,monkeypatch,second):
+    port=setup(tmp_path,[],monkeypatch)
+    floor=candidate(z=.015);floor['bounds_min'][2]=.005;floor['bounds_max'][2]=.025
+    port.target=dict(floor);port.env.data.time=0.
+    other=dict(floor,appearance={'rgb_median':[.05,.1,.8]})
+    choices={'same_frame':[floor],'different_color':[other],'two_objects':[floor,floor],'missing':[]}
+    frames=iter([dict(frame_id='floor1',simulation_time=0.,object_candidates=[floor]),
+                 dict(frame_id='floor1' if second=='same_frame' else 'floor2',simulation_time=.5,object_candidates=choices[second])])
+    port.scene=lambda ctx:next(frames);port.tick=lambda *a,**kw:None
+    port.move_angles=lambda *a,**kw:pytest.fail('opened or moved under ambiguous evidence')
+    try:
+        assert port.verify_hold(None)['outcome']=='unknown'
+        assert port.recover_grasp(None)['outcome']=='unknown'
+    finally:port.close()
+
+
+def test_impossible_complete_closure_is_refused_before_descending(tmp_path,monkeypatch):
+    port=setup(tmp_path,[],monkeypatch);port.grasp_xyz=np.array([.21,0.,.008])
+    monkeypatch.setattr('simulator.grasp_planning.plan_gripper_closure',lambda *a,**kw:
+        (_ for _ in ()).throw(ValueError('interior opening infeasible')))
+    port.move_angles=lambda *a,**kw:pytest.fail('descended before complete closure preflight')
+    try:
+        with pytest.raises(ValueError,match='interior opening'):port.grasp(None)
+    finally:port.close()
+
+
+def test_initial_lift_does_not_rotate_into_high_transport_before_visual_proof(tmp_path,monkeypatch):
+    port=setup(tmp_path,[],monkeypatch);port.grasp_xyz=np.array([.21,0.,.008])
+    calls=[]
+    monkeypatch.setattr('simulator.grasp_planning.solve_pick_ik',lambda env,point,gripper,**kw:
+        calls.append(list(point)) or np.r_[np.full(5,90.),170.])
+    port.env.solve_ik=lambda *a,**kw:pytest.fail('attempted unconfirmed high transport')
+    port.move_angles=lambda *a,**kw:None
+    try:
+        assert port.lift(None)['outcome']=='success'
+        assert calls==[[.21,0.,port.parameters['initial_lift_height_m']]]
+        assert port.raise_verified_hold(None)['outcome']=='unknown'
+    finally:port.close()

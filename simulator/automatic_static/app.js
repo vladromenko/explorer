@@ -4,6 +4,7 @@ const labels={queued:'В очереди',planning:'Разбор задачи',wa
 const paused=new Set(['operator_paused','memory_paused','budget_paused','interrupted']);
 const active=new Set(['pausing','queued','planning','waiting_for_current','building_scene','training','running','validating','packaging','waiting_for_memory']);
 const phases={pick:'Захват и подъём',view:'Подъезд и обзор',place:'Размещение'};
+const searchModes={geometry:'точка и сторона подхода',contact:'смыкание и контакт',hold_view:'подъём и проверка захвата',inspection:'обзор корзины',release:'отпускание',withdraw:'отвод и проверка размещения',view:'ракурс камеры'};
 const workerPhases={initializing:'Подготовка сцены',skill_find:'Поиск предмета',skill_find_destination:'Осмотр корзины или подноса',skill_approach:'Подъезд',skill_reobserve:'Повторное измерение',skill_pregrasp:'Подход захвата',skill_grasp:'Захват',skill_lift:'Подъём',skill_verify_hold:'Проверка удержания',skill_carry:'Перенос',skill_reorient_destination:'Проверка обзора над опорой',skill_support:'Подход к месту размещения',skill_release:'Отпускание',skill_withdraw:'Отвод руки',skill_verify_place:'Проверка размещения',skill_view_retreat:'Выбор другого ракурса'};
 let token='',snapshot=null,target=null,parent=null,busy=false,signature='',frameAt=0,workerSignature='',disconnecting=false;
 async function api(path,body,retry=true){const response=await fetch(path,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json','X-Explorer-Sim-Token':token},body:JSON.stringify(body)});if(response.status===403&&retry){token=(await api('/api/session',undefined,false)).token;return api(path,body,false);}if(!response.ok){const error=await response.json().catch(()=>({}));throw Error(error.detail||'Ошибка связи');}return response.json();}
@@ -27,7 +28,7 @@ function showCurrent(s){
  const completed=training?.completed||0,total=training?.total||row.budget?.attempts||100;
  $('progress').max=total;$('progress').value=completed;$('attempts').textContent=training?.state==='validating'?`Проверено ${training.validation_completed} из ${training.validation_total} независимых сцен`:`Завершено ${completed} из ${total} попыток`;
  if(training?.state==='validating'){$('progress').max=training.validation_total;$('progress').value=training.validation_completed;}
- $('workers').textContent=`Исполнителей: ${training?.active_workers?.length||0}`;$('phase').textContent=(phases[training?.phase]?'Подбор: '+phases[training.phase]:labels[row.state]||row.state);
+ $('workers').textContent=`Исполнителей: ${training?.active_workers?.length||0}`;$('phase').textContent=(phases[training?.phase]?'Подбор: '+phases[training.phase]:labels[row.state]||row.state)+(searchModes[training?.search_mode]?' · '+searchModes[training.search_mode]:'')+(training?.automatic_recoveries?' · смен стратегии: '+training.automatic_recoveries:'');
  $('current-control').hidden=!(active.has(row.state)||paused.has(row.state));$('current-control').textContent=paused.has(row.state)?'Продолжить':'Пауза';
  if(training){
   const views=training.active_workers?.length?training.active_workers:[{slot:0}];

@@ -25,6 +25,7 @@ class SimulatorSkillPort:
         self.target=None;self.destination=None;self.grasp_xyz=None;self.before_hold=None;self.release_xyz=None
         self.destination_views=[];self.surveys=[]
         self.transport_poses=[]
+        self.grasp_recoveries=[];self.grasp_failures=0
         self.depth_records=[];self.depth_manifest=[]
         (self.folder/'depth').mkdir()
         self.frames=[];self.handle=(self.folder/'commands.jsonl').open('w')
@@ -154,11 +155,15 @@ class SimulatorSkillPort:
         self.check(ctx);self.sequence+=1
         raw={};data=observe_environment(self.env,raw_output=raw)
         if raw.get('robot_depth') is not None:
-            record=dict(frame=data,depth=raw['depth'],robot_depth=raw['robot_depth'],
+            record=dict(frame=data,depth=raw['depth'],robot_depth=raw['robot_depth'],rgb=raw.get('rgb'),
                 command=self.env.command[:6].copy(),base_pose=np.asarray(self.env.base_pose()).copy())
+            if self.target is not None and self.target.get('appearance',{}).get('rgb_median') is not None:
+                from .rgbd_observation import held_material_patches
+                data['held_candidates']=held_material_patches(record,self.env.jaw_center(),self.target['appearance']['rgb_median'])
             self.depth_records.append(record);self.depth_records=self.depth_records[-24:]
             path=self.folder/'depth'/f'{self.sequence:04d}.npz'
             np.savez_compressed(path,depth=raw['depth'],robot_depth=raw['robot_depth'],
+                rgb=raw.get('rgb'),
                 optical_to_world=np.asarray(data['optical_to_world']),intrinsics_json=json.dumps(data['intrinsics']),
                 frame_id=data['frame_id'],simulation_time=data['simulation_time'],command=record['command'],
                 base_pose=record['base_pose'])
@@ -182,7 +187,7 @@ class SimulatorSkillPort:
     def inspect(self,ctx):
         base=np.asarray(self.env.base_pose())
         direction=np.array([math.cos(base[2]),math.sin(base[2])])
-        self.move([*(base[:2]+.23*direction),.15],30.,ctx)
+        self.move([*(base[:2]+self.parameters['inspection_reach_m']*direction),self.parameters['inspection_height_m']],30.,ctx)
 
     def survey_destination(self,ctx,*,max_views=8,transport_required=True):
         """A finite robot-relative survey; partial geometry only guides camera aim.
@@ -325,7 +330,9 @@ class SimulatorSkillPort:
         if self.target is None:return dict(outcome='unknown',reason='Нет наблюдаемой цели')
         stance=plan_pick_stance(self.env,self.target,self.depth_records[-1],self.destination,
             check=lambda:self.check(ctx),preferred_fraction=self.parameters['pick_fraction'],
-            lift_clearance=self.parameters['lift_clearance_m'],surface_offset=self.parameters['pick_surface_offset_m'])
+            lift_clearance=self.parameters['lift_clearance_m'],surface_offset=self.parameters['pick_surface_offset_m'],
+            lateral_fraction=self.parameters['pick_lateral_fraction'],preferred_standoff=self.parameters['pick_standoff_m'],
+            preferred_angle=self.parameters['pick_approach_angle_deg'],initial_lift_height=self.parameters['initial_lift_height_m'])
         self.pick_fraction=stance.fraction;self.pick_lift_height=float(stance.lift_xyz[2])
         self.planned_pick_xyz=stance.grasp_xyz.copy()
         destination=stance.base_xy
@@ -366,18 +373,37 @@ class SimulatorSkillPort:
             return dict(outcome='unknown',reason='Свежая цель не совпадает с предыдущим наблюдением')
         from .grasp_planning import observed_pick_patch
         self.target=new;self.grasp_xyz=observed_pick_patch(self.depth_records[-1],new,self.env.base_pose(),
-            fraction=getattr(self,'pick_fraction',.25),preferred_xyz=getattr(self,'planned_pick_xyz',None))
+            fraction=getattr(self,'pick_fraction',.25),lateral_fraction=self.parameters['pick_lateral_fraction'],
+            preferred_xyz=getattr(self,'planned_pick_xyz',None))
         return dict(outcome='success',target=new,evidence=dict(frame_id=new['frame_id'],
             measured_pick_point_m=self.grasp_xyz.tolist()))
 
     def pregrasp(self,ctx):
-        from .grasp_planning import solve_pick_ik
+        from .grasp_planning import solve_pick_ik,plan_gripper_closure,observed_pick_patch
+        from .rgbd_observation import ObservationRefused
         self.env.phase='skill_pregrasp'
         if self.grasp_xyz is None:return dict(outcome='unknown',reason='Нет свежей точки захвата')
-        goal=solve_pick_ik(self.env,[*self.grasp_xyz[:2],max(.10,float(self.grasp_xyz[2])+.08)],30.,
-            check=lambda:self.check(ctx))
+        # Base tracking and a fresh crop can change IK feasibility. Re-plan
+        # from the newly measured cloud while the arm is still above it.
+        points=[self.grasp_xyz.copy()]
+        for fraction in (getattr(self,'pick_fraction',.25),.20,.30,.40,.50):
+            try:points.append(observed_pick_patch(self.depth_records[-1],self.target,self.env.base_pose(),
+                fraction=fraction,lateral_fraction=self.parameters['pick_lateral_fraction']))
+            except (ValueError,ObservationRefused):continue
+        errors=[];goal=None
+        for point in points:
+            self.check(ctx)
+            xyz=point.copy();xyz[2]=max(.017,float(xyz[2])+self.parameters['pick_surface_offset_m'])
+            try:
+                path=plan_gripper_closure(self.env,xyz,check=lambda:self.check(ctx))
+                candidate=solve_pick_ik(self.env,[*point[:2],max(.10,float(point[2])+.08)],30.,check=lambda:self.check(ctx))
+                solve_pick_ik(self.env,[*point[:2],self.parameters['initial_lift_height_m']],170.,check=lambda:self.check(ctx))
+            except ValueError as error:errors.append(str(error));continue
+            self.grasp_xyz=point;self.closure_path=path;goal=candidate;break
+        if goal is None:return dict(outcome='failure',reason='Свежая геометрия не допускает полного смыкания: '+str(errors[-1] if errors else 'нет участка'))
         self.move_angles(goal,ctx)
-        return dict(outcome='success')
+        return dict(outcome='success',evidence=dict(complete_closure_preflight=True,
+            measured_pick_point_m=self.grasp_xyz.tolist(),closure_waypoints=len(self.closure_path)))
 
     def grasp(self,ctx):
         from .grasp_planning import solve_pick_ik,plan_gripper_closure
@@ -387,12 +413,12 @@ class SimulatorSkillPort:
         # explicitly estimated, pending the same real gripper calibration as
         # the existing simulator contact geometry; it is not cloth truth.
         xyz=self.grasp_xyz.copy();xyz[2]=max(.017,float(xyz[2])+self.parameters['pick_surface_offset_m'])
-        goal=solve_pick_ik(self.env,xyz,30.,check=lambda:self.check(ctx))
-        self.move_angles(goal,ctx,duration=1.5)
+        # Recheck before any descent, including partial retries/resumes.
         path=plan_gripper_closure(self.env,xyz,check=lambda:self.check(ctx))
+        self.move_angles(path[0],ctx,duration=1.5)
         # Follow one continuous smooth closure, without stopping at every IK
         # waypoint. Preserve the same velocity/acceleration/jerk controller.
-        duration=max(3.,float(np.max(np.sum(abs(np.diff(path,axis=0)),axis=0)/self.env.velocity_limit))*2.)
+        duration=max(self.parameters['closure_duration_s'],float(np.max(np.sum(abs(np.diff(path,axis=0)),axis=0)/self.env.velocity_limit))*2.)
         count=math.ceil(duration/PERIOD)
         for n in range(count):
             u=(n+1)/count;blend=u*u*u*(10.-15.*u+6.*u*u)
@@ -404,12 +430,10 @@ class SimulatorSkillPort:
     def lift(self,ctx):
         from .grasp_planning import solve_pick_ik
         self.env.phase='skill_lift'
-        goal=solve_pick_ik(self.env,[*self.grasp_xyz[:2],.10],170.,check=lambda:self.check(ctx))
+        goal=solve_pick_ik(self.env,[*self.grasp_xyz[:2],self.parameters['initial_lift_height_m']],170.,check=lambda:self.check(ctx))
         self.move_angles(goal,ctx)
-        pose=np.asarray(self.env.base_pose());direction=np.array([math.cos(pose[2]),math.sin(pose[2])])
-        xyz=[*(pose[:2]+.16*direction),getattr(self,'pick_lift_height',.24)]
-        goal=self.env.solve_ik(xyz,self.env.command[:5],gripper=170.,downward=False)
-        self.move_angles(goal,ctx)
+        # Verify this small lift BEFORE rotating the unconfirmed grasp into
+        # the high transport posture. carry() performs the guarded second lift.
         return dict(outcome='success',evidence=dict(command_only=True))
 
     def verify_hold(self,ctx,probe=True):
@@ -428,8 +452,32 @@ class SimulatorSkillPort:
                 and float(candidate.get('uncertainty_m',1.))<=.02
                 and np.linalg.norm(np.asarray(appearance)/max(.05,sum(appearance))-
                     np.asarray(reference)/max(.05,sum(reference)))<.08)
-        matches=[c for c in frame.get('object_candidates',[]) if np.linalg.norm(np.asarray(c['center'])-jaw)<.08 and associated(c)]
-        if len(matches)!=1:return dict(outcome='unknown',reason='Камера не подтверждает удержание предмета у пальцев')
+        candidates=frame.get('held_candidates')
+        if candidates is None:candidates=frame.get('object_candidates',[])
+        matches=[c for c in candidates if np.linalg.norm(np.asarray(c['center'])-jaw)<.08 and associated(c)]
+        if len(matches)!=1:
+            # Absence near the jaws is not proof of an empty grasp. Recovery
+            # is authorised only by TWO fresh views of the matching material
+            # still on the floor near its last measured location.
+            if probe and self.target is not None:
+                def on_floor(view):
+                    return [c for c in view.get('object_candidates',[]) if associated(c)
+                        and float(c['bounds_max'][2])<.04
+                        and np.linalg.norm(np.asarray(c['center'])[:2]-np.asarray(self.target['center'])[:2])<.06
+                        and np.linalg.norm(np.asarray(c['center'])-np.asarray(self.env.jaw_center()))>.065]
+                ground=on_floor(frame)
+                if len(ground)==1:
+                    for _ in range(10):self.tick(self.env.command[:6],ctx=ctx)
+                    second=self.scene(ctx);again=on_floor(second)
+                    if (second['frame_id']!=frame['frame_id'] and
+                        float(second['simulation_time'])-float(frame['simulation_time'])>=.3 and
+                        len(again)==1 and np.linalg.norm(np.asarray(ground[0]['center'])-again[0]['center'])<.008):
+                        self.empty_grasp_evidence=dict(source='two_frame_ground_reacquisition',
+                            frames=[frame['frame_id'],second['frame_id']],confirmed=True,
+                            simulation_time=float(second['simulation_time']))
+                        return dict(outcome='failure',reason='Два кадра подтверждают: предмет остался на полу',
+                            evidence=self.empty_grasp_evidence)
+            return dict(outcome='unknown',reason='Камера не подтверждает удержание предмета у пальцев')
         if float(matches[0]['bounds_min'][2])<.045:
             return dict(outcome='failure',reason='Предмет не поднят над полом')
         first=matches[0]
@@ -453,7 +501,9 @@ class SimulatorSkillPort:
             lowest_material_height_m=float(first['bounds_min'][2]))
         self.move_angles(probe_plan.command,ctx)
         second=self.scene(ctx);new_jaw=np.asarray(self.env.jaw_center())
-        candidates=[c for c in second.get('object_candidates',[]) if associated(c)
+        observed=second.get('held_candidates')
+        if observed is None:observed=second.get('object_candidates',[])
+        candidates=[c for c in observed if associated(c)
             and np.linalg.norm(np.asarray(c['center'])-new_jaw)<.08]
         if len(candidates)!=1:return dict(outcome='unknown',reason='Повторный кадр не подтверждает удержание')
         moved=np.asarray(candidates[0]['center'])-first['center'];hand_moved=new_jaw-jaw
@@ -469,6 +519,59 @@ class SimulatorSkillPort:
             frames=[frame['frame_id'],second['frame_id']],probe_direction=probe_plan.direction,
             measured_translation_m=float(np.linalg.norm(hand_moved)),measured_rotation_deg=float(np.rad2deg(rotation_change)),
             semantic_identity='unverified_single_geometric_target'))
+
+    def recover_grasp(self,ctx):
+        """Bounded sensor-authorised retry, never an unknown-hold release."""
+        evidence=getattr(self,'empty_grasp_evidence',None)
+        if (not evidence or evidence.get('confirmed') is not True or
+            float(self.env.data.time)-evidence['simulation_time']>2.):
+            return dict(outcome='unknown',reason='Нет свежего доказательства пустого захвата для повторной попытки')
+        self.env.phase='skill_recover_grasp';self.empty_grasp_evidence=None
+        self.before_hold=None;self.grasp_failures+=1
+        # Raise/open without moving the base over fabric. Select another
+        # observed surface percentile; approach() retains all swept-CAD gates.
+        from .grasp_planning import solve_pick_ik
+        goal=solve_pick_ik(self.env,[*self.env.jaw_center()[:2],.12],30.,check=lambda:self.check(ctx))
+        self.move_angles(goal,ctx)
+        self.inspect(ctx);self.target=self.estimate(ctx,'object')
+        previous=self.parameters['pick_fraction']
+        self.parameters['pick_fraction']=(.20 if previous>=.35 else .50)
+        previous_lateral=self.parameters['pick_lateral_fraction']
+        self.parameters['pick_lateral_fraction']=(.25 if previous_lateral>=.5 else .75)
+        result=self.approach(ctx)
+        self.grasp_recoveries.append(dict(attempt=self.grasp_failures,evidence=evidence,
+            old_fraction=previous,new_fraction=self.parameters['pick_fraction'],
+            old_lateral_fraction=previous_lateral,new_lateral_fraction=self.parameters['pick_lateral_fraction'],
+            outcome=result['outcome']))
+        return result
+
+    def raise_verified_hold(self,ctx):
+        """Prepare high transport only after low pickup has visual proof."""
+        if getattr(self,'raised_verified_hold',False):return dict(outcome='success')
+        if self.before_hold is None:return dict(outcome='unknown',reason='Высокий подъём требует подтверждённого захвата')
+        from .manipulation_planning import hand_rotation
+        from .inspection_planning import ObservedMotionViolation
+        from scipy.spatial.transform import Rotation
+        pose=np.asarray(self.env.base_pose());direction=np.array([math.cos(pose[2]),math.sin(pose[2])])
+        xyz=[*(pose[:2]+.16*direction),getattr(self,'pick_lift_height',.24)]
+        goal=self.env.solve_ik(xyz,self.env.command[:5],gripper=170.,downward=False)
+        last=hand_rotation(self.env);ticks=0
+        def guard():
+            nonlocal last,ticks
+            ticks+=1;rotation=hand_rotation(self.env)
+            if Rotation.from_matrix(last.T@rotation).magnitude()>math.radians(3.):
+                raise ObservedMotionViolation('Слишком большой шаг ориентации при высоком подъёме')
+            last=rotation
+            if ticks%4==0:
+                result=self.verify_hold(ctx,probe=False)
+                if result['outcome']!='success':raise ObservedMotionViolation('Высокий подъём: '+result['reason'])
+        # Small angular increments permit feedback during intentional wrist
+        # rotation, as in the already guarded destination inspection skill.
+        duration=max(3.,float(np.sum(abs(goal[:5]-self.env.command[:5])))/.5*PERIOD)
+        if duration>30.:return dict(outcome='unknown',reason='Нет конечного пути высокого подъёма')
+        self.env.phase='skill_raise_verified_hold';self.move_angles(goal,ctx,duration=duration,motion_check=guard)
+        self.raised_verified_hold=True
+        return self.verify_hold(ctx,probe=False)
 
     def verify_stationary_hold(self,ctx):
         """Observe a full second of stationary holding before chassis motion."""
@@ -495,6 +598,8 @@ class SimulatorSkillPort:
         if (box is None or not box.get('evidence') or
             float(self.env.data.time)-float(box.get('simulation_time',-1e6))>120.):
             return dict(outcome='unknown',reason='Нет измеренного положения корзины для локального маршрута')
+        raised=self.raise_verified_hold(ctx)
+        if raised['outcome']!='success':return raised
         held=self.verify_hold(ctx,probe=False)
         if held['outcome']!='success':return held
         view_moved=False
@@ -698,8 +803,9 @@ class SimulatorSkillPort:
         if result['outcome']=='success':return result
         from .inspection_planning import plan_camera_view,check_observed_box_path
         aim=np.asarray(self.destination['center'],float).copy()
-        rim=float(self.destination['bounds_max'][2]);aim[2]=max(.015,rim-.18)
-        for distance in (.20,.30,.40,.50):
+        rim=float(self.destination['bounds_max'][2]);aim[2]=max(.015,rim*self.parameters['verification_aim_fraction'])
+        for distance in sorted(set((.20,.30,.40,.50,self.parameters['verification_distance_m'])),
+                               key=lambda d:abs(d-self.parameters['verification_distance_m'])):
             try:
                 plan=plan_camera_view(self.env,aim,gripper=30.,distance_m=distance,
                     min_camera_height_m=max(.18,rim+.03),check=lambda:self.check(ctx))
@@ -721,6 +827,7 @@ class SimulatorSkillPort:
         finally:
             (self.folder/'destination-surveys.json').write_text(json.dumps(self.surveys,ensure_ascii=False,indent=2))
             (self.folder/'transport-poses.json').write_text(json.dumps(self.transport_poses,ensure_ascii=False,indent=2))
+            (self.folder/'grasp-recoveries.json').write_text(json.dumps(self.grasp_recoveries,ensure_ascii=False,indent=2))
             (self.folder/'depth-records.json').write_text(json.dumps(self.depth_manifest,ensure_ascii=False,indent=2))
             (self.folder/'observations.json').write_text(json.dumps(self.frames,ensure_ascii=False,indent=2))
 
@@ -733,4 +840,4 @@ class SimulatorSkillPort:
                 return result
             return execute
         return {name:declared(getattr(self,name)) for name in ('find','approach','reobserve','pregrasp','grasp',
-            'lift','verify_hold','carry','support','release','withdraw','verify_place')}
+            'lift','verify_hold','recover_grasp','carry','support','release','withdraw','verify_place')}

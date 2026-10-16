@@ -64,7 +64,16 @@ def verify_released_target(first,second,*,destination,held_reference,release_xyz
         prior=[c for c in before_release.get('object_candidates',[]) if _color_matches(c,held_reference)
             and c.get('evidence',{}).get('self_occlusion_not_resolved') is False
             and c.get('evidence',{}).get('visible_pixels',0)>=100]
-        held=[c for c in prior if np.linalg.norm(np.asarray(c['center'])-release_jaw)<.08]
+        # A local observed pad patch can establish the pre-release anchor of
+        # deformable material. Static-object exclusion still uses the FULL
+        # earlier scene above; no hidden pose or synthetic patch is admitted.
+        anchors=before_release.get('held_candidates')
+        if anchors is None:anchors=prior
+        held=[c for c in anchors if _color_matches(c,held_reference)
+            and c.get('evidence',{}).get('self_occlusion_not_resolved') is False
+            and c.get('evidence',{}).get('visible_pixels',0)>=100
+            and float(c.get('uncertainty_m',1.))<=.02
+            and np.linalg.norm(np.asarray(c['center'])-release_jaw)<.08]
         if len(held)!=1:
             return unknown('Нет наблюдаемого предмета у пальцев непосредственно перед отпусканием')
         centers=np.asarray([a[0]['center'],b[0]['center']])

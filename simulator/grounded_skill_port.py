@@ -116,6 +116,9 @@ class GroundedSkillPort(SimulatorSkillPort):
 
     def carry(self,ctx):
         if self.query=='wrapped cookie' and hasattr(self,'delivery_start_xy'):
+            if self.destination is None:return dict(outcome='unknown',reason='Нет измеренного назначения переноса')
+            raised=self.raise_verified_hold(ctx)
+            if raised['outcome']!='success':return raised
             import numpy as np
             from .manipulation_planning import plan_transport_pose,transport_pose_satisfied,hand_rotation
             if np.linalg.norm(np.asarray(self.env.base_pose())[:2]-self.delivery_start_xy)>.4:

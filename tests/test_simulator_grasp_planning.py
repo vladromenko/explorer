@@ -35,6 +35,26 @@ def test_own_robot_or_missing_depth_cannot_supply_a_pick_patch():
     with pytest.raises(ObservationRefused):observed_pick_patch(record,target,[0.,0.,0.])
 
 
+def test_lateral_pick_choice_changes_measured_surface_patch_without_using_scene_labels():
+    record,target=material()
+    left=observed_pick_patch(record,target,[0.,0.,0.],lateral_fraction=.2)
+    right=observed_pick_patch(record,target,[0.,0.,0.],lateral_fraction=.8)
+    assert right[1]-left[1]>.015
+    assert left[2]==right[2]==pytest.approx(.008)
+
+
+def test_local_hold_patch_requires_real_nonself_rgbd_and_preserves_floor_height():
+    from simulator.rgbd_observation import held_material_patches
+    record,_=material();record['rgb']=np.full((*record['depth'].shape,3),[90,45,90],dtype=np.uint8)
+    jaw=np.array([.34,0.,.008]);reference=[90/255,45/255,90/255]
+    patches=held_material_patches(record,jaw,reference)
+    assert patches and patches[0]['bounds_min'][2]<.045
+    assert patches[0]['evidence']['whole_object_clearance_proven'] is False
+    assert held_material_patches(record,jaw,[.05,.1,.8])==[]
+    record['robot_depth']=record['depth'].copy()
+    assert held_material_patches(record,jaw,reference)==[]
+
+
 def test_pick_stance_keeps_chassis_away_from_the_entire_cloth_and_checks_high_lift():
     from simulator.environment import ExplorerEnv
     env=ExplorerEnv(render=False);record,target=material();before=env.data.qpos.copy()

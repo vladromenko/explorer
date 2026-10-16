@@ -66,8 +66,9 @@ def plan_gripper_closure(env,point,*,check=lambda:None):
     return commands
 
 
-def observed_pick_patch(record,target,base_pose,*,fraction=.25,preferred_xyz=None):
+def observed_pick_patch(record,target,base_pose,*,fraction=.25,lateral_fraction=.5,preferred_xyz=None):
     if not .10<=fraction<=.60:raise ValueError('Invalid material percentile')
+    if not .20<=lateral_fraction<=.80:raise ValueError('Invalid lateral material percentile')
     frame=record['frame'];depth=np.asarray(record['depth'],float);robot=np.asarray(record['robot_depth'],float)
     points=deproject_depth(depth,frame['intrinsics'],frame['optical_to_world'])
     lo,hi=np.asarray(target['bounds_min'],float),np.asarray(target['bounds_max'],float)
@@ -82,8 +83,8 @@ def observed_pick_patch(record,target,base_pose,*,fraction=.25,preferred_xyz=Non
     length=float(np.linalg.norm(direction))
     if length<.03:raise ObservationRefused('Предмет слишком близко к центру шасси')
     direction/=length;lateral=np.array([-direction[1],direction[0]])
-    aim=np.quantile(np.einsum('ij,j->i',cloud[:,:2],direction),fraction)*direction+np.median(
-        np.einsum('ij,j->i',cloud[:,:2],lateral))*lateral
+    aim=np.quantile(np.einsum('ij,j->i',cloud[:,:2],direction),fraction)*direction+np.quantile(
+        np.einsum('ij,j->i',cloud[:,:2],lateral),lateral_fraction)*lateral
     if preferred_xyz is not None:aim=np.asarray(preferred_xyz,float)[:2]
     nearest=cloud[np.argmin(np.linalg.norm(cloud[:,:2]-aim,axis=1))]
     if preferred_xyz is not None and np.linalg.norm(nearest[:2]-aim)>.015:
@@ -163,7 +164,8 @@ def low_chassis_clearance(env,data,target):
     return float(np.linalg.norm(gaps,axis=1).min())
 
 
-def plan_pick_stance(env,target,record,destination,*,check=lambda:None,preferred_fraction=.50,lift_clearance=.12,surface_offset=.010):
+def plan_pick_stance(env,target,record,destination,*,check=lambda:None,preferred_fraction=.50,lift_clearance=.12,surface_offset=.010,
+                     lateral_fraction=.5,preferred_standoff=.24,preferred_angle=0.,initial_lift_height=.10):
     import mujoco
     from .explorer_model import servo_to_joint
     pose=np.asarray(env.base_pose(),float);body_direction=np.array([np.cos(pose[2]),np.sin(pose[2])])
@@ -198,12 +200,13 @@ def plan_pick_stance(env,target,record,destination,*,check=lambda:None,preferred
     fractions=sorted(set((.12,.20,.30,.40,.50,float(preferred_fraction))),
         key=lambda f:abs(f-preferred_fraction))
     for fraction in fractions:
-        point=observed_pick_patch(record,target,pose,fraction=fraction)
+        point=observed_pick_patch(record,target,pose,fraction=fraction,lateral_fraction=lateral_fraction)
         grasp=np.r_[point[:2],max(.017,float(point[2])+surface_offset)]
         choices=[]
-        for angle in (0.,-40.,40.,-65.,65.):
+        angles=sorted(set((0.,-40.,40.,-65.,65.,float(preferred_angle))),key=lambda a:abs(a-preferred_angle))
+        for angle in angles:
             yaw=pose[2]+np.deg2rad(angle);direction=np.array([np.cos(yaw),np.sin(yaw)])
-            for stand_off in (.24,.22,.26,.20,.28,.18):
+            for stand_off in sorted(set((.24,.22,.26,.20,.28,.18,float(preferred_standoff))),key=lambda d:abs(d-preferred_standoff)):
                 check();base=point[:2]-stand_off*direction
                 if np.linalg.norm(base-pose[:2])>.22:continue
                 clearance=swept_clearance(low_bounds,base,target)
@@ -212,10 +215,18 @@ def plan_pick_stance(env,target,record,destination,*,check=lambda:None,preferred
                 lift=np.r_[base+.16*body_direction,max(.24,float(destination['bounds_max'][2])+lift_clearance)]
                 try:
                     reserve_ik(grasp,30.);reserve_ik(grasp,170.)
-                    reserve_ik([*point[:2],.10],170.)
+                    reserve_ik([*point[:2],initial_lift_height],170.)
                     reserve_ik(lift,170.,downward=False)
                 except ValueError:continue
-                choices.append(((float(np.linalg.norm(base-pose[:2])),abs(angle)),
+                choices.append(((abs(stand_off-preferred_standoff),abs(angle-preferred_angle),float(np.linalg.norm(base-pose[:2]))),
                     PickStance(base,point,lift,fraction,clearance)))
-        if choices:return min(choices,key=lambda choice:choice[0])[1]
+        # Endpoints alone can be feasible while an intermediate linkage
+        # opening is unreachable. Reserve the WHOLE closing trajectory before
+        # moving the base or descending. No cloth/contact state is consulted.
+        for _,stance in sorted(choices,key=lambda choice:choice[0]):
+            check();branch.data.qpos[address:address+2]=stance.base_xy
+            branch.command=env.command.copy();mujoco.mj_kinematics(branch.model,branch.data)
+            try:plan_gripper_closure(branch,grasp,check=check)
+            except ValueError:continue
+            return stance
     raise ObservationRefused('Не найден подъезд без наезда на ткань с достижимым захватом и подъёмом')

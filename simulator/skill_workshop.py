@@ -131,6 +131,7 @@ def trial(env,root,identifier,task_id,seed,scene_profile='sock_variants_v1',canc
         executor=TaskExecutor(port.operations(),port.observe,guard=lambda ctx:port.check(),
             cancelled=cancelled,total_timeout=900. if scene_recipe and scene_recipe['layout']=='two_rooms_doorway' else 300.,
             stage_timeout=180. if scene_recipe and scene_recipe['layout']=='two_rooms_doorway' else 90.,max_find_attempts=1,
+            max_grasp_attempts=3,
             stop=lambda ctx:port.stop_motion())
         result=executor.execute(dict(task_id=task_id))
         port.stop_motion()

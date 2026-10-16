@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from simulator.skill_parameters import PARAMETERS,parameters
-from simulator.skill_training import (SkillTraining,outcome_score,propose,update_search)
+from simulator.skill_training import (SkillTraining,outcome_score,phase_credit,propose,update_search)
 
 
 @pytest.fixture(autouse=True)
@@ -220,3 +220,84 @@ def test_resume_finishes_existing_paired_batch_near_budget_without_adding_attemp
     result=trainer.run(resume=True)
     assert sizes==[3] and result['completed_attempts']==96 and result['options']['attempts']==100
     assert result['state']=='budget_paused' and not result.get('batch')
+
+
+def test_phase_objective_improves_hard_pick_without_being_blocked_by_easy_placement(tmp_path):
+    state=SkillTraining(tmp_path,'5'*12).create(attempts=8)
+    rows=paired(state,[[3,20],[3,11],[3,3],[3,3]])
+    for i,row in enumerate(rows):
+        row['seed']=i%2
+        row['phase_credit']={'pick':9. if row['seed'] else 4.,'place':0.,'view':1.}
+        row['failure_group']='pick' if row['seed']==0 else 'place'
+    rows[2]['phase_credit']['pick']=6.
+    update_search(state,rows)
+    assert state['last_selection']['candidate']==1
+    assert state['last_selection']['objective']=='lexicographic_worst_phase_first'
+    assert state['skill_archive']['pick'][0]['parameters']==state['incumbent']
+
+
+def test_phase_objective_never_sacrifices_a_verified_pick_for_command_credit(tmp_path):
+    state=SkillTraining(tmp_path,'6'*12).create(attempts=8)
+    rows=paired(state,[[3,20],[20,3],[3,3],[3,3]])
+    for i,row in enumerate(rows):
+        row['seed']=i%2;row['phase_credit']={'pick':4. if i%2==0 else 9.}
+    rows[2]['phase_credit']['pick']=9.;rows[3]['phase_credit']['pick']=8.
+    update_search(state,rows)
+    assert state['last_selection']['candidate']==0
+
+
+def test_program_changes_search_strategy_and_continues_past_eight_failed_rounds(tmp_path,monkeypatch):
+    trainer=SkillTraining(tmp_path,'7'*12);trainer.create(attempts=96)
+    def batch(state,specs,*args):
+        rows=[dict(episode_id=s['episode_id'],candidate=s['candidate'],seed=s['scene_seed'],status='complete',
+            split='train',score=3.,phase_credit={'pick':6.},success=False,failure_group='pick',
+            reason='unconfirmed_hold') for s in specs]
+        state['episodes']+=rows;state['completed_attempts']+=len(rows);return rows
+    monkeypatch.setattr(trainer,'_batch',batch)
+    result=trainer.run()
+    assert result['completed_attempts']==96 and result['generation']==12
+    assert result['state']=='budget_paused' and not result['simulation_ready']
+    assert {r['next_mode'] for r in result['recovery_history']}=={'geometry','contact','hold_view'}
+    assert all(r['evidence_thresholds_changed'] is False for r in result['recovery_history'])
+    assert len(list((trainer.folder/'checkpoints').glob('*.json')))==12
+
+
+def test_diagnostic_phase_credit_is_not_a_qualification_or_phantom_hold():
+    report=dict(success=False,execution=dict(held_verified=False,placed_verified=False,
+        events=[dict(stage=s,result={'outcome':'success'}) for s in ('find','approach','reobserve','pregrasp','grasp','lift')]),
+        independent_physics_outcome=dict(lifted=False,success=False))
+    assert phase_credit(report)['pick']==6.
+    report['execution']['held_verified']=True
+    assert phase_credit(report)['pick']==6.
+    report['independent_physics_outcome']['lifted']=True
+    assert phase_credit(report)['pick']==9.
+    assert outcome_score(report)<100.
+
+
+def test_failed_holdout_is_quarantined_and_program_continues_on_new_training_scenes(tmp_path,monkeypatch):
+    trainer=SkillTraining(tmp_path,'8'*12);trainer.create(attempts=48)
+    training_seeds=[];holdouts=[]
+    def batch(state,specs,*args):
+        training_seeds.append({s['scene_seed'] for s in specs})
+        rows=[dict(episode_id=s['episode_id'],candidate=s['candidate'],seed=s['scene_seed'],status='complete',
+            split='train',score=100.,phase_credit={'pick':9.,'place':5.},success=True,failure_group='place') for s in specs]
+        state['episodes']+=rows;state['completed_attempts']+=len(rows);return rows
+    def qualify(state,*args):
+        holdouts.append({s for group in state['validation_seeds'] for s in group})
+        if len(holdouts)==1:
+            state.update(state='validation_failed',validation=[dict(results=[dict(seed=s,success=False,failure_group='place')
+                for s in sorted(holdouts[0])])])
+        else:state.update(state='simulation_qualified',simulation_ready=True)
+    monkeypatch.setattr(trainer,'_batch',batch);monkeypatch.setattr(trainer,'_qualify',qualify)
+    result=trainer.run()
+    assert result['state']=='simulation_qualified' and result['completed_attempts']==48
+    assert len(holdouts)==2 and holdouts[0].isdisjoint(holdouts[1])
+    assert training_seeds[0].isdisjoint(training_seeds[3])
+    assert set.union(*training_seeds).isdisjoint(set.union(*holdouts))
+    assert result['validation_history'][0]['training_use_forbidden'] is True
+
+
+def test_previously_examined_holdout_cannot_be_reused_to_claim_readiness(tmp_path):
+    trainer=SkillTraining(tmp_path,'9'*12);state=trainer.create(attempts=8)
+    state['validation_history']=[dict(seeds=state['validation_seeds'])]
+    with pytest.raises(RuntimeError,match='Previously examined'):trainer._qualify(state,lambda:False,lambda s:None)

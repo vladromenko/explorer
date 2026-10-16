@@ -61,6 +61,8 @@ def summarized(row,root=DEFAULT_ROOT):
     return dict(id=row['id'],state=row['state'],title='Носок → корзина' if row['task_id']=='sock_basket' else row['task_id'],
         completed=row['completed_attempts'],total=max(8,row['options']['attempts']//8*8),hours=row['options']['hours'],
         phase=row.get('phase_group'),reason=row.get('reason'),failure_causes=[dict(reason=text,count=count) for text,count in reasons.most_common(2)],active_workers=workers,
+        search_mode=row.get('search_mode'),automatic_recoveries=len(row.get('recovery_history',[])),
+        learned_phases=sorted(row.get('skill_archive',{})),
         validation_completed=sum(r.get('status')=='complete' and r.get('split') in ('validation','user_validation') for r in row.get('episodes',[])),
         validation_total=10*len(row.get('validation_seeds',[[],[]])),simulation_ready=row.get('simulation_ready',False),physical_ready=False)
 
