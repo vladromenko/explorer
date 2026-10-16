@@ -1,5 +1,5 @@
 {
-  "at": 1792171066.213799,
+  "at": 1792171171.6757991,
   "scope": "Mac-only autonomous skill parameter learning; no ROSMASTER connection",
   "previous_request": "e256de3e4d76",
   "previous_training": "a53a81f5f24e",
@@ -71,13 +71,29 @@
     "reason": "Opening compensated by moving the wrist could intersect the observed rim; now opening is planned with fixed arm angles before any placement"
   },
   "user_direction": "No further assistant-triggered diagnostic learning; autonomous installed program owns subsequent attempts",
-  "installed": false,
-  "background_learning_started": false,
+  "installed": true,
+  "background_learning_started": true,
   "simulation_ready": false,
   "physical_ready": false,
   "software_tests": {
     "passed": 187,
     "subtests_passed": 3,
-    "javascript_syntax_checked": true
-  }
+    "javascript_syntax_checked": true,
+    "browser_contracts_passed": true,
+    "browser_test_real_mutations": 0
+  },
+  "installed_revision": "5c7c024d60aabdcc5f37920f60120f6ae6175d2e",
+  "installed_source": "/Users/vladromenko/Library/Application Support/ExplorerSimulator/automatic-source-5c7c024d60aa",
+  "installed_files_sha256_verified": 422,
+  "request_id": "85a4136cfc91",
+  "training_id": "88a556e9f672",
+  "budget": {
+    "attempts": 1000,
+    "hours": 24.0
+  },
+  "active_workers": 4,
+  "completed_attempts": 0,
+  "models_ready": true,
+  "real_camera_frame_verified": true,
+  "operator_training_commands": false
 }
