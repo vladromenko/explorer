@@ -4,7 +4,7 @@ const labels={queued:'В очереди',planning:'Разбор задачи',wa
 const paused=new Set(['operator_paused','memory_paused','budget_paused','interrupted']);
 const active=new Set(['pausing','queued','planning','waiting_for_current','building_scene','training','running','validating','packaging','waiting_for_memory']);
 const phases={pick:'Захват и подъём',view:'Подъезд и обзор',place:'Размещение'};
-let token='',snapshot=null,target=null,parent=null,busy=false,signature='',frameAt=0,workerSignature='';
+let token='',snapshot=null,target=null,parent=null,busy=false,signature='',frameAt=0,workerSignature='',disconnecting=false;
 async function api(path,body,retry=true){const response=await fetch(path,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json','X-Explorer-Sim-Token':token},body:JSON.stringify(body)});if(response.status===403&&retry){token=(await api('/api/session',undefined,false)).token;return api(path,body,false);}if(!response.ok){const error=await response.json().catch(()=>({}));throw Error(error.detail||'Ошибка связи');}return response.json();}
 function notice(message){$('notice').textContent=message;$('notice').hidden=false;setTimeout(()=>$('notice').hidden=true,7000);}
 function node(tag,text,cls){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;}
@@ -17,7 +17,7 @@ function showCurrent(s){
  else if(own){row=own;kind='requests';id=own.id;training=s.trainings.find(t=>own.tasks.some(task=>task.training_id===t.id&&task.state!=='simulation_qualified'));}
  else if(legacy&&paused.has(legacy.state)){row=legacy;kind='legacy';id=legacy.id;training=legacy;}
  else{row=s.requests.find(r=>active.has(r.state));if(row){kind='requests';id=row.id;}else if(!s.requests.length&&legacy){row=legacy;training=legacy;kind='legacy';id=legacy.id;}}
- target=row?{kind,id,state:row.state}:null;$('current-control').disabled=row?.state==='pausing';$('current-panel').hidden=!row;if(!row)return;
+ target=row?{kind,id,state:row.state}:null;$('current-control').disabled=disconnecting||row?.state==='pausing';$('current-panel').hidden=!row;if(!row)return;
  $('current-title').textContent=row.title||row.plan?.title||'Ваша задача';$('current-status').textContent=row.reason||labels[row.state]||row.state;$('current-cause').textContent=!active.has(row.state)?(row.failure_causes||[]).map(c=>`${c.count} попыток: ${c.reason}`).join(' · '):'';
  const completed=training?.completed||0,total=training?.total||row.budget?.attempts||100;
  $('progress').max=total;$('progress').value=completed;$('attempts').textContent=training?.state==='validating'?`Проверено ${training.validation_completed} из ${training.validation_total} независимых сцен`:`Завершено ${completed} из ${total} попыток`;
@@ -41,8 +41,8 @@ function showRequests(s){const next=JSON.stringify(s.requests);if(next===signatu
  }
 }
 async function poll(){if(busy)return;busy=true;try{snapshot=await api('/api/state');$('connection').textContent='На этом Mac · изменения сохраняются';showCurrent(snapshot);showRequests(snapshot);$('models').textContent=snapshot.models.ready?'Модели установлены':'Недостающие модели установятся автоматически';const m=snapshot.memory;$('resources').textContent=`Свободно по оценке системы: ${(m.available_bytes/2**30).toFixed(1)} ГБ · ${snapshot.disk_connected?'диск подключён':'подключите диск ExplorerSim'}`;}catch(e){$('connection').textContent='Переподключаюсь…';}finally{busy=false;}}
-$('learn-form').addEventListener('submit',async event=>{event.preventDefault();const text=$('request').value.trim();if(!text)return;$('learn').disabled=true;try{await api('/api/learn',{text,parent_id:parent,attempts:100,hours:24});parent=null;$('learn').textContent='Обучить';$('form-status').textContent='Задача сохранена. Текущее обучение не прерывается.';await poll();}catch(e){notice(e.message);}finally{$('learn').disabled=false;}});
+$('learn-form').addEventListener('submit',async event=>{event.preventDefault();if(disconnecting)return;const text=$('request').value.trim();if(!text)return;$('learn').disabled=true;try{await api('/api/learn',{text,parent_id:parent,attempts:100,hours:24});parent=null;$('learn').textContent='Обучить';$('form-status').textContent='Задача сохранена. Текущее обучение не прерывается.';await poll();}catch(e){notice(e.message);}finally{$('learn').disabled=false;}});
 $('current-control').addEventListener('click',async()=>{if(!target)return;const selected={...target};$('current-control').disabled=true;try{await api(`/api/${selected.kind}/${selected.id}/${paused.has(selected.state)?'resume':'pause'}`,{});await poll();}catch(e){notice(e.message);}finally{$('current-control').disabled=false;}});
 (async()=>{try{token=(await api('/api/session')).token;await poll();setInterval(poll,1500);}catch(e){notice(e.message);}})();
 
-$('disconnect').addEventListener('click',async()=>{$('disconnect').disabled=true;try{const result=await api('/api/disconnect',{});$('form-status').textContent=result.message;$('learn').disabled=true;$('current-control').disabled=true;}catch(e){notice(e.message);$('disconnect').disabled=false;}});
+$('disconnect').addEventListener('click',async()=>{disconnecting=true;$('disconnect').disabled=true;try{const result=await api('/api/disconnect',{});$('form-status').textContent=result.message;$('learn').disabled=true;$('current-control').disabled=true;}catch(e){disconnecting=false;notice(e.message);$('disconnect').disabled=false;}});
