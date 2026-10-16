@@ -1,0 +1,128 @@
+{
+  "at": 1792189424.4063418,
+  "code_revision": "2d4bd41d381eed8cf08ac230a61d29989ce1f6e0",
+  "scope": "Mac-only automatic observed skill policy learning; no manual teaching and no robot connection",
+  "previous_request": "85a4136cfc91",
+  "request": "df2e4c28ca74",
+  "training": "dfc212a8fb5b",
+  "controller": {
+    "files": {
+      "src/task_executor.py": "5d3e5e5be75389891ccf5540b0aa57100aadf193a85590b6058836738f1ccc06",
+      "simulator/skill_port.py": "f039aee93aa39093f9c9e9aa2d90ab469489fee9d0a2bf414b8ccbc7570080ee",
+      "simulator/rgbd_observation.py": "8fe1545b2897a403f856f2fe89f66ac00b4b3f1791b1cc581d82ea57aa0083f0",
+      "simulator/placement_evidence.py": "a17c63cabbc3e942f18edbc85609cbabf29872414146b1bda4e0aef8b1141ae6",
+      "simulator/inspection_planning.py": "2ee1d28ed464b30fdad2e3b8c6ebb217a69f746c3de9510151f0b66e4ea9335d",
+      "simulator/manipulation_planning.py": "f3718128deb8fd8a31b02c5d0fcd7c3b0f05d190fa0646e760b25d02faab92f3",
+      "simulator/observed_free_space.py": "361d8411aa223a45783a4a45b7ef26aec75bb1300098081b20e39d4f198e915d",
+      "simulator/multiview_container.py": "cdaa324efa32632e1cff01a08b17570a3a443ad2cd232291d5ea1c39cab8f81c",
+      "simulator/observed_navigation.py": "2c5763b630c49e0db8c0dab6bb13e45558037aec2be457bd8ce43602e29d612c",
+      "simulator/grasp_planning.py": "2aec6d04cb72108af99cec11dc570b0070b4d49ca24c88e57d6c224ed0f32469",
+      "simulator/skill_parameters.py": "8c96ce8e6244f006aab2befd8d7f10a070a837deb143e284e60310b125902af4",
+      "simulator/resource_budget.py": "7e63ffc1788032a9e6cdf6d246ec4f5be1805ee96c9899bcd9ae1015ab2fc68e",
+      "simulator/skill_training.py": "5367399d34572d0e3a286bee41a39d72ea21aedd62ba950c084a145a2b2d2507",
+      "simulator/skill_workshop.py": "3c666c981d6a8a2f891c3e620ee6e8b7d2a9ae7822d2e3f099bc20828b4966aa",
+      "simulator/domain_randomization.py": "c0c04eb46b55dd74c6773170fe125adb34ba4270d887ee39c8c71b477b3e0870",
+      "simulator/scene_recipes.py": "02b6c02cb00de5ca4b8804059b8d48d85d0bca780933da80faf340eddce8e211",
+      "simulator/semantic_vision.py": "2eec660532061d82ebea45a261d3742300c4960e92e8b0b5981268f8abd99953",
+      "simulator/grounded_skill_port.py": "6048879d41d565a37a75b84e475f272cbae8834e632c73a6b77798a51406f6a9",
+      "simulator/surface_destination.py": "549412a2e1b85292effc7c16674667b08a44d27134bda6be5fca8e4fa74ed1fd",
+      "simulator/scan_navigation.py": "6cbcbd5ed8f175f641e48f7d034cd78e8637ed7cf7b77d8cc81b1277bc2eac80",
+      "bin/simulator-grounding.py": "b2e89e87b7c0cc5558098f7e8719aeacf378b54622dfea47023784bc4891bb60",
+      "config/grounding-model.json": "ac1b4efe3347243a1602dde82a1b8dab6755f3649dd4bd4a5d30c8bbda8043df",
+      "simulator/environment.py": "23ef394c8f6e37ae8b2b491f4885f9e223afdfc1fc869e7ee8866f33ce65647b",
+      "simulator/explorer_model.py": "9c0289da7ea01fd7442f3da9db387b65b9a39e247cb0e0404d29e96fd8484270",
+      "simulator/model_config.json": "4ba8966fbea5837c300145e1c57fa05a817d2240ffa67ee0e786b14eada56e48",
+      "config/explorer.urdf": "9ee94f15a2473ba04c84c552bae47f7dd2bd734b8b3700f3fe25d752c3eace4b",
+      "config/explorer.srdf": "dba83e73a95a6a85e936f0900d2aefadbb434b89302da92d680b56f983b023a7",
+      "config/arm-motion.json": "8ab3bc35a2d88f78050c720d1af8c97dcfffb500f20fcc04fee6a95a8dd4ca3a",
+      "config/handeye-accepted.json": "89c3370055d6436911de5f394048ac2d1d3892585e1fc773c6eb666070d07a77",
+      "config/arm_model.json": "842dfe7960fd01be18992e62dabe293added502d0df3715a9d31944b60317d4f"
+    },
+    "sha256": "11ca335637c31b2ad66d829150614088d7593e7c717f9fc57b61ed192c689209"
+  },
+  "algorithm": "observed_curriculum_cross_entropy_v3",
+  "learning_kind": "bounded control policy search in physical simulation, not neural ACT training",
+  "changes": [
+    "Worst-scene phase objective prevents easy placement score from blocking a harder pickup",
+    "Per-scene preservation of visually verified physical pickup",
+    "Automatic geometry/contact/hold-view search subspace changes with expanded exploration instead of eight-round termination",
+    "Durable per-phase policy archive, all failed attempts, and recovery history",
+    "Full 29-opening closure preflight before base approach and again before descent on fresh geometry",
+    "Learnable measured lateral material patch, base distance and approach direction, closure duration and initial lift",
+    "Local non-self RGBD material tracking instead of the deformable whole-object centroid; original confirmation gates retained",
+    "Initial pickup verified before guarded high transport preparation",
+    "Up to three within-episode retries only after two fresh unambiguous matching floor observations",
+    "Failed independent checks continue on new training challenges; used holdouts quarantined and fresh final holdouts reserved",
+    "Live UI shows active search strategy and automatic strategy changes"
+  ],
+  "physics_geometry_configuration_unchanged": [
+    "simulator/environment.py",
+    "simulator/explorer_model.py",
+    "simulator/model_config.json",
+    "config/explorer.urdf",
+    "config/explorer.srdf",
+    "config/arm-motion.json",
+    "config/handeye-accepted.json"
+  ],
+  "numeric_evidence_thresholds_relaxed": false,
+  "hidden_object_coordinates_actor_input": false,
+  "independent_truth_only_after_actor_stop": true,
+  "old_results_preserved": true,
+  "old_ACT_resumed": false,
+  "automatic_hardware_execution": false,
+  "software_tests": {
+    "passed": 202,
+    "subtests_passed": 3,
+    "browser_contract_passed": true,
+    "browser_real_mutations": 0
+  },
+  "installed": true,
+  "service_pid": 10013,
+  "background_started": true,
+  "budget": {
+    "attempts": 1000,
+    "hours": 23.99891545311361,
+    "workers": 4
+  },
+  "observed_state": "running",
+  "observed_active_workers": 3,
+  "observed_completed_attempts": 8,
+  "simulation_ready": false,
+  "physical_ready": false,
+  "verified_at": 1792189577.481815,
+  "observed_generation": 1,
+  "first_checkpoint": {
+    "path": "/Volumes/ExplorerSim/ExplorerSim/skill-training/dfc212a8fb5b/checkpoints/generation-0001.json",
+    "sha256": "eecbd01cb4e5d0e67551001701edc90bf01b560490420fadb376e5ede1f270b7"
+  },
+  "actual_program_generated_grasp_recoveries": 4,
+  "observed_selection": {
+    "candidate": 0,
+    "improved": false,
+    "baseline_scores": [
+      10.0,
+      3.0
+    ],
+    "selected_scores": [
+      10.0,
+      3.0
+    ],
+    "objective": "lexicographic_worst_phase_first",
+    "phase": "pick",
+    "baseline_credit": [
+      6.0,
+      9.0,
+      3.0,
+      6.5
+    ],
+    "selected_credit": [
+      6.0,
+      9.0,
+      3.0,
+      6.5
+    ],
+    "search_mode": "geometry"
+  },
+  "actual_verified_pick_attempts": 3,
+  "full_cycle_accepted": false
+}
