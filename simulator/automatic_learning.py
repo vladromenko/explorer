@@ -53,7 +53,17 @@ class AutomaticLearning:
     def save(self,value):
         if self.root.parent==Path('/Volumes/ExplorerSim') and not self.root.parent.is_mount():
             raise OSError('Диск ExplorerSim отключён; новые файлы не создаются')
-        value['updated']=time.time();write_json(self.folder/(value['id']+'.json'),value)
+        with self.mutex:
+            path=self.folder/(identity(value['id'])+'.json')
+            try:previous=json.loads(path.read_text())
+            except FileNotFoundError:previous={}
+            events={}
+            for event in previous.get('events',[])+value.get('events',[]):
+                events[(event['at'],event['stage'],event['message'])]=event
+            value['events']=sorted(events.values(),key=lambda event:event['at'])
+            if (self.folder/(value['id']+'.pause')).exists() and value['state'] in ACTIVE|{'running'}:
+                value.update(state='pausing',reason='Останавливаю работников; записи сохраняются')
+            value['updated']=time.time();write_json(path,value)
 
     def list(self):
         values=[]
@@ -98,6 +108,7 @@ class AutomaticLearning:
             value=self.get(identifier)
             if value['state']=='simulation_qualified':return value
             self.pause_queue(identifier)
+            (self.folder/(identifier+'.pause')).touch(exist_ok=True)
             self.event(value,'pausing' if self.active_id==identifier else 'operator_paused','Останавливаю работников; записи сохраняются')
         return value
 
@@ -116,12 +127,13 @@ class AutomaticLearning:
                             if target<=saved['completed_attempts']:raise ValueError('Достигнут лимит 1000 попыток; нужен разбор причины')
                             saved['options']['attempts']=max(saved['options']['attempts'],target);trainer.save(saved)
             # A fresh time allowance resumes the same tasks/checkpoints.
+            (self.folder/(identifier+'.pause')).unlink(missing_ok=True)
             value['elapsed_s']=0.;value.pop('budget_exhausted',None);self.event(value,'queued','Продолжение сохранённой задачи');self.resume_queue()
         return value
 
     def cancelled(self,identifier):
         if self.stop.is_set() or not self.root.is_dir():return True
-        return self.get(identifier)['state'] in ('operator_paused','pausing')
+        return (self.folder/(identity(identifier)+'.pause')).exists() or self.get(identifier)['state'] in ('operator_paused','pausing')
 
     def simulator_busy(self):
         folder=self.root/'skill-training';folder.mkdir(exist_ok=True)

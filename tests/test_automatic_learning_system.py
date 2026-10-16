@@ -276,3 +276,16 @@ def test_worker_phase_comes_from_actual_recording_not_optimizer_group(tmp_path):
     write_json(folder/'progress.json',dict(phase='skill_verify_hold'))
     result=summarized(row,tmp_path)
     assert result['phase']=='place' and result['active_workers'][0]['phase']=='skill_verify_hold'
+
+
+def test_stale_progress_cannot_erase_a_pause_or_its_history(tmp_path):
+    book=engine(tmp_path);row=book.create('Пауза без потери данных',attempts=8)
+    stale=book.get(row['id']);stale['state']='running'
+    book.active_id=row['id'];paused=book.pause(row['id']);pause_event=paused['events'][-1]
+    book.save(stale) # A worker callback holding a dictionary from before pause.
+    assert book.get(row['id'])['state']=='pausing'
+    assert pause_event in book.get(row['id'])['events'] and book.cancelled(row['id'])
+    book.event(stale,'operator_paused','Работники остановлены')
+    book.active_id=None;book.resume(row['id'])
+    assert not book.cancelled(row['id']) and book.get(row['id'])['state']=='queued'
+    assert pause_event in book.get(row['id'])['events']
