@@ -1,0 +1,48 @@
+'use strict';
+const $=id=>document.getElementById(id);
+const labels={queued:'В очереди',planning:'Разбор задачи',waiting_for_current:'Ожидает текущую очередь',building_scene:'Создание сцены',training:'Обучается',running:'Обучается',validating:'Независимая проверка',packaging:'Проверка пакета',waiting_for_memory:'Ожидает память',pausing:'Останавливается',operator_paused:'Пауза',memory_paused:'Пауза: память',budget_paused:'Бюджет завершён',interrupted:'Остановлено при перезапуске',needs_clarification:'Нужно уточнение',needs_diagnosis:'Остановлено без улучшения',validation_failed:'Проверка не пройдена',simulation_qualified:'Проверено в симуляции',failed:'Ошибка'};
+const paused=new Set(['operator_paused','memory_paused','budget_paused','interrupted']);
+const active=new Set(['pausing','queued','planning','waiting_for_current','building_scene','training','running','validating','packaging','waiting_for_memory']);
+const phases={pick:'Захват и подъём',view:'Подъезд и обзор',place:'Размещение'};
+let token='',snapshot=null,target=null,parent=null,busy=false,signature='',frameAt=0,workerSignature='';
+async function api(path,body,retry=true){const response=await fetch(path,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json','X-Explorer-Sim-Token':token},body:JSON.stringify(body)});if(response.status===403&&retry){token=(await api('/api/session',undefined,false)).token;return api(path,body,false);}if(!response.ok){const error=await response.json().catch(()=>({}));throw Error(error.detail||'Ошибка связи');}return response.json();}
+function notice(message){$('notice').textContent=message;$('notice').hidden=false;setTimeout(()=>$('notice').hidden=true,7000);}
+function node(tag,text,cls){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;}
+function showCurrent(s){
+ const own=s.requests.find(r=>active.has(r.state)&&r.tasks?.some(t=>t.progress?.active_workers?.length))||s.requests.find(r=>['training','validating','packaging'].includes(r.state));
+ const legacy=s.legacy;
+ const liveLegacy=legacy&&active.has(legacy.state);
+ let row,kind,id,training;
+ if(liveLegacy){row=legacy;kind='legacy';id=legacy.id;training=legacy;}
+ else if(own){row=own;kind='requests';id=own.id;training=s.trainings.find(t=>own.tasks.some(task=>task.training_id===t.id&&task.state!=='simulation_qualified'));}
+ else if(legacy&&paused.has(legacy.state)){row=legacy;kind='legacy';id=legacy.id;training=legacy;}
+ else{row=s.requests.find(r=>active.has(r.state));if(row){kind='requests';id=row.id;}else if(!s.requests.length&&legacy){row=legacy;training=legacy;kind='legacy';id=legacy.id;}}
+ target=row?{kind,id,state:row.state}:null;$('current-control').disabled=row?.state==='pausing';$('current-panel').hidden=!row;if(!row)return;
+ $('current-title').textContent=row.title||row.plan?.title||'Ваша задача';$('current-status').textContent=row.reason||labels[row.state]||row.state;$('current-cause').textContent=!active.has(row.state)?(row.failure_causes||[]).map(c=>`${c.count} попыток: ${c.reason}`).join(' · '):'';
+ const completed=training?.completed||0,total=training?.total||row.budget?.attempts||100;
+ $('progress').max=total;$('progress').value=completed;$('attempts').textContent=training?.state==='validating'?`Проверено ${training.validation_completed} из ${training.validation_total} независимых сцен`:`Завершено ${completed} из ${total} попыток`;
+ if(training?.state==='validating'){$('progress').max=training.validation_total;$('progress').value=training.validation_completed;}
+ $('workers').textContent=`Исполнителей: ${training?.active_workers?.length||0}`;$('phase').textContent=phases[training?.phase]||labels[row.state]||row.state;
+ $('current-control').hidden=!(active.has(row.state)||paused.has(row.state));$('current-control').textContent=paused.has(row.state)?'Продолжить':'Пауза';
+ if(training){
+  const views=training.active_workers?.length?training.active_workers:[{slot:0}];
+  const key=JSON.stringify([training.id,views.map(w=>[w.slot,w.episode_id])]);
+  if(key!==workerSignature){workerSignature=key;$('cameras').replaceChildren();for(const worker of views){const card=node('div',undefined,'worker'),images=node('div',undefined,'cameras');card.append(node('h3',`Исполнитель ${worker.slot+1}`));for(const camera of ['overview','wrist']){const figure=node('figure'),img=node('img');img.id=`view-${worker.slot}-${camera}`;img.alt=camera==='overview'?'Общий вид попытки':'Камера на руке';figure.append(img,node('figcaption',camera==='overview'?'Физическая симуляция':'Что видит робот'));images.append(figure);}card.append(images);$('cameras').append(card);}}
+  if(Date.now()-frameAt>1800){frameAt=Date.now();for(const worker of views)for(const camera of ['overview','wrist']){const img=$(`view-${worker.slot}-${camera}`);if(!img.dataset.loading){img.dataset.loading='1';img.onload=img.onerror=()=>delete img.dataset.loading;img.src=`/api/frames/${training.id}/${camera}?slot=${worker.slot}&t=${frameAt}`;}}}
+ }else{$('cameras').replaceChildren();workerSignature='';}
+}
+function showRequests(s){const next=JSON.stringify(s.requests);if(next===signature)return;signature=next;const root=$('requests');root.replaceChildren();if(!s.requests.length){root.append(node('p','Новые просьбы появятся здесь. Текущее обучение продолжает работу.','muted'));return;}
+ for(const row of s.requests){const card=node('article',undefined,'task'),heading=node('div',undefined,'task-title');heading.append(node('h3',row.plan?.title||row.text),node('span',labels[row.state]||row.state,'state'));card.append(heading,node('p',row.reason||''));
+  if(row.plan){for(const text of row.plan.missing||[])card.append(node('p',text,'blocked'));const steps=node('ol');for(const task of row.tasks||[]){const li=node('li',task.recipe.title+' · '+(labels[task.state]||task.state));steps.append(li);if(task.scene){const image=node('img');image.src=`/api/scenes/${row.id}/${task.task_id}`;image.alt='Созданная сцена: '+task.recipe.title;card.append(image);}}card.append(steps);for(const task of row.tasks||[])for(const cause of task.result?.failure_causes||[])card.append(node('p',`${cause.count} попыток: ${cause.reason}`,'muted'));}
+  if(row.state==='needs_clarification'||row.state==='needs_diagnosis'||row.state==='validation_failed'){const button=node('button','Уточнить задачу');button.addEventListener('click',()=>{parent=row.id;$('request').value='';$('request').focus();$('form-status').textContent='Уточнение к задаче: '+(row.plan?.title||row.text);$('learn').textContent='Отправить уточнение';});card.append(button);}
+  if(paused.has(row.state)){const button=node('button','Продолжить');button.addEventListener('click',async()=>{try{await api(`/api/requests/${row.id}/resume`,{});await poll();}catch(e){notice(e.message);}});card.append(button);}
+  if(row.state==='simulation_qualified'&&row.package?.verified){const download=node('a','Скачать проверенный результат','download');download.href=`/api/requests/${row.id}/package`;card.append(download,node('p','Проверено в симуляции. Подключение и наблюдаемая проверка настоящего робота — следующий отдельный этап.','muted'));}
+  root.append(card);
+ }
+}
+async function poll(){if(busy)return;busy=true;try{snapshot=await api('/api/state');$('connection').textContent='На этом Mac · изменения сохраняются';showCurrent(snapshot);showRequests(snapshot);$('models').textContent=snapshot.models.ready?'Модели установлены':'Недостающие модели установятся автоматически';const m=snapshot.memory;$('resources').textContent=`Свободно по оценке системы: ${(m.available_bytes/2**30).toFixed(1)} ГБ · ${snapshot.disk_connected?'диск подключён':'подключите диск ExplorerSim'}`;}catch(e){$('connection').textContent='Переподключаюсь…';}finally{busy=false;}}
+$('learn-form').addEventListener('submit',async event=>{event.preventDefault();const text=$('request').value.trim();if(!text)return;$('learn').disabled=true;try{await api('/api/learn',{text,parent_id:parent,attempts:100,hours:24});parent=null;$('learn').textContent='Обучить';$('form-status').textContent='Задача сохранена. Текущее обучение не прерывается.';await poll();}catch(e){notice(e.message);}finally{$('learn').disabled=false;}});
+$('current-control').addEventListener('click',async()=>{if(!target)return;const selected={...target};$('current-control').disabled=true;try{await api(`/api/${selected.kind}/${selected.id}/${paused.has(selected.state)?'resume':'pause'}`,{});await poll();}catch(e){notice(e.message);}finally{$('current-control').disabled=false;}});
+(async()=>{try{token=(await api('/api/session')).token;await poll();setInterval(poll,1500);}catch(e){notice(e.message);}})();
+
+$('disconnect').addEventListener('click',async()=>{$('disconnect').disabled=true;try{const result=await api('/api/disconnect',{});$('form-status').textContent=result.message;$('learn').disabled=true;$('current-control').disabled=true;}catch(e){notice(e.message);$('disconnect').disabled=false;}});

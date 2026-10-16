@@ -72,6 +72,12 @@ class ExplorerEnv(gym.Env):
         if profile not in ('baseline', PROFILE):
             raise ValueError('Unknown scene profile')
         sampled = sample_sock_scene(int(seed or 0)) if profile == PROFILE and self.scene in ('sock', 'cloth') else None
+        if options.get('generated_scene') is not None:
+            import copy
+            generated=options['generated_scene']
+            if self.scene not in ('sock','cloth') or generated.get('profile')!=PROFILE or generated.get('seed')!=int(seed or 0):
+                raise ValueError('Generated scene does not match task or seed')
+            sampled=copy.deepcopy(generated)
         sock_default = [self.np_random.uniform(.28, .36), self.np_random.uniform(-.025, .025), .015] if varied else [.31, 0., .015]
         bin_default = [.44, self.np_random.uniform(.20, .26), 0.] if varied else [.44, .24, 0.]
         if spec['rooms']:
@@ -89,7 +95,9 @@ class ExplorerEnv(gym.Env):
             # Visual variation does not pretend to identify real contact physics.
             palette = np.array([[.82, .27, .23], [.16, .18, .23], [.72, .72, .67], [.18, .36, .70]])
             color = palette[self.np_random.integers(len(palette))]
-            self.model.flex_rgba[:, :3] = color
+            if self.model.nflex:self.model.flex_rgba[:, :3] = color
+            rigid=mujoco.mj_name2id(self.model,mujoco.mjtObj.mjOBJ_GEOM,'task_object_contact')
+            if rigid>=0:self.model.geom_rgba[rigid,:3]=color
             self.model.light_diffuse[:] *= self.np_random.uniform(.65, 1.15)
             self.model.geom("floor").rgba[:3] = self.np_random.uniform(.12, .38, 3)
             self.domain_variation["sock_rgb"] = color.tolist()

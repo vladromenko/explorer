@@ -145,8 +145,10 @@ def episode(spec):
         write_json(folder/'progress.json',dict(phase=env.phase,simulation_time=float(env.data.time),
             seed=spec['scene_seed'],candidate=spec['candidate']))
     try:
-        report=trial(env,folder,'attempt','sock_basket',spec['scene_seed'],'sock_variants_v1',
-            cancelled,progress,parameters=spec['parameters'])
+        report=trial(env,folder,'attempt',spec.get('task_id','sock_basket'),spec['scene_seed'],
+            spec.get('scene_profile','sock_variants_v1'),cancelled,progress,parameters=spec['parameters'],
+            scene_recipe=spec.get('scene_recipe'),semantic_root=spec.get('semantic_root'),
+            validation=spec.get('split','train')=='validation')
         # Outcome and scene provenance become feedback only after trial stops.
         result=dict(episode_id=spec['episode_id'],candidate=spec['candidate'],seed=spec['scene_seed'],
             split=spec.get('split','train'),
@@ -166,29 +168,44 @@ class SkillTraining:
     def save(self,state):
         state['updated']=time.time();write_json(self.path,state)
 
-    def create(self,*,attempts=100,hours=24.,workers=4,seed=906160000):
-        if self.path.exists():return json.loads(self.path.read_text())
+    def create(self,*,attempts=100,hours=24.,workers=4,seed=906160000,task_id='sock_basket',scene_recipe=None):
+        if self.path.exists():
+            saved=json.loads(self.path.read_text())
+            if saved.get('task_id')!=task_id or saved.get('scene_recipe')!=scene_recipe:
+                raise ValueError('Saved training belongs to a different task or scene recipe')
+            return saved
         if type(attempts) is not int or not 8<=attempts<=1000 or not 0.<hours<=24. or workers not in (1,4):
             raise ValueError('Invalid bounded skill learning budget')
+        from .curriculum import task_spec
+        task_spec(task_id)
+        if scene_recipe is not None:
+            from .scene_recipes import validate_recipe
+            scene_recipe=validate_recipe(scene_recipe)
+            if scene_recipe['task_id']!=task_id:raise ValueError('Training recipe/task mismatch')
         self.folder.mkdir(parents=True,exist_ok=False)
         values=parameters()
-        state=dict(schema=1,id=self.id,created=time.time(),state='queued',task_id='sock_basket',
+        state=dict(schema=1,id=self.id,created=time.time(),state='queued',task_id=task_id,scene_recipe=scene_recipe,
+            scene_profile='sock_variants_v1' if task_id in ('sock_basket','cloth_basket') else 'baseline',
             algorithm='phase_local_cross_entropy_policy_search_v1',seed=seed,generation=0,
             options=dict(attempts=attempts,hours=hours,workers=workers),phase_group='place',stagnation=0,
             incumbent=values,mean=dict(values),std={k:(s[1]-s[0])*.30 for k,s in PARAMETERS.items()},
             episodes=[],active_workers=[],completed_attempts=0,simulation_ready=False,physical_ready=False,
             automatic_hardware_execution=False,controller=execution_fingerprint(),
             validation_seeds=[list(range(1300160000,1300160010)),list(range(1400160000,1400160010))])
+        if scene_recipe is not None and len(scene_recipe['request'])>1:
+            state['validation_seeds'].append(list(range(1500160000,1500160010)))
         self.save(state);return state
 
     def _batch(self,state,specs,cancelled,progress):
         workers=state['options']['workers'];pending=list(specs);results=[];active={}
         previous_state=state['state']
+        reservation=int((3.2 if state.get('scene_recipe') else 1.7)*2**30)
         while True:
             memory=memory_budget()
             # Reserve each worker's measured-order 1.7 GiB footprint BEFORE
             # spawn; workers still starting have not allocated that RAM yet.
-            capacity=min(workers,max(0,int((memory['available_bytes']-memory['total_bytes']*.15)/(1.7*2**30))))
+            capacity=min(workers,max(0,int((memory['available_bytes']-memory['total_bytes']*.15)/reservation)))
+            memory['reserved_bytes_per_worker']=reservation
             state['resource_capacity']=capacity
             state['resource_measurement']=memory
             if capacity:
@@ -196,7 +213,7 @@ class SkillTraining:
             # No worker exists yet: wait within the same finite time budget,
             # rather than allocate unsafely or require a repeated manual start.
             state.update(state='waiting_for_memory',active_workers=[],
-                reason='Ожидаю свободную память: минимум 15% запаса плюс 1,7 ГиБ на исполнителя')
+                reason=f'Ожидаю свободную память: минимум 15% запаса плюс {reservation/2**30:.1f} ГиБ на исполнителя')
             self.save(state);progress(state)
             if cancelled() or self.pause.exists():raise InterruptedError('Ожидание памяти остановлено')
             time.sleep(2.)
@@ -245,7 +262,9 @@ class SkillTraining:
         token=secrets.token_hex(6)
         return dict(episode_id=token,folder=str(self.folder/'episodes'/token),storage=str(self.root),
             pause_file=str(self.pause),parameters=parameters(params),candidate=candidate,scene_seed=scene_seed,
-            controller_sha256=state['controller']['sha256'],split=split,owner_pid=os.getpid())
+            controller_sha256=state['controller']['sha256'],split=split,owner_pid=os.getpid(),
+            task_id=state['task_id'],scene_recipe=state.get('scene_recipe'),semantic_root=str(self.root),
+            scene_profile=state.get('scene_profile','sock_variants_v1'))
 
     def run(self,*,cancelled=lambda:False,progress=lambda state:None,resume=False):
         state=json.loads(self.path.read_text())
@@ -300,7 +319,8 @@ class SkillTraining:
                 state['generation']+=1;state.pop('batch',None)
                 checkpoint=self.folder/'checkpoints'/f'generation-{state["generation"]:04d}.json'
                 checkpoint.parent.mkdir(exist_ok=True);write_json(checkpoint,state)
-                write_json(self.folder/'policy.json',dict(schema=1,algorithm=state['algorithm'],
+                write_json(self.folder/'policy.json',dict(schema=1,algorithm=state['algorithm'],task_id=state['task_id'],
+                    scene_recipe=state.get('scene_recipe'),observation_contract='registered_RGBD_own_FK_odometry_lidar',
                     parameters=state['incumbent'],controller_sha256=state['controller']['sha256'],
                     simulation_ready=False,physical_ready=False))
                 self.save(state);progress(state)
@@ -328,12 +348,12 @@ class SkillTraining:
         state.setdefault('validation',[]);state.setdefault('validation_batches',[]);self.save(state)
         training={r['seed'] for r in state['episodes'] if r.get('split','train')=='train'}
         reserved=[seed for group in state['validation_seeds'] for seed in group]
-        if len(set(reserved))!=20 or training.intersection(reserved):raise RuntimeError('Validation scene overlap')
+        if len(set(reserved))!=10*len(state['validation_seeds']) or training.intersection(reserved):raise RuntimeError('Validation scene overlap')
         for index,seeds in enumerate(state['validation_seeds']):
             if len(state['validation'])>index:continue
             if len(state['validation_batches'])<=index:
                 state['validation_batches'].append([self._spec(state,state['incumbent'],0,seed,
-                    split='validation') for seed in seeds]);self.save(state)
+                    split='validation' if index<2 else 'user_validation') for seed in seeds]);self.save(state)
             specs=state['validation_batches'][index]
             ids={s['episode_id'] for s in specs}
             rows=[r for r in state['episodes'] if r['episode_id'] in ids and r['status']=='complete']
@@ -342,12 +362,12 @@ class SkillTraining:
                 if spec['episode_id'] in done:continue
                 if Path(spec['folder']).exists():
                     state.setdefault('partial_attempts',[]).append(dict(episode_id=spec['episode_id'],folder=spec['folder']))
-                    spec.update(self._spec(state,spec['parameters'],0,spec['scene_seed'],split='validation'))
+                    spec.update(self._spec(state,spec['parameters'],0,spec['scene_seed'],split='validation' if index<2 else 'user_validation'))
                 pending.append(spec)
             self.save(state)
             rows+=self._batch(state,pending,cancelled,progress)
             report=dict(heldout_independent=True,episodes=10,successes=sum(r['success'] for r in rows),
-                scene_profile='sock_variants_v1',results=rows)
+                scene_profile=state.get('scene_profile','sock_variants_v1') if index<2 else 'user_constraints',results=rows)
             state['validation'].append(report);self.save(state)
         passed=all(report_passes(r) for r in state['validation'])
         state.update(state='packaging' if passed else 'validation_failed',simulation_ready=False,validation_pending=passed,

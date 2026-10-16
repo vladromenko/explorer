@@ -26,7 +26,10 @@ def execution_fingerprint():
          'simulator/manipulation_planning.py','simulator/observed_free_space.py',
          'simulator/multiview_container.py','simulator/observed_navigation.py','simulator/grasp_planning.py',
          'simulator/skill_parameters.py','simulator/resource_budget.py','simulator/skill_training.py','simulator/skill_workshop.py',
-         'simulator/domain_randomization.py','simulator/environment.py','simulator/explorer_model.py',
+         'simulator/domain_randomization.py','simulator/scene_recipes.py','simulator/semantic_vision.py',
+         'simulator/grounded_skill_port.py','simulator/surface_destination.py',
+         'simulator/scan_navigation.py','bin/simulator-grounding.py','config/grounding-model.json',
+         'simulator/environment.py','simulator/explorer_model.py',
          'simulator/model_config.json','config/explorer.urdf','config/explorer.srdf',
          'config/arm-motion.json','config/handeye-accepted.json','config/arm_model.json')}
     return dict(files=files,sha256=hashlib.sha256(json.dumps(files,sort_keys=True).encode()).hexdigest())
@@ -96,7 +99,7 @@ def prepare(root,identifier,task_id,cancelled=None,progress=None):
     return state
 
 
-def trial(env,root,identifier,task_id,seed,scene_profile='sock_variants_v1',cancelled=None,progress=None,parameters=None):
+def trial(env,root,identifier,task_id,seed,scene_profile='sock_variants_v1',cancelled=None,progress=None,parameters=None,scene_recipe=None,semantic_root=None,validation=False):
     from src.task_executor import TaskExecutor
     from .skill_port import SimulatorSkillPort
     from .explorer_model import model_metadata
@@ -112,11 +115,22 @@ def trial(env,root,identifier,task_id,seed,scene_profile='sock_variants_v1',canc
     write_json(folder/'state.json',report)
     port=None
     try:
-        env.reset(seed=seed,options=dict(task_id=task_id,scene_profile=scene_profile))
+        reset=dict(task_id=task_id,scene_profile=scene_profile)
+        if scene_recipe is not None:
+            from .scene_recipes import reset_options
+            reset=reset_options(scene_recipe,seed,validation=validation)
+            report['scene_recipe']=scene_recipe
+        env.reset(seed=seed,options=reset)
         options={} if parameters is None else dict(parameters=parameters)
-        port=SimulatorSkillPort(env,folder/'execution',cancelled or (lambda:False),progress or (lambda value:None),**options)
+        port_type=SimulatorSkillPort
+        if scene_recipe is not None and scene_recipe.get('semantic_recognition_required'):
+            from .grounded_skill_port import GroundedSkillPort
+            if semantic_root is None:raise ValueError('Semantic model root required for automatic training')
+            port_type=GroundedSkillPort;options.update(semantic_root=semantic_root,query=scene_recipe['query'])
+        port=port_type(env,folder/'execution',cancelled or (lambda:False),progress or (lambda value:None),**options)
         executor=TaskExecutor(port.operations(),port.observe,guard=lambda ctx:port.check(),
-            cancelled=cancelled,total_timeout=300.,stage_timeout=90.,max_find_attempts=1,
+            cancelled=cancelled,total_timeout=900. if scene_recipe and scene_recipe['layout']=='two_rooms_doorway' else 300.,
+            stage_timeout=180. if scene_recipe and scene_recipe['layout']=='two_rooms_doorway' else 90.,max_find_attempts=1,
             stop=lambda ctx:port.stop_motion())
         result=executor.execute(dict(task_id=task_id))
         port.stop_motion()

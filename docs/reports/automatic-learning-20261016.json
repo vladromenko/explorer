@@ -1,0 +1,69 @@
+{
+  "at": 1792110362.237587,
+  "scope": "Automated simulation learning on Mac; no robot connection",
+  "installed": false,
+  "model_readiness": {
+    "planner": "Qwen3.5 4B local existing model",
+    "vision": "IDEA-Research/grounding-dino-tiny",
+    "vision_revision": "a2bb814dd30d776dcf7e30523b00659f4f141c71",
+    "vision_files_sha256_verified": 8,
+    "vision_runtime": "isolated transformers 4.57.3 with inherited torch 2.11.0",
+    "live_rgb_inference_detected_sock": true
+  },
+  "automatic_pipeline": [
+    "persist natural-language request",
+    "validate complete supported intent",
+    "derive scene dimensions from explicit user numbers/units",
+    "compile checked scene recipe",
+    "reuse only compatible independently validated skill",
+    "wait without interrupting an active physics owner",
+    "build actual CAD physics scene and preview",
+    "semantic RGB/depth association",
+    "train per-task closed-loop control parameters",
+    "preserve failures/checkpoints and pause/resume",
+    "two independent ten-scene groups plus ten user-constraint scenes when applicable",
+    "verify per-skill archive and complete request archive"
+  ],
+  "supported_families": [
+    "sock_basket",
+    "cloth_basket",
+    "toy_box",
+    "cookie_delivery"
+  ],
+  "expanded_executor": [
+    "RGB-only semantic hypotheses associated with measured depth",
+    "observed shallow-tray rim/support evidence and two-view verification",
+    "scanned-free-space A* for synthetic doorway route with held-object guard"
+  ],
+  "not_implemented": [
+    "arbitrary new physical object/action synthesis",
+    "hand-to-human release",
+    "liquid handling",
+    "real apartment mapping from synthetic scenes",
+    "hardware commissioning"
+  ],
+  "tests": {
+    "broad_suite_passed": 160,
+    "subtests_passed": 3,
+    "language_intent_real_model": true,
+    "explicit_dimensions_compiled": true,
+    "source_checks": true
+  },
+  "evidence": {
+    "grounding": "/Volumes/ExplorerSim/ExplorerSim/maintenance/grounding-smoke-20261016/result.json",
+    "language_scene": "/Volumes/ExplorerSim/ExplorerSim/maintenance/automatic-language-scene-20261016.json"
+  },
+  "current_legacy_queue": {
+    "id": "535d5aa82e3f",
+    "state": "running",
+    "completed_attempts": 56,
+    "interrupted": false,
+    "actor_code_modified": false
+  },
+  "release_gates": {
+    "new_real_end_to_end_physics_success": false,
+    "model_training_complete": false,
+    "simulation_ready": false,
+    "physical_ready": false
+  }
+}
