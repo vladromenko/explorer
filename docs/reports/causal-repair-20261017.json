@@ -5,7 +5,7 @@
   "current_training": "dfc212a8fb5b",
   "current_training_not_interrupted": true,
   "observed_old_state": "running",
-  "observed_old_attempts": 132,
+  "observed_old_attempts": 136,
   "old_service_pid": 10013,
   "new_algorithm": "observed_causal_program_repair_v4",
   "new_controller": {
@@ -94,7 +94,7 @@
     {
       "code": "ik_infeasible",
       "title": "Недостижимая траектория захвата",
-      "count": 34,
+      "count": 32,
       "operators": [
         "history_ik_seeds",
         "cartesian_feedback"
@@ -123,7 +123,7 @@
     {
       "code": "hold_lost_or_occluded",
       "title": "После подъёма потеряно удержание либо его видимость",
-      "count": 6,
+      "count": 8,
       "operators": [
         "visibility_planned_lift",
         "surface_axis_grasp"
@@ -186,10 +186,16 @@
   },
   "handoff": {
     "mode": "idle-only one-shot background program",
-    "source_staged": false,
-    "started": false,
+    "source_staged": true,
+    "started": true,
     "no_codex_automation": true,
-    "never_cancels_active_jobs": true
+    "never_cancels_active_jobs": true,
+    "state": "waiting_for_active",
+    "revision": "7059d409ad54fed8cfcae592e4cd4832da017ba6",
+    "source": "/Users/vladromenko/Library/Application Support/ExplorerSimulator/automatic-source-7059d409ad54",
+    "marker": "/Users/vladromenko/Library/Application Support/ExplorerSimulator/causal-upgrade-df2e4c28ca74.json",
+    "process_pid": 48366,
+    "source_checksums_verified": true
   },
   "physics_changed": false,
   "geometry_changed": false,
@@ -214,6 +220,10 @@
       "cause": "compute_deadline",
       "action": "shared_pinned_vision_and_same_scene_retry_with_lower_parallelism",
       "motion_reward_excluded": true
+    },
+    {
+      "cause": "vision_timeout",
+      "implementation": "persistent pinned RGB-only model service; retry same scene with reduced concurrency"
     }
   ],
   "vision_cache_conformance": {
@@ -227,5 +237,6 @@
     "no_training_commands_sent": true,
     "four_requests_seconds": 8.30354104199796,
     "four_requests_exact_equality": true
-  }
+  },
+  "verified_at": 1792192649.843318
 }
