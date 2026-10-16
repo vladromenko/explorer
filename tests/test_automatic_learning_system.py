@@ -230,3 +230,14 @@ def test_semantic_training_reserves_memory_for_vision_subprocess_as_well(tmp_pat
     monkeypatch.setattr(training,'ProcessPoolExecutor',Pool)
     assert trainer._batch(state,[],lambda:False,lambda s:None)==[]
     assert counts==[2] and state['resource_measurement']['reserved_bytes_per_worker']==int(3.2*2**30)
+
+
+def test_compatible_old_parameter_search_is_only_an_unverified_warm_start(tmp_path):
+    from simulator.skill_training import SkillTraining
+    old=SkillTraining(tmp_path,'e'*12);state=old.create(attempts=8)
+    state.update(generation=1,state='needs_diagnosis');state['incumbent']['pick_fraction']=.4;old.save(state)
+    new=SkillTraining(tmp_path,'f'*12);started=new.create(attempts=8,scene_recipe=recipe())
+    assert started['incumbent']['pick_fraction']==.4
+    assert started['initialization']['unverified'] is True
+    assert started['initialization']['old_episodes_counted_for_qualification'] is False
+    assert not started['episodes'] and not started['simulation_ready']

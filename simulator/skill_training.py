@@ -192,6 +192,23 @@ class SkillTraining:
             episodes=[],active_workers=[],completed_attempts=0,simulation_ready=False,physical_ready=False,
             automatic_hardware_execution=False,controller=execution_fingerprint(),
             validation_seeds=[list(range(1300160000,1300160010)),list(range(1400160000,1400160010))])
+        if scene_recipe is not None:
+            critical=('src/task_executor.py','simulator/skill_port.py','simulator/skill_parameters.py',
+                'simulator/grasp_planning.py','simulator/manipulation_planning.py','simulator/inspection_planning.py',
+                'simulator/explorer_model.py','simulator/model_config.json','config/explorer.urdf',
+                'config/handeye-accepted.json','config/arm-motion.json')
+            for old in list_trainings(self.root):
+                if (old.get('id')==self.id or old.get('task_id')!=task_id or old.get('generation',0)<1 or
+                    old.get('algorithm')!=state['algorithm']):continue
+                source=old.get('controller',{}).get('files',{})
+                if not all(source.get(name)==state['controller']['files'].get(name) for name in critical):continue
+                try:values=parameters(old['incumbent'])
+                except (ValueError,KeyError):continue
+                state['incumbent']=values;state['mean']=dict(values)
+                state['initialization']=dict(kind='bounded_parameter_warm_start',from_training_id=old['id'],
+                    source_controller_sha256=old['controller']['sha256'],unverified=True,
+                    old_episodes_counted_for_qualification=False)
+                break
         if scene_recipe is not None and len(scene_recipe['request'])>1:
             state['validation_seeds'].append(list(range(1500160000,1500160010)))
         self.save(state);return state

@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -34,7 +35,18 @@ def install():
     source=SUPPORT/('automatic-source-'+revision[:12]);marker=DATA/'maintenance/automatic-install.json'
     if health():
         if marker.is_file() and json.loads(marker.read_text()).get('revision')==revision:return json.loads(marker.read_text())
-        raise ValueError('Автоматическая служба уже работает; её нельзя заменять без проверки владельцев')
+        if not marker.is_file():raise ValueError('Порт занят другой службой; она не будет остановлена')
+        previous=json.loads(marker.read_text())
+        with urllib.request.urlopen('http://127.0.0.1:8767/api/state',timeout=5) as response:status=json.load(response)
+        if status.get('requests'):raise ValueError('Существуют просьбы нового контура; требуется совместимое обновление с сохранением их исполнителя')
+        command=subprocess.check_output(['/bin/ps','-p',str(previous['pid']),'-o','command='],text=True)
+        if '-m simulator.automatic_server' not in command:raise ValueError('PID новой службы изменился; остановка отменена')
+        os.kill(previous['pid'],signal.SIGTERM)
+        for _ in range(60):
+            if not health():break
+            time.sleep(.2)
+        if health():raise ValueError('Новая служба ещё не завершилась; исходники не менялись')
+
     names=subprocess.check_output(['git','ls-tree','-r','--name-only',revision,'--','simulator','src','config','bin','docs'],cwd=ROOT,text=True).splitlines()
     source.mkdir(exist_ok=True);hashes={}
     for name in names:
