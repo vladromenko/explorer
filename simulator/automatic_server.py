@@ -53,10 +53,15 @@ def summarized(row,root=DEFAULT_ROOT):
     workers=[]
     for worker in row.get('active_workers',[]):
         item=dict(worker)
+        folder=Path(root)/'skill-training'/identity(row['id'])/'episodes'/identity(worker['episode_id'])
         try:
-            identity(worker['episode_id']);path=Path(root)/'skill-training'/identity(row['id'])/'episodes'/worker['episode_id']/'progress.json'
+            path=folder/'progress.json'
             progress=json.loads(path.read_text());item.update(phase=progress.get('phase','initializing'),frame_age_s=max(0.,time.time()-path.stat().st_mtime))
         except (OSError,ValueError,KeyError):item.update(phase='initializing',frame_age_s=None)
+        try:started=worker.get('started_at') or folder.stat().st_ctime
+        except OSError:started=time.time()
+        age=item['frame_age_s'] if item['frame_age_s'] is not None else max(0.,time.time()-started)
+        item.update(progress_age_s=age,unresponsive=age>240.)
         workers.append(item)
     return dict(id=row['id'],state=row['state'],title='Носок → корзина' if row['task_id']=='sock_basket' else row['task_id'],
         completed=row['completed_attempts'],total=row['options']['attempts'],hours=row['options']['hours'],
@@ -65,6 +70,7 @@ def summarized(row,root=DEFAULT_ROOT):
         learned_phases=sorted(row.get('skill_archive',{})),
         diagnosed_causes=[dict(code=c['code'],title=c['title'],count=c['count']) for c in row.get('diagnosis',{}).get('causes',[])[:3]],
         repair_tests=len(row.get('repair_trials',[])),
+        runtime_recoveries=len(row.get('runtime_recoveries',[])),
         promoted_repairs=sum(r.get('promoted') is True for r in row.get('repair_trials',[])),
         reused_recordings=row.get('experience',{}).get('admitted',0),
         validation_completed=sum(r.get('status')=='complete' and r.get('split') in ('validation','user_validation') for r in row.get('episodes',[])),

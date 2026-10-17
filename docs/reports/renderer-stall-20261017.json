@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "at": 1792201393.966686,
+  "request": "df2e4c28ca74",
+  "training": "dfc212a8fb5b",
+  "completed": 167,
+  "observed_failure": "Native render initialization blocked in Metal shader cache flock; idle pool worker holds the cache file",
+  "diagnostics": "/Volumes/ExplorerSim/ExplorerSim/maintenance/renderer-stall-20261017",
+  "fixes": [
+    "one process lifetime per physical episode",
+    "240 second worker progress watchdog",
+    "bounded teardown of own worker processes",
+    "retry identical policy and scene after renderer recovery; exclude infrastructure failure from motion reward",
+    "show unresponsive workers in UI"
+  ],
+  "test_result": "248 passed; 3 subtests passed",
+  "installed": false,
+  "reason": "Awaiting explicit permission to interrupt stalled old runtime; user previously prohibited interruption",
+  "physics_geometry_acceptance_changed": false,
+  "physical_ready": false,
+  "full_task_success_confirmed": false
+}

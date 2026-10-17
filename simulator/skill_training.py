@@ -21,6 +21,7 @@ from .resource_budget import memory_budget
 from .learning import write_json
 from .skill_parameters import PARAMETERS,parameters
 from .skill_workshop import execution_fingerprint
+from .worker_runtime import WorkerStalled,stalled,terminate_pool
 
 ADAPTIVE={'observed_curriculum_cross_entropy_v3','observed_causal_program_repair_v4'}
 CURRICULUM=ADAPTIVE|{'observed_curriculum_cross_entropy_v2'}
@@ -231,6 +232,7 @@ def episode(spec):
     if execution_fingerprint()['sha256']!=spec['controller_sha256']:
         raise RuntimeError('Controller changed before worker start')
     folder.mkdir(parents=True,exist_ok=False);(folder/'frames').mkdir()
+    write_json(folder/'worker.json',dict(pid=os.getpid(),owner_pid=spec['owner_pid'],started_at=time.time()))
     env=ExplorerEnv();last=-1.;captures=0
     def cancelled():
         return pause.exists() or not storage.is_dir() or os.getppid()!=spec['owner_pid']
@@ -358,6 +360,40 @@ class SkillTraining:
         self.save(state);return state
 
     def _batch(self,state,specs,cancelled,progress):
+        # Recreate a hung native renderer without counting it as a failed
+        # grasp or changing the scene, numeric policy or controller program.
+        pending=list(specs);recovered=[]
+        for restart in range(3):
+            try:return recovered+self._batch_once(state,pending,cancelled,progress)
+            except WorkerStalled as error:
+                if cancelled() or self.pause.exists():raise InterruptedError('Пауза сохранена') from error
+                done={r['episode_id']:r for r in state['episodes'] if r['status']=='complete'}
+                retry=[]
+                for spec in pending:
+                    if spec['episode_id'] in done:
+                        recovered.append(done[spec['episode_id']]);continue
+                    old=dict(spec);folder=Path(old['folder']);folder.mkdir(parents=True,exist_ok=True)
+                    report=folder/'runtime-failure.json'
+                    write_json(report,dict(state='infrastructure_failed',reason='Renderer worker stalled: '+str(error),
+                        actions_stopped=True,independent_physics_outcome={},physics_success_evaluated=False))
+                    result=dict(episode_id=old['episode_id'],candidate=old['candidate'],seed=old['scene_seed'],
+                        split=old.get('split','train'),status='infrastructure_failed',success=False,
+                        reason='Renderer worker stalled',report=str(report),infrastructure_failure='renderer_stall')
+                    state['episodes'].append(result);state.setdefault('infrastructure_events',[]).append(result)
+                    fresh=self._spec(state,old['parameters'],old['candidate'],old['scene_seed'],
+                        split=old.get('split','train'),controller_program=old.get('controller_program'))
+                    spec.update(fresh);retry.append(spec)
+                    state.setdefault('runtime_recoveries',[]).append(dict(cause='renderer_stall',old_episode=old['episode_id'],
+                        replacement=spec['episode_id'],action='recreate_renderer_retry_identical_scene',
+                        excluded_from_learning_reward=True))
+                state.update(active_workers=[],effective_workers=1,stable_resource_batches=0,
+                    reason='Восстанавливаю зависший процесс симуляции; записи сохранены')
+                self.save(state);progress(state)
+                if restart==2:raise RuntimeError('Рендерер завис повторно после двух восстановлений; записи сохранены') from error
+                pending=retry
+        raise AssertionError('Unreachable')
+
+    def _batch_once(self,state,specs,cancelled,progress):
         workers=state['options']['workers'];pending=list(specs);results=[];active={}
         previous_state=state['state']
         reservation=int((3.2 if state.get('scene_recipe') else 1.7)*2**30)
@@ -378,9 +414,13 @@ class SkillTraining:
             self.save(state);progress(state)
             if cancelled() or self.pause.exists():raise InterruptedError('Ожидание памяти остановлено')
             time.sleep(2.)
-        with ProcessPoolExecutor(max_workers=capacity,mp_context=multiprocessing.get_context('spawn')) as pool:
+        # A reused macOS GL process can retain a Metal shader-cache file lock
+        # while idle and block another worker's first frame indefinitely.
+        # Exit after each episode so all driver locks and contexts are released.
+        with ProcessPoolExecutor(max_workers=capacity,mp_context=multiprocessing.get_context('spawn'),max_tasks_per_child=1) as pool:
             launch_limit=min(capacity,state.get('effective_workers',capacity))
             runtime_events_before=len(state.get('infrastructure_events',[]))
+            cancelling_since=None
             try:
                 while pending or active:
                     if cancelled():self.pause.touch(exist_ok=True)
@@ -389,10 +429,15 @@ class SkillTraining:
                         state['pause_kind']='memory';self.pause.touch(exist_ok=True)
                     while pending and len(active)<launch_limit and not self.pause.exists():
                         spec=pending.pop(0);slot=next(i for i in range(capacity) if i not in [x['slot'] for x in active.values()])
-                        spec['slot']=slot;spec['owner_pid']=os.getpid();active[pool.submit(episode,spec)]=spec
+                        spec['slot']=slot;spec['owner_pid']=os.getpid();spec['started_at']=time.time()
+                        active[pool.submit(episode,spec)]=spec
                     state['active_workers']=[dict(slot=s['slot'],episode_id=s['episode_id'],seed=s['scene_seed'],
-                        candidate=s['candidate']) for s in active.values()]
+                        candidate=s['candidate'],started_at=s['started_at']) for s in active.values()]
                     self.save(state);progress(state)
+                    if self.pause.exists():
+                        cancelling_since=cancelling_since or time.monotonic()
+                        if time.monotonic()-cancelling_since>10.:raise InterruptedError('Остановка зависшего исполнителя; записи сохранены')
+                    if any(stalled(spec) for spec in active.values()):raise WorkerStalled('Нет кадров или прогресса более 240 секунд')
                     if not active:
                         if pending and not self.pause.exists():
                             state['pause_kind']='memory';self.pause.touch(exist_ok=True)
@@ -403,10 +448,6 @@ class SkillTraining:
                         try:result=future.result()
                         except Exception:
                             self.pause.touch(exist_ok=True)
-                            # Cooperatively stop siblings before reporting the error.
-                            for other in active:
-                                try:other.result()
-                                except Exception:pass
                             raise
                         state['episodes'].append(result)
                         if result.get('status')=='infrastructure_failed':
@@ -428,10 +469,14 @@ class SkillTraining:
                             for r in state['episodes'])
                         self.save(state)
                 state['active_workers']=[];self.save(state)
+            except WorkerStalled:
+                terminate_pool(pool)
+                raise
             except BaseException:
                 # Set the cooperative flag before the pool context waits for
                 # workers, including when the parent receives KeyboardInterrupt.
                 self.pause.touch(exist_ok=True)
+                terminate_pool(pool)
                 raise
         if pending or any(r['status']!='complete' for r in results):raise InterruptedError('Обучение сохранено на паузе')
         if len(state.get('infrastructure_events',[]))==runtime_events_before:

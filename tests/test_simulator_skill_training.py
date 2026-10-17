@@ -169,7 +169,7 @@ def test_parent_interrupt_sets_cooperative_flag_before_waiting_for_pool(tmp_path
     import simulator.skill_training as training
     trainer=SkillTraining(tmp_path,'1'*12);state=trainer.create(attempts=8)
     class Pool:
-        def __init__(self,**kwargs):pass
+        def __init__(self,**kwargs):assert kwargs['max_tasks_per_child']==1
         def __enter__(self):return self
         def __exit__(self,*args):assert trainer.pause.exists()
         def submit(self,*args):return object()

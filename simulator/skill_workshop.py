@@ -28,6 +28,7 @@ def execution_fingerprint():
          'simulator/skill_parameters.py','simulator/resource_budget.py','simulator/skill_training.py','simulator/skill_workshop.py',
          'simulator/failure_repair.py','simulator/experience_memory.py','simulator/repair_acceptance.py','simulator/repair_motion.py',
          'simulator/domain_randomization.py','simulator/scene_recipes.py','simulator/semantic_vision.py','simulator/semantic_cache.py',
+         'simulator/worker_runtime.py',
          'simulator/grounded_skill_port.py','simulator/surface_destination.py',
          'simulator/scan_navigation.py','bin/simulator-grounding.py','bin/simulator-grounding-service.py','config/grounding-model.json',
          'simulator/environment.py','simulator/explorer_model.py',

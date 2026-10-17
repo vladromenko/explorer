@@ -32,6 +32,7 @@ CAUSES={
     'vision_timeout':('Модель зрения не успела обработать кадр',()),
     'compute_deadline':('Вычисление не уложилось во время этапа',()),
     'vision_backend_failure':('Сбой процесса модели зрения',()),
+    'renderer_stall':('Завис процесс графики симулятора',()),
     'unclassified':('Причина пока не установлена',()),
 }
 
@@ -76,6 +77,7 @@ def diagnose_report(report):
 
 def infrastructure_failure(report):
     reason=str(report.get('reason',''))
+    if 'Renderer worker stalled' in reason:return 'renderer_stall'
     if any(text in reason for text in ('Модель зрения не ответила','vision worker timeout','vision service did not start')):
         return 'vision_timeout'
     if 'Stage deadline expired' in reason:return 'compute_deadline'
@@ -102,8 +104,9 @@ def diagnosis(rows,root):
     return dict(schema=1,kind='post_stop_evidence_diagnosis',cases=cases,
         causes=[dict(code=code,title=CAUSES[code][0],count=count,operators=list(CAUSES[code][1]))
             for code,count in counts.most_common()],
-        runtime_actions=[dict(cause=code,action='shared_pinned_vision_and_same_scene_retry_with_lower_parallelism',
-            motion_reward_excluded=True) for code in counts if code in ('vision_timeout','compute_deadline','vision_backend_failure')],
+        runtime_actions=[dict(cause=code,action=('recreate_renderer_retry_identical_scene' if code=='renderer_stall' else
+            'shared_pinned_vision_and_same_scene_retry_with_lower_parallelism'),motion_reward_excluded=True)
+            for code in counts if code in ('renderer_stall','vision_timeout','compute_deadline','vision_backend_failure')],
         sensor_absence_is_not_empty_grip=True,acceptance_changed=False)
 
 
