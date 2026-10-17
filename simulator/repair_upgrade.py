@@ -154,7 +154,10 @@ done
 '''.format(url=URL,source=shlex.quote(str(source)),pythonpath=shlex.quote(str(source)+':'+str(source/'src')),
             python=shlex.quote(str(support/'runtime/bin/python')),log=shlex.quote(str(support/'automatic-service.log')),
             errors=shlex.quote(str(support/'automatic-service-error.log')))
-        temporary=app.with_suffix('.tmp');temporary.write_text(launcher);temporary.chmod(0o755);temporary.replace(app)
+        # Upgrading the historical search service must not change the desktop
+        # entry point installed for the active neural pipeline.
+        if not (support/'neural-launch.json').is_file():
+            temporary=app.with_suffix('.tmp');temporary.write_text(launcher);temporary.chmod(0o755);temporary.replace(app)
     # Release the physics lease BEFORE the new service receives a continuation.
     if state=='qualified':return dict(state='qualified',request=config['request'],no_duplicate_training=True)
     latest=get('/api/state')

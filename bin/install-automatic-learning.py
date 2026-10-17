@@ -92,11 +92,15 @@ open {errors}
 '''.format(source=shlex.quote(str(source)),pythonpath=shlex.quote(str(source)+':'+str(source/'src')),
         python=shlex.quote(str(runtime)),log=shlex.quote(str(SUPPORT/'automatic-service.log')),
         errors=shlex.quote(str(SUPPORT/'automatic-service-error.log')))
-    app.parent.mkdir(parents=True,exist_ok=True);temporary=app.with_suffix('.tmp');temporary.write_text(launcher);temporary.chmod(0o755);temporary.replace(app)
+    # A separately installed neural entry point owns desktop navigation.  An
+    # update to the archived controller service must not replace it with 8767.
+    neural_launcher=(SUPPORT/'neural-launch.json').is_file()
+    if not neural_launcher:
+        app.parent.mkdir(parents=True,exist_ok=True);temporary=app.with_suffix('.tmp');temporary.write_text(launcher);temporary.chmod(0o755);temporary.replace(app)
     # Old bookmarks now open the single automatic interface. Only an HTML
     # entry point is replaced; old actor source and active workers are retained.
     old=SUPPORT/'source/simulator/static/index.html'
-    if old.exists():
+    if old.exists() and not neural_launcher:
         shutil.copy2(old,backup/'legacy-index.html')
         redirect='<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=http://127.0.0.1:8767/"><title>Explorer · обучение</title></head><body><a href="http://127.0.0.1:8767/">Открыть автоматическое обучение</a></body></html>'
         tmp=old.with_suffix('.tmp');tmp.write_text(redirect);tmp.replace(old)
