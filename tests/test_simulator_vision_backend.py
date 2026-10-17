@@ -32,3 +32,15 @@ def test_runtime_accelerator_error_returns_to_same_fp32_cpu_model():
     backend._infer=infer
     assert equivalent(backend.infer({},(12,16)),detection())
     assert moves==['cpu'] and backend.device=='cpu' and 'fallback' in backend.measurement
+
+
+def test_accelerator_diagnostics_are_json_serializable(monkeypatch):
+    import json
+    import simulator.vision_backend as module
+    monkeypatch.setattr(module.sys,'platform','darwin')
+    monkeypatch.setattr('simulator.resource_budget.memory_budget',lambda:dict(available_bytes=50,total_bytes=100))
+    torch=SimpleNamespace(backends=SimpleNamespace(mps=SimpleNamespace(is_available=lambda:True)),mps=SimpleNamespace(empty_cache=lambda:None))
+    backend=PinnedDetectorBackend(torch,SimpleNamespace(to=lambda _:None),object())
+    backend._infer=lambda inputs,size,device:(detection(),1. if device=='cpu' else .1)
+    backend.infer({},(12,16))
+    assert backend.device=='mps' and json.loads(json.dumps(backend.measurement))['same_recorded_detections'] is True

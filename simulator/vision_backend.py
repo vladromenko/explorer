@@ -9,7 +9,7 @@ def equivalent(a,b):
     if labels(a)!=labels(b) or len(a['scores'])!=len(b['scores']):return False
     if not len(a['scores']):return True
     array=lambda t:t.detach().cpu().numpy() if hasattr(t,'detach') else np.asarray(t)
-    return (np.max(np.abs(array(a['scores'])-array(b['scores'])))<.001 and
+    return bool(np.max(np.abs(array(a['scores'])-array(b['scores'])))<.001 and
         np.max(np.abs(array(a['boxes'])-array(b['boxes'])))<.05)
 
 
