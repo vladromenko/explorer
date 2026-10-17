@@ -1,0 +1,46 @@
+{
+  "date": "2026-10-17",
+  "reason": "Explicit path-planning failures were masked by earlier successful physical lifting",
+  "regression_replay": {
+    "reviewed": 37,
+    "reclassified_view_infeasible": 6,
+    "reclassified_placement_infeasible": 8
+  },
+  "change": "Prioritize explicit solver failure over historical grasp outcome; no physics, controller operators or acceptance changes",
+  "tests": {
+    "python_passed": 68,
+    "browser_passed": true,
+    "browser_real_mutations": 0
+  },
+  "history_ui": "Superseded requests collapsed; all archived data retained",
+  "monitor": "Existing explorer heartbeat every 3 hours; diagnose lack of measured outcome improvement and autonomously fix tested code, without manual teaching",
+  "baseline": {
+    "at": 1792207459.279764,
+    "training": "458e6c143977",
+    "generation": 4,
+    "completed": 39,
+    "full_successes": 0,
+    "unique_training_scenes": 2,
+    "curriculum_pairs_passed": 0,
+    "observed_stage_success_counts": {
+      "verify_hold": 36,
+      "carry": 34,
+      "support": 9,
+      "release": 8
+    },
+    "post_stop_physics_counts": {
+      "lifted": 39
+    },
+    "failure_causes": {
+      "probe_infeasible": 6,
+      "view_infeasible": 6,
+      "held_but_unseen": 9,
+      "unclassified": 9,
+      "placement_infeasible": 8,
+      "hold_lost_or_occluded": 1
+    },
+    "accepted_program_changes": 0,
+    "note": "Counts are a baseline, not readiness. A single scene may contribute to each reached stage. Compare outcomes and diversity, not count alone."
+  },
+  "physical_ready": false
+}

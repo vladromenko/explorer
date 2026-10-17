@@ -50,6 +50,21 @@ def test_diagnosis_records_exact_post_stop_evidence_and_rejects_outside_storage(
     assert not result['acceptance_changed']
 
 
+@pytest.mark.parametrize('reason,code',[
+    ('support: Нет пути изменения обзора: Обзорная поза недостижима: ошибка наведения 2.1 см','view_infeasible'),
+    ('ValueError: Нет достижимой позы размещения с проверенным зазором корпуса руки над бортиком','placement_infeasible'),
+])
+def test_explicit_path_failure_is_not_misdiagnosed_as_lost_visual_hold(reason,code):
+    # Real failure strings from the background run: earlier physical holding
+    # must not turn a later kinematic failure into a perception diagnosis.
+    for lifted,contact in ((True,True),(True,False),(False,False)):
+        assert diagnose_report(report('support',reason,lifted,contact))==(code,'identified')
+    state=dict(controller_program=program(),experience={'ik_seeds':[[0]*5]})
+    from simulator.failure_repair import CAUSES
+    choices=repair_proposals(state,{'causes':[{'operators':list(CAUSES[code][1])}]})
+    assert choices[1]['operators']==['history_ik_seeds']
+
+
 def test_cause_selects_a_structural_repair_and_does_not_repeat_an_exhausted_test():
     state={'generation':0,'controller_program':program()}
     analysis={'causes':[{'operators':['extended_hold_probe','probe_feasible_view']}]}

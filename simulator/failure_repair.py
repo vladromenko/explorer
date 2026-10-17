@@ -25,6 +25,8 @@ OPERATORS={
 CAUSES={
     'ik_infeasible':('Недостижимая траектория захвата',('history_ik_seeds','cartesian_feedback')),
     'probe_infeasible':('Нет достижимого проверочного движения',('kinematic_hold_probe','extended_hold_probe','probe_feasible_view','history_ik_seeds')),
+    'view_infeasible':('Нет достижимого пути к обзорной позе',('history_ik_seeds','probe_feasible_view')),
+    'placement_infeasible':('Нет достижимой позы размещения над бортиком',('history_ik_seeds',)),
     'missed_material':('Ткань физически не поднята',('surface_axis_grasp','cartesian_feedback')),
     'held_but_unseen':('Физическое удержание есть, камера его не подтверждает',('visibility_planned_lift','probe_feasible_view','extended_hold_probe')),
     'hold_lost_or_occluded':('После подъёма потеряно удержание либо его видимость',('visibility_planned_lift','surface_axis_grasp')),
@@ -65,6 +67,11 @@ def diagnose_report(report):
     # a material miss. A camera refusal by itself identifies neither slipping
     # nor an empty grip; preserve that uncertainty in the diagnosis.
     if 'Проверочное движение недостижимо' in reason:return 'probe_infeasible','identified'
+    # A successful earlier lift says nothing about why a later planner refused
+    # a path. Prefer the explicit solver evidence over that historical outcome.
+    if any(s in reason for s in ('Нет пути изменения обзора','Обзорная поза недостижима')):
+        return 'view_infeasible','identified'
+    if 'Нет достижимой позы размещения' in reason:return 'placement_infeasible','identified'
     if any(s in reason for s in ('точного захвата','полного смыкания','IK:','кинематик')):
         return 'ik_infeasible','identified'
     if stage=='verify_place' and truth.get('success') is True:return 'placement_unseen','identified'
