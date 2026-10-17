@@ -3,6 +3,7 @@
 <body>
 <header><div class="brand"><span class="brandmark">E</span><div><strong>Explorer</strong><span>Мастерская симуляции</span></div></div><div class="header-right"><span class="chip"><i></i> Только на этом Mac</span><span id="connection" class="muted">Подключение…</span></div></header>
 <main>
+<details id="skill-history"><summary>Архив подбора параметров и проверок отдельных навыков</summary>
 <section class="panel learning-dashboard" id="skill-workshop" aria-live="polite">
 <p class="eyebrow">ПОЭТАПНЫЕ НАВЫКИ</p><h1>Самостоятельное обучение</h1>
 <p>Найти → подъехать → измерить заново → взять → проверить удержание → перенести → отпустить → проверить размещение.</p>
@@ -15,8 +16,7 @@
 <div class="worker-grid" id="worker-grid"></div>
 <div class="button-row"><button id="skill-run" class="primary">Проверить этапы в симуляции</button><button id="skill-prepare">Подготовить отдельные навыки</button><button id="skill-resume" class="hidden">Продолжить подготовку</button><button id="skill-pause">Пауза вычислений</button></div>
 <div id="skill-evidence" class="skill-evidence" aria-live="polite"></div><a class="button" href="#scene-view">Показать камеры проверки</a><details><summary>Предыдущие проверки и подготовка данных</summary><ul id="skill-results"></ul></details><p class="muted">Неподтверждённый захват останавливает перенос. Подготовленные данные и короткие модели ещё не означают готовность робота. Передача нового режима на Jetson появится после проверки исполнения.</p>
-</section>
-<details><summary>Архив экспериментов ACT и сохранённый прежний цикл</summary>
+</section></details>
 
 <section class="panel learning-dashboard" id="learning-dashboard" aria-live="polite">
 <p class="eyebrow">ВАШЕ ТЕКУЩЕЕ ОБУЧЕНИЕ</p><div class="section-line"><h1 id="cycle-title">Восстанавливаю сохранённый результат…</h1><span class="tag" id="cycle-state">Подключение</span></div>
@@ -26,7 +26,7 @@
 <div class="button-row"><button id="cycle-start" class="primary">Довести выбранный навык до готовности</button><button id="cycle-pause" class="hidden">Пауза обучения</button><button id="cycle-resume" class="hidden">Продолжить сохранённое обучение</button><a class="button" href="#automatic-learning">Выбрать задачи и время</a><a id="cycle-download" class="button hidden" href="/api/package" download>Скачать проверенную модель</a></div>
 <p class="muted compact">ROSMASTER можно выключить. Для вычислений нужны включённый Mac, питание и подключённый внешний диск. Готовность в симуляции и физическая проверка робота показываются отдельно.</p>
 <details><summary>Сцена и подробности текущего этапа</summary><img id="learning-preview" alt="Кадр текущей попытки или сохранённого учебного примера"><p id="cycle-preview-note">Во время обучения нейросети движения не выполняются; показывается сохранённый пример.</p><p id="cycle-storage"></p></details>
-</section></details>
+</section>
 <section class="panel assistant-panel"><p class="eyebrow">ОБУЧЕНИЕ ПО ВАШЕЙ ПРОСЬБЕ</p><h1>Чему научить Explorer?</h1><p>Напишите обычными словами. Для носка и корзины помощник запускает самостоятельный подбор параметров по попыткам в симуляции. Для остальных задач пока доступна подготовка данных; автоматическое обучение им ещё не подключено. Сцены создаются по поддерживаемым сценариям; произвольный новый предмет или действие из текста пока не добавляются. Неподдерживаемые части просьбы помощник покажет отдельно.</p>
 <label for="learning-request">Ваша просьба</label><textarea id="learning-request" rows="3" maxlength="4000" placeholder="Хочу, чтобы робот привозил мне печенье в упаковке из другой комнаты на поднос"></textarea>
 <div class="request-examples"><button data-request="Научись убирать носки с пола в корзину">Носки в корзину</button><button data-request="Хочу, чтобы робот привозил мне печенье в упаковке из другой комнаты на поднос">Привозить печенье</button><button data-request="Хочу, чтобы робот привозил мне печенье в упаковке и давал его мне в руку">Печенье в руку</button><button data-request="Научись складывать маленькие лёгкие кубики в коробку и небольшие тряпочки в корзину для белья">Игрушки и ткань</button></div>

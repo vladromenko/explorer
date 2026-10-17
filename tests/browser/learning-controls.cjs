@@ -7,6 +7,9 @@ const base=process.env.EXPLORER_UI_URL || 'http://127.0.0.1:8766';
 const repo=path.resolve(__dirname,'../..');
 (async()=>{
  const original=await (await fetch(base+'/api/state?compact=true')).json();
+ // This contract exercises archived controller-search controls, without a
+ // concurrent neural cycle taking ownership of the primary panel.
+ original.learning_status=null;
  const goal={id:'a'.repeat(12),created:1,state:'planned',learning_mode:'skill_search',
   plan:{title:'Носок в корзину',request:'Научись убирать носки в корзину',fully_supported:true,
    task_ids:['sock_basket'],tasks:[{task_id:'sock_basket',title:'Носок → корзина',learns:'Параметры действий',steps:[]}],
@@ -30,6 +33,7 @@ const repo=path.resolve(__dirname,'../..');
    return route.continue();
   });
   await page.goto(base+'/#skill-workshop');
+  await page.locator('#skill-history').evaluate(node=>{node.open=true;});
   await page.waitForFunction(()=>document.getElementById('request-result').textContent.includes('Носок в корзину'));
   async function click(id,endpoint){
    const before=calls.length;await page.locator('#'+id).click();

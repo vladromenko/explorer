@@ -90,6 +90,10 @@ function renderStatus(snapshot) {
 }
 function renderLearning(info) {
   if (!info) return;
+  // Current neural progress must be the first visible panel. Historical
+  // controller-search pauses describe a different owner and stay in the archive.
+  const dashboard=$('learning-dashboard');
+  if(dashboard.parentElement.firstElementChild!==dashboard)dashboard.parentElement.prepend(dashboard);
   const names={needs_diagnosis:'Нужен разбор причин',running:'Обучение продолжается',needs_more_training:'Нужна доработка',ready_for_transfer:'Готово к переносу',paused:'Обучение на паузе',interrupted:'Можно продолжить',failed:'Нужна проверка ошибки',corrupt:'Повреждена запись состояния'};
   const stages={compare:'Сравниваем новую и опорную модель на одинаковых сценах',diagnosis:'Повтор остановлен: улучшение не подтверждено',audit:'Сравниваем частоту зрительной обратной связи',trials:'Собираем новые экспертные показы',train:'Обучаем модель ACT',validate:'Проверяем самостоятельное выполнение',export:'Собираем проверенный пакет',finished:'Последний цикл завершён',ready:'Пакет готов'};
   $('cycle-title').textContent=info.title;
@@ -100,7 +104,7 @@ function renderLearning(info) {
   $('cycle-examples').textContent=info.demonstrations.successful.toLocaleString('ru-RU');
   $('cycle-check').textContent=info.episodes?`${info.successes} / ${info.episodes}`:'Ещё не выполнена';
   $('cycle-steps').textContent=info.training_budget?`${Number(info.steps_completed || 0).toLocaleString('ru-RU')} / ${info.training_budget.effective_steps.toLocaleString('ru-RU')}`:'—';
-  const eta=info.eta_s?` До завершения обучения ориентировочно ${Math.ceil(info.eta_s/60)} мин; затем проверка.`:'';
+  const eta=info.eta_s?` До завершения обучения ориентировочно ${Math.floor(info.eta_s/3600)} ч ${Math.ceil((info.eta_s%3600)/60)} мин; затем проверка.`:'';
   $('cycle-progress').value=info.phase==='train' && info.training_budget?100*(info.steps_completed || 0)/info.training_budget.effective_steps:info.progress || 0;
   const next=info.simulation_ready?'Модель прошла две отдельные проверки. Подключите Jetson для загрузки и физической проверки.':info.state==='running'?'После обучения цикл сравнит новую модель с прежней. Повтор допускается при подтверждённом улучшении или один раз после проверенного исправления показов.':info.state==='paused' || info.state==='interrupted'?'Нажмите «Продолжить сохранённое обучение». Записи и готовые этапы сохраняются.':'Готовность ещё не подтверждена. «Довести выбранный навык до готовности» запускает автоматическую доработку с сохранением результатов.';
   $('cycle-next').textContent=info.state==='needs_diagnosis'?(info.message || 'Новая модель не улучшила результат. Автоматический повтор остановлен для диагностики.')+(info.comparison?` Опорная модель: ${info.comparison.reference_successes}/${info.comparison.episodes}; новая: ${info.comparison.candidate_successes}/${info.comparison.episodes} на тех же сценах.`:''):next+eta;
@@ -282,6 +286,15 @@ function renderSkills(snapshot) {
 }
 function renderSkillLearning(snapshot) {
   const row=(snapshot.skill_trainings || [])[0],box=$('skill-learning-summary');box.replaceChildren();
+  const neural=snapshot.learning_status;
+  if(neural?.cycle_id && neural.state==='running'){
+    const note=document.createElement('p');
+    note.textContent='Это архив прежнего подбора параметров. Текущий цикл ACT работает; его этап и шаги показаны в верхней панели.';
+    box.append(note);
+    $('skill-learning-progress').max=100;$('skill-learning-progress').value=0;
+    $('skill-learning-resume').classList.add('hidden');
+    return;
+  }
   if(!row){box.textContent='Обучение ещё не запущено.';return;}
   const phases={pick:'захвату и подъёму',view:'подъезду и обзору',place:'размещению в корзине'};
   const states={queued:'Ожидает запуска',running:'Алгоритм обучается',waiting_for_memory:'Ожидает свободную память',validating:'Независимая проверка',operator_paused:'Пауза',budget_paused:'Бюджет этого запуска завершён',memory_paused:'Пауза: требуется свободная память',failed:'Ошибка обучения',needs_diagnosis:'Подбор остановлен: улучшения нет',validation_failed:'Независимая проверка не пройдена',simulation_qualified:'Навык проверен в симуляции'};
