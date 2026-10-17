@@ -4,7 +4,8 @@ const {chromium}=require('playwright');
 const base=process.env.EXPLORER_AUTOMATIC_URL||'http://127.0.0.1:8767';
 (async()=>{
  let snapshot=await(await fetch(base+'/api/state')).json();
- const calls=[],errors=[];
+ const calls=[],errors=[];let frameRequests=0,frameFailures=0,failFrames=false;
+ const frameImage=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a9qkAAAAASUVORK5CYII=','base64');
  const browser=await chromium.launch({headless:true,executablePath:process.env.EXPLORER_CHROME||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
  try{
   const page=await browser.newPage({viewport:{width:1440,height:1150}});page.on('pageerror',error=>errors.push(error.message));
@@ -12,6 +13,7 @@ const base=process.env.EXPLORER_AUTOMATIC_URL||'http://127.0.0.1:8767';
    const request=route.request(),url=new URL(request.url());
    if(request.method()==='POST'){calls.push({path:url.pathname,body:request.postDataJSON()});return route.fulfill({contentType:'application/json',body:JSON.stringify({id:'a'.repeat(12),state:'queued',message:'Сохранено',stopping:true})});}
    if(url.pathname==='/app.js'&&process.env.EXPLORER_AUTOMATIC_SCRIPT)return route.fulfill({contentType:'application/javascript',body:require('node:fs').readFileSync(process.env.EXPLORER_AUTOMATIC_SCRIPT,'utf8')});
+   if(url.pathname.startsWith('/api/frames/')){frameRequests++;if(failFrames){frameFailures++;return route.fulfill({status:503,body:'Frame not ready'});}return route.fulfill({contentType:'image/png',body:frameImage});}
    if(url.pathname==='/api/state')return route.fulfill({contentType:'application/json',body:JSON.stringify(snapshot)});
    return route.continue();
   });
@@ -40,6 +42,13 @@ const base=process.env.EXPLORER_AUTOMATIC_URL||'http://127.0.0.1:8767';
   const training={id:'d'.repeat(12),state:'running',completed:8,total:96,phase:'pick',active_workers:[{slot:0,episode_id:'e'.repeat(12)},{slot:1,episode_id:'f'.repeat(12)}]};
   snapshot={...snapshot,legacy:null,requests:[own],trainings:[training]};await page.evaluate(s=>showCurrent(s),snapshot);
   assert.equal(await page.locator('.worker').count(),2);assert((await page.locator('#workers').innerText()).includes('2'));
+  await page.waitForFunction(()=>!document.getElementById('view-1-overview').hidden);
+  await page.evaluate(()=>{window.retainedWorkerImage=document.getElementById('view-1-overview');});
+  training.active_workers[0].episode_id='1'.repeat(12);await page.evaluate(s=>showCurrent(s),snapshot);
+  assert.equal(await page.evaluate(()=>window.retainedWorkerImage===document.getElementById('view-1-overview')),true);
+  const beforeFrames=frameRequests;await page.waitForTimeout(1200);assert(frameRequests>=beforeFrames+4);
+  failFrames=true;for(let i=0;i<20&&!frameFailures;i++)await page.waitForTimeout(100);assert(frameFailures>0);
+  assert.equal(await page.locator('#view-1-overview').evaluate(e=>e.hidden),false);failFrames=false;
   const archived={...own,id:'0'.repeat(12),state:'maintenance_paused',superseded_by:own.id};
   snapshot={...snapshot,requests:[own,archived]};await page.evaluate(s=>showRequests(s),snapshot);
   assert.equal(await page.locator('#requests > article').count(),1);
@@ -49,6 +58,11 @@ const base=process.env.EXPLORER_AUTOMATIC_URL||'http://127.0.0.1:8767';
   await page.waitForFunction(()=>historyOpen===true);
   snapshot={...snapshot,requests:[{...own,reason:'Новая проверка'},archived]};await page.evaluate(s=>showRequests(s),snapshot);
   assert.equal(await page.locator('#request-history').evaluate(e=>e.open),true);
+  snapshot={...snapshot,requests:[{...own,parent_id:archived.id},archived],trainings:[training,{id:'2'.repeat(12),completed:40}]};
+  snapshot.requests[1]={...archived,tasks:[{training_id:'2'.repeat(12)}]};
+  await page.evaluate(s=>showCurrent(s),snapshot);
+  assert((await page.locator('#attempts').innerText()).includes('В текущей версии: 8'));
+  assert((await page.locator('#repair-status').innerText()).includes('В предыдущих версиях сохранено 40'));
   await page.locator('#current-control').click();assert(calls.some(r=>r.path==='/api/requests/'+id+'/pause'));
   await page.locator('#disconnect').click();assert(calls.some(r=>r.path==='/api/disconnect'));
   await page.waitForFunction(()=>document.getElementById('learn').disabled);

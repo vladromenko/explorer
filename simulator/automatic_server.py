@@ -81,6 +81,7 @@ def summarized(row,root=DEFAULT_ROOT):
         runtime_recoveries=len(row.get('runtime_recoveries',[])),
         promoted_repairs=sum(r.get('promoted') is True for r in row.get('repair_trials',[])),
         reused_recordings=row.get('experience',{}).get('admitted',0),
+        warm_start_from=row.get('initialization',{}).get('from_training_id'),
         parallelism=row.get('capacity_calibration'),configured_workers=row.get('calibrated_workers',row['options'].get('workers',4)),
         training_scene_pairs=row.get('curriculum_pairs_passed',0),minimum_scene_pairs=row.get('minimum_curriculum_pairs',3),
         distinct_training_scenes=len({r.get('seed') for r in row.get('episodes',[]) if r.get('status')=='complete' and r.get('split','train')=='train'}),
