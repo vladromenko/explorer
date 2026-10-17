@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "at": 1792201393.966686,
+  "at": 1792202831.201194,
   "request": "df2e4c28ca74",
   "training": "dfc212a8fb5b",
   "completed": 167,
@@ -14,9 +14,22 @@
     "show unresponsive workers in UI"
   ],
   "test_result": "248 passed; 3 subtests passed",
-  "installed": false,
-  "reason": "Awaiting explicit permission to interrupt stalled old runtime; user previously prohibited interruption",
+  "installed": true,
+  "reason": "Applied after explicit user approval; first paired comparison completed; candidate under independent training confirmation",
   "physics_geometry_acceptance_changed": false,
   "physical_ready": false,
-  "full_task_success_confirmed": false
+  "full_task_success_confirmed": false,
+  "installed_revision": "0878d65bb992dec2bd042534287c115d0d51f569",
+  "service_pid": 46449,
+  "continuation_request": "4c396d94abfd",
+  "continuation_training": "c0401404e396",
+  "algorithm": "observed_causal_program_repair_v4",
+  "controller_sha256": "581ff267873aa838505bcd74c5b950e7a93bcf1007c5a6cd845c5b8409b7d418",
+  "completed_new_attempts": 9,
+  "old_attempts_preserved": 167,
+  "compatible_demonstrations": 506,
+  "live_worker_replacement_verified": true,
+  "old_renderer_processes_exited": true,
+  "simulation_ready": false,
+  "transfer_contract_gap": "Existing Jetson importer handles legacy ACT archives; new observed skill curriculum still requires a validated hardware adapter and corresponding package import before hardware execution"
 }
