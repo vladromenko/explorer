@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "created": 1792205633.077464,
-  "state": "tested_pending_install",
+  "state": "tested_pending_quality_install",
   "hardware": {
     "model": "Apple M4 Pro",
     "cpu_cores": 14,
@@ -39,20 +39,46 @@
     "full_simulator_and_automatic_suite": 399,
     "followup_targeted_suite": 74,
     "javascript_syntax": true,
-    "python_compile": true
+    "python_compile": true,
+    "post_integration_runtime_suite": 85
   },
   "previous": {
     "request": "4c396d94abfd",
     "training": "c0401404e396",
     "completed_at_last_read": 136,
-    "ready": false
+    "ready": false,
+    "completed_at_stop": 140
   },
   "simulation_ready": false,
   "physical_ready": false,
   "real_robot_contacted": false,
   "remaining": [
     "Run the installed program through actual independent qualifications; no current full task success claim",
-    "Measure current production MPS backend and parallelism after controlled installation",
-    "Real robot calibration/contact/actuation timing still requires preflight and an observed physical trial; current real sock closure reference is 160 degrees while simulator contract closes at 170, so adapter must refuse an unaccepted mapping"
+    "Real robot calibration/contact/actuation timing still requires preflight and an observed physical trial; current real sock closure reference is 160 degrees while simulator contract closes at 170, so adapter must refuse an unaccepted mapping",
+    "Verify final installed Popen workers produce fresh physical recordings and then let the program collect and qualify the expanded curriculum"
+  ],
+  "quality_objective": {
+    "priority": "more varied full-fidelity data, not merely shorter completion",
+    "base_training_scene_pairs": 16,
+    "minimum_distinct_training_scenes": 32,
+    "eight_worker_training_scene_pairs": 32,
+    "eight_worker_minimum_distinct_training_scenes": 64,
+    "initial_attempt_budget": 1000,
+    "maximum_parallel_quality_budget": 2000,
+    "unchanged_wall_budget_hours": 24
+  },
+  "integration_fixes": [
+    {
+      "cause": "numpy bool in accelerator telemetry was not JSON serializable",
+      "fixed_in": "c6343b2",
+      "live_model_protocol_check": "/Volumes/ExplorerSim/ExplorerSim/maintenance/vision-protocol-regression-1792205786390759000",
+      "runtime_device": "mps",
+      "measured_speedup": 4.254283441945536
+    },
+    {
+      "cause": "recycling ProcessPool manager stopped progressing and ignored cooperative pause",
+      "diagnostics": "/Volumes/ExplorerSim/ExplorerSim/maintenance/owner-recovery-334c3af4adf9",
+      "replacement": "one owned Popen process per episode; bounded teardown; 20 processes across 10 waves regression"
+    }
   ]
 }

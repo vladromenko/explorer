@@ -28,7 +28,7 @@ DEFAULT_ROOT=Path('/Volumes/ExplorerSim/ExplorerSim')
 class Learn(BaseModel):
     text:str=Field(min_length=1,max_length=4000)
     parent_id:str|None=Field(default=None,pattern='^[0-9a-f]{12}$')
-    attempts:int=Field(default=100,ge=8,le=1000)
+    attempts:int=Field(default=1000,ge=8,le=1000)
     hours:float=Field(default=24,gt=0,le=24)
 
 
@@ -82,6 +82,8 @@ def summarized(row,root=DEFAULT_ROOT):
         promoted_repairs=sum(r.get('promoted') is True for r in row.get('repair_trials',[])),
         reused_recordings=row.get('experience',{}).get('admitted',0),
         parallelism=row.get('capacity_calibration'),configured_workers=row.get('calibrated_workers',row['options'].get('workers',4)),
+        training_scene_pairs=row.get('curriculum_pairs_passed',0),minimum_scene_pairs=row.get('minimum_curriculum_pairs',3),
+        distinct_training_scenes=len({r.get('seed') for r in row.get('episodes',[]) if r.get('status')=='complete' and r.get('split','train')=='train'}),
         validation_completed=sum(r.get('status')=='complete' and r.get('split') in ('validation','user_validation') for r in row.get('episodes',[])),
         validation_total=10*len(row.get('validation_seeds',[[],[]])),simulation_ready=row.get('simulation_ready',False),physical_ready=False)
 

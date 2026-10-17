@@ -27,13 +27,13 @@ def test_failed_vision_retries_same_scene_without_poisoning_learning_and_reduces
         def __init__(self,**kwargs):pass
         def __enter__(self):return self
         def __exit__(self,*args):pass
-        def submit(self,fn,spec):
+        def submit(self,spec):
             calls.append(copy.deepcopy(spec));future=Future()
             value=dict(episode_id=spec['episode_id'],seed=spec['scene_seed'],candidate=spec['candidate'],
                 success=False,score=3.,phase_credit={'pick':1.},status='complete',split='train')
             if len(calls)==1:value.update(status='infrastructure_failed',infrastructure_failure='vision_timeout',reason='timeout')
             future.set_result(value);return future
-    monkeypatch.setattr(training,'ProcessPoolExecutor',Pool)
+    monkeypatch.setattr(training,'EpisodePool',Pool)
     trainer=training.SkillTraining(tmp_path,'a'*12);state=trainer.create(attempts=8)
     spec=trainer._spec(state,state['incumbent'],0,1234)
     results=trainer._batch(state,[spec],lambda:False,lambda s:None)

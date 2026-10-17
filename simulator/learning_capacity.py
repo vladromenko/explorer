@@ -17,6 +17,17 @@ from .worker_runtime import WorkerStalled
 GIB=2**30
 
 
+def apply_quality_scale(state,workers):
+    """Extra capacity buys more diverse material within the same time limit."""
+    if not state.get('scene_recipe'):return
+    base=state.get('initial_attempt_budget',state['options']['attempts'])
+    target=min(2000,max(base,int(base*workers/4)))
+    state['quality_attempt_budget']=max(state.get('quality_attempt_budget',base),target)
+    state['options']['attempts']=max(state['options']['attempts'],target)
+    state['minimum_curriculum_pairs']=max(state.get('minimum_curriculum_pairs',16),int(16*workers/4))
+    state['resource_objective']='more_diverse_full_fidelity_training_material'
+
+
 def reservation(peak):
     # The model server remains a separate shared resident process. Actor peak
     # includes its renderer; add 25% and 256 MiB for future harder episodes.
@@ -107,4 +118,5 @@ def calibrate(trainer,state,specs,cancelled,progress):
         effective_workers=target if checked['accepted'] else 4,
         capacity_calibration=dict(state='completed',**checked,folder=str(root),
             excluded_from_learning_and_acceptance=True,baseline_wall_s=results[0]['wall_s'],probe_wall_s=results[1]['wall_s']))
+    apply_quality_scale(state,state['calibrated_workers'])
     trainer.save(state)

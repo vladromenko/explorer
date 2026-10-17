@@ -231,7 +231,7 @@ def test_semantic_training_reserves_memory_for_vision_subprocess_as_well(tmp_pat
         def __init__(self,**kwargs):counts.append(kwargs['max_workers'])
         def __enter__(self):return self
         def __exit__(self,*args):pass
-    monkeypatch.setattr(training,'ProcessPoolExecutor',Pool)
+    monkeypatch.setattr(training,'EpisodePool',Pool)
     assert trainer._batch(state,[],lambda:False,lambda s:None)==[]
     assert counts==[2] and state['resource_measurement']['reserved_bytes_per_worker']==int(3.2*2**30)
 

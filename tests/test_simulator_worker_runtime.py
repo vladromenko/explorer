@@ -73,3 +73,29 @@ def test_worker_stall_is_reported_as_runtime_problem_not_grasp_failure(tmp_path)
         options=dict(attempts=8,hours=1),active_workers=[dict(slot=0,episode_id='b'*12,started_at=time.time()-500)])
     assert summarized(row,tmp_path)['active_workers'][0]['unresponsive'] is True
     assert infrastructure_failure({'reason':'Renderer worker stalled: no frames'})=='renderer_stall'
+
+
+def test_actor_processes_finish_many_waves_without_a_recycling_manager(tmp_path):
+    import sys
+    from simulator.worker_runtime import EpisodePool
+    worker=tmp_path/'fake_worker.py'
+    worker.write_text('import json,sys\nfrom pathlib import Path\ns=json.loads(Path(sys.argv[1]).read_text());p=Path(s["folder"]);p.mkdir(parents=True);(p/"result.json").write_text(json.dumps({"seed":s["scene_seed"]}))\n')
+    with EpisodePool(2,command=[sys.executable,str(worker)]) as pool:
+        for wave in range(10):
+            futures=[pool.submit(dict(episode_id=f'{wave:011d}{i}',folder=str(tmp_path/'episodes'/f'{wave}-{i}'),scene_seed=wave*2+i)) for i in range(2)]
+            deadline=time.monotonic()+5
+            while not all(f.done() for f in futures):
+                assert time.monotonic()<deadline;time.sleep(.01)
+            assert [f.result()['seed'] for f in futures]==[wave*2,wave*2+1]
+    assert all(f.process.poll()==0 for f in pool.children)
+
+
+def test_subprocess_actor_teardown_remains_bounded_and_owned(tmp_path):
+    import sys
+    from simulator.worker_runtime import EpisodePool
+    worker=tmp_path/'sleep.py';worker.write_text('import time;time.sleep(60)\n')
+    started=time.monotonic()
+    with EpisodePool(1,command=[sys.executable,str(worker)]) as pool:
+        future=pool.submit(dict(episode_id='a'*12,folder=str(tmp_path/'episodes'/'a')))
+        assert not future.done()
+    assert future.done() and time.monotonic()-started<8

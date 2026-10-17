@@ -192,14 +192,16 @@ def test_parent_interrupt_sets_cooperative_flag_before_waiting_for_pool(tmp_path
     import simulator.skill_training as training
     trainer=SkillTraining(tmp_path,'1'*12);state=trainer.create(attempts=8)
     class Pool:
-        def __init__(self,**kwargs):assert kwargs['max_tasks_per_child']==1
+        def __init__(self,**kwargs):assert kwargs['max_workers']>=1
         def __enter__(self):return self
         def __exit__(self,*args):assert trainer.pause.exists()
-        def submit(self,*args):return object()
-    monkeypatch.setattr(training,'ProcessPoolExecutor',Pool)
+        def submit(self,*args):
+            class Future:
+                def done(self):return interrupted()
+            return Future()
+    monkeypatch.setattr(training,'EpisodePool',Pool)
     monkeypatch.setattr('psutil.virtual_memory',lambda:SimpleNamespace(total=24*2**30,available=12*2**30))
     def interrupted(*args,**kwargs):raise KeyboardInterrupt()
-    monkeypatch.setattr(training,'wait',interrupted)
     spec=trainer._spec(state,state['incumbent'],0,906160004)
     with pytest.raises(KeyboardInterrupt):trainer._batch(state,[spec],lambda:False,lambda value:None)
     assert trainer.pause.exists() and spec['owner_pid']>0
@@ -210,7 +212,7 @@ def test_low_memory_waits_without_spawning_and_remains_cancellable(tmp_path,monk
     import simulator.skill_training as training
     trainer=SkillTraining(tmp_path,'2'*12);state=trainer.create(attempts=8)
     monkeypatch.setattr('psutil.virtual_memory',lambda:SimpleNamespace(total=24*2**30,available=3*2**30))
-    monkeypatch.setattr(training,'ProcessPoolExecutor',lambda **kwargs:pytest.fail('spawned without capacity'))
+    monkeypatch.setattr(training,'EpisodePool',lambda **kwargs:pytest.fail('spawned without capacity'))
     seen=[]
     with pytest.raises(InterruptedError):trainer._batch(state,[],lambda:True,lambda row:seen.append(row['state']))
     assert seen==['waiting_for_memory'] and state['resource_capacity']==0
@@ -324,3 +326,19 @@ def test_previously_examined_holdout_cannot_be_reused_to_claim_readiness(tmp_pat
     trainer=SkillTraining(tmp_path,'9'*12);state=trainer.create(attempts=8)
     state['validation_history']=[dict(seeds=state['validation_seeds'])]
     with pytest.raises(RuntimeError,match='Previously examined'):trainer._qualify(state,lambda:False,lambda s:None)
+
+
+def test_automatic_quality_curriculum_requires_sixteen_different_training_pairs(tmp_path,monkeypatch):
+    from simulator.scene_recipes import compile_recipes
+    recipe=compile_recipes(dict(fully_supported=True,task_ids=['sock_basket']),[])['recipes'][0]
+    trainer=SkillTraining(tmp_path,'de'*6);state=trainer.create(attempts=128,scene_recipe=recipe)
+    pairs=[];qualified=[]
+    def batch(saved,specs,*args):
+        pairs.append({s['scene_seed'] for s in specs})
+        rows=[dict(episode_id=s['episode_id'],candidate=s['candidate'],seed=s['scene_seed'],status='complete',
+            split='train',score=100.,success=True,failure_group='place') for s in specs]
+        saved['episodes']+=rows;saved['completed_attempts']+=len(rows);return rows
+    monkeypatch.setattr(trainer,'_batch',batch)
+    monkeypatch.setattr(trainer,'_qualify',lambda saved,*args:qualified.append(saved['curriculum_pairs_passed']))
+    trainer.run()
+    assert qualified==[16] and len(pairs)==16 and len(set.union(*pairs))==32

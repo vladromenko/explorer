@@ -5,11 +5,9 @@ physics, collision margins or evidence gates. Actors see sensors and their own
 kinematics; reward reads outcome booleans only AFTER their actions stop.
 """
 from collections import Counter
-from concurrent.futures import ProcessPoolExecutor,wait,FIRST_COMPLETED
 import fcntl
 import hashlib
 import json
-import multiprocessing
 import os
 from pathlib import Path
 import secrets
@@ -21,7 +19,7 @@ from .resource_budget import memory_budget
 from .learning import write_json
 from .skill_parameters import PARAMETERS,parameters
 from .skill_workshop import execution_fingerprint
-from .worker_runtime import WorkerStalled,stalled,terminate_pool
+from .worker_runtime import WorkerStalled,stalled,terminate_pool,EpisodePool
 
 ADAPTIVE={'observed_curriculum_cross_entropy_v3','observed_causal_program_repair_v4'}
 CURRICULUM=ADAPTIVE|{'observed_curriculum_cross_entropy_v2'}
@@ -318,6 +316,8 @@ class SkillTraining:
         state.update(controller_program=program(),initial_attempt_budget=attempts,repair_trials=[],historical_diagnostics=[],historical_repair_trials=[])
         from .observed_transfer import runtime_snapshot
         state['runtime_files']=runtime_snapshot()
+        state['minimum_curriculum_pairs']=16 if scene_recipe is not None else 3
+        state['resource_objective']='more_diverse_full_fidelity_training_material'
         memory=self.root/'maintenance'/('historical-joint-memory-'+task_id+'.json')
         if memory.is_file():
             from .experience_memory import checked_memory
@@ -444,7 +444,7 @@ class SkillTraining:
         # A reused macOS GL process can retain a Metal shader-cache file lock
         # while idle and block another worker's first frame indefinitely.
         # Exit after each episode so all driver locks and contexts are released.
-        with ProcessPoolExecutor(max_workers=capacity,mp_context=multiprocessing.get_context('spawn'),max_tasks_per_child=1) as pool:
+        with EpisodePool(max_workers=capacity) as pool:
             launch_limit=min(capacity,state.get('effective_workers',capacity))
             runtime_events_before=len(state.get('infrastructure_events',[]))
             cancelling_since=None
@@ -458,7 +458,7 @@ class SkillTraining:
                     while pending and len(active)<launch_limit and not self.pause.exists():
                         spec=pending.pop(0);slot=next(i for i in range(capacity) if i not in [x['slot'] for x in active.values()])
                         spec['slot']=slot;spec['owner_pid']=os.getpid();spec['started_at']=time.time()
-                        active[pool.submit(episode,spec)]=spec
+                        active[pool.submit(spec)]=spec
                     state['actual_peak_workers']=max(state.get('actual_peak_workers',0),len(active))
                     state['active_workers']=[dict(slot=s['slot'],episode_id=s['episode_id'],seed=s['scene_seed'],
                         candidate=s['candidate'],started_at=s['started_at'],
@@ -472,7 +472,8 @@ class SkillTraining:
                         if pending and not self.pause.exists():
                             state['pause_kind']='memory';self.pause.touch(exist_ok=True)
                         break
-                    done,_=wait(active,timeout=.5,return_when=FIRST_COMPLETED)
+                    done=[future for future in active if future.done()]
+                    if not done:time.sleep(.1)
                     for future in done:
                         spec=active.pop(future)
                         try:result=future.result()
@@ -632,7 +633,7 @@ class SkillTraining:
                 self.save(state);progress(state)
                 if all_success:
                     state['curriculum_pairs_passed']=state.get('curriculum_pairs_passed',0)+1
-                    if state['algorithm'] not in CURRICULUM or state['curriculum_pairs_passed']>=3:
+                    if state['algorithm'] not in CURRICULUM or state['curriculum_pairs_passed']>=state.get('minimum_curriculum_pairs',3):
                         self._qualify(state,stopped,progress)
                         if not self._continue_after_validation(state):return state
                         continue
@@ -671,7 +672,7 @@ class SkillTraining:
         if key not in ledger:
             if state['completed_attempts']+4>state['options']['attempts']:
                 extra=state['completed_attempts']+4-state['options']['attempts']
-                if state['options']['attempts']+extra>state.get('initial_attempt_budget',1000)+256:return False
+                if state['options']['attempts']+extra>state.get('quality_attempt_budget',state.get('initial_attempt_budget',1000))+256:return False
                 state['options']['attempts']+=extra
             used={r['seed'] for r in state['episodes'] if type(r.get('seed')) is int}
             seed=200_000_000+int(state['id'],16)%650_000_000+state['generation']*20+candidate*2
@@ -715,7 +716,7 @@ class SkillTraining:
         if state.get('algorithm')!=REPAIR:return False
         if state.get('pause_kind')=='operator' or state.get('state')=='operator_paused' or self.pause.exists():return False
         from .failure_repair import diagnosis,repair_proposals
-        if state['options']['attempts']>=state.get('initial_attempt_budget',1000)+256:return False
+        if state['options']['attempts']>=state.get('quality_attempt_budget',state.get('initial_attempt_budget',1000))+256:return False
         analysis=diagnosis(state['episodes'][-64:],self.root)
         if repair_proposals(state,analysis) is None:return False
         state['options']['attempts']+=8;state['force_repair']=True

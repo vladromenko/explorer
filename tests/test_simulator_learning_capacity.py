@@ -72,3 +72,15 @@ def test_never_benchmark_holdouts_or_override_serial_or_user_pause(tmp_path,monk
     for s in specs:s['split']='train'
     trainer.pause.touch()
     calibrate(trainer,state,specs,lambda:False,lambda _:None)
+
+
+def test_extra_capacity_increases_material_and_diversity_without_changing_time_or_policy():
+    from simulator.learning_capacity import apply_quality_scale
+    state=dict(scene_recipe={'task_id':'sock_basket'},options=dict(attempts=1000,hours=24,workers=4),
+        initial_attempt_budget=1000,incumbent={'arbitrary':'unchanged'},minimum_curriculum_pairs=16)
+    policy=copy.deepcopy(state['incumbent'])
+    apply_quality_scale(state,8)
+    assert state['options']['attempts']==2000 and state['minimum_curriculum_pairs']==32
+    assert state['options']['hours']==24 and state['incumbent']==policy
+    apply_quality_scale(state,4)
+    assert state['options']['attempts']==2000 and state['minimum_curriculum_pairs']==32

@@ -61,7 +61,7 @@ def actor_children(source):
     source=str(Path(source).resolve());actors=[]
     for p in psutil.process_iter(['pid','cmdline']):
         args=' '.join(p.info['cmdline'] or [])
-        if 'multiprocessing.spawn' not in args and 'simulator-grounding.py' not in args:continue
+        if not any(name in args for name in ('multiprocessing.spawn','simulator-grounding.py','simulator.worker_runtime')):continue
         try:cwd=p.cwd()
         except (psutil.Error,OSError):continue
         if cwd==source:actors.append(p.info['pid'])
