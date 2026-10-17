@@ -252,5 +252,3 @@ def runtime_snapshot():
     from .skill_workshop import execution_fingerprint
     files.update(execution_fingerprint()['files'])
     return files
-
-
