@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "created": 1792205633.077464,
-  "state": "tested_pending_quality_install",
+  "state": "installed_background_learning",
   "hardware": {
     "model": "Apple M4 Pro",
     "cpu_cores": 14,
@@ -40,7 +40,17 @@
     "followup_targeted_suite": 74,
     "javascript_syntax": true,
     "python_compile": true,
-    "post_integration_runtime_suite": 85
+    "post_integration_runtime_suite": 85,
+    "expanded_full_suite_before_mock_signature_update": {
+      "passed": 404,
+      "failed": 1,
+      "cause": "Obsolete ProcessPool test spy; fixed and passed in targeted suite"
+    },
+    "host_owner_and_web_suite": {
+      "passed": 28,
+      "subtests_passed": 2
+    },
+    "real_ros_missions_suite": "Not runnable in this Mac environment: std_msgs is absent; real ROS integration remains unverified"
   },
   "previous": {
     "request": "4c396d94abfd",
@@ -55,7 +65,7 @@
   "remaining": [
     "Run the installed program through actual independent qualifications; no current full task success claim",
     "Real robot calibration/contact/actuation timing still requires preflight and an observed physical trial; current real sock closure reference is 160 degrees while simulator contract closes at 170, so adapter must refuse an unaccepted mapping",
-    "Verify final installed Popen workers produce fresh physical recordings and then let the program collect and qualify the expanded curriculum"
+    "Complete expanded training curriculum and actual independent qualifications; benchmark additional workers when enough memory is available"
   ],
   "quality_objective": {
     "priority": "more varied full-fidelity data, not merely shorter completion",
@@ -80,5 +90,33 @@
       "diagnostics": "/Volumes/ExplorerSim/ExplorerSim/maintenance/owner-recovery-334c3af4adf9",
       "replacement": "one owned Popen process per episode; bounded teardown; 20 processes across 10 waves regression"
     }
-  ]
+  ],
+  "installed_revision": "958496830aeac71b0d7836c5cc47e9fec92fd1ab",
+  "installed_source": "/Users/vladromenko/Library/Application Support/ExplorerSimulator/automatic-source-958496830aea",
+  "active_request": "210bcb6b267a",
+  "active_training": "458e6c143977",
+  "verified_at": 1792206605.7245371,
+  "actual_training": {
+    "state": "running",
+    "completed": 8,
+    "total": 1000,
+    "minimum_scene_pairs": 16,
+    "distinct_training_scenes": 2,
+    "runtime_recoveries": 0,
+    "simulation_ready": false,
+    "physical_ready": false
+  },
+  "actual_vision_runtime": {
+    "device": "mps",
+    "dtype": "float32",
+    "calibrated": true,
+    "speedup": 4.644588590526918,
+    "same_recorded_detections": true,
+    "memory_headroom": true
+  },
+  "background_monitor": {
+    "id": "explorer",
+    "interval_hours": 3,
+    "status": "ACTIVE"
+  }
 }
