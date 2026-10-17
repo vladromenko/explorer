@@ -35,14 +35,18 @@ class LearningCycles:
             except (ValueError,OSError):output.append(dict(id=path.stem,state='corrupt',tasks=[],created=path.stat().st_mtime))
         return sorted(output,key=lambda value:value.get('created',0),reverse=True)
 
-    def create(self,tasks,count=100,hours=24,workers=4,scene_profile='sock_variants_v1',models=None,goal_id=None,steps=30000):
+    def create(self,tasks,count=100,hours=24,workers=4,scene_profile='sock_variants_v1',models=None,goal_id=None,steps=30000,
+               teacher_profile='planned_release_v4'):
         if not tasks or len(set(tasks))!=len(tasks) or not 2<=count<=1000 or not 0<hours<=24 or workers not in (1,4,8):
             raise ValueError('Invalid automatic improvement parameters')
         if scene_profile not in ('baseline','sock_variants_v1'):raise ValueError('Unknown scene profile')
+        if teacher_profile not in ('legacy_v1','planned_grasp_v3','planned_release_v4'):
+            raise ValueError('Unknown teacher profile')
         if type(steps) is not int or not 1<=steps<=200000:raise ValueError('Invalid training step budget')
         for task in tasks:task_spec(task)
         value=dict(id=secrets.token_hex(6),created=time.time(),state='queued',hours=hours,
-            options=dict(count=count,workers=workers,scene_profile=scene_profile,steps=steps),goal_id=goal_id,
+            options=dict(count=count,workers=workers,scene_profile=scene_profile,steps=steps,
+                         teacher_profile=teacher_profile),goal_id=goal_id,
             tasks=[dict(task_id=task,state='queued',iteration=1,model_id=(models or {}).get(task),
                         reference_model_id=(models or {}).get(task),stages={},history=[]) for task in tasks],
             seed_base=600000000+secrets.randbelow(600000000),physical_ready=False,automatic_hardware_execution=False)

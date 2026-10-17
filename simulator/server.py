@@ -272,20 +272,43 @@ class Runtime:
             self.reset(Reset())
 
     def latest_model(self, task_id=None):
-        """Restore only a finished job whose checkpoint passes bundle verification."""
-        candidates = sorted((self.data_root / 'runs').glob('*/job.json'), key=lambda path: path.stat().st_mtime, reverse=True)
-        module = (self.learning or importlib.import_module('simulator.learning')) if candidates else None
-        for file in candidates:
+        """Restore the strongest measured finished checkpoint for this task.
+
+        File recency is only a tie breaker.  A newer fine-tune can regress in
+        closed-loop physics, so prefer a report that names the exact checkpoint
+        and then its success rate.  Missing or stale reports never outrank
+        matching closed-loop evidence.
+        """
+        files = list((self.data_root / 'runs').glob('*/job.json'))
+        module = (self.learning or importlib.import_module('simulator.learning')) if files else None
+        candidates = []
+        for file in files:
             try:
                 job = json.loads(file.read_text(encoding='utf8'))
                 if isinstance(job, dict) and job.get('state') in {'validated_simulation', 'trained_simulation_unvalidated'} and (file.parent / 'bundle.json').is_file():
                     bundle, _ = module.read_bundle(file.parent)
                     if task_id is None or bundle.get('skill_id',None)==task_id or bundle.get('skill_id') is None and task_id=='sock_basket':
-                        self.latest_job_folder = file.parent
-                        self.refresh_model_info(bundle)
-                        return file.parent
+                        report_path=file.parent/'physics-validation.json'
+                        report=json.loads(report_path.read_text()) if report_path.is_file() else {}
+                        checkpoint=bundle.get('validation_checkpoint_sha256',bundle['checkpoint_sha256'])
+                        matches=(report.get('validation_kind')=='closed_loop_policy' and
+                            report.get('model_weights_sha256')==bundle['checkpoint_sha256'].get('model.safetensors') and
+                            report.get('model_checkpoint_sha256',checkpoint)==checkpoint and
+                            (not bundle.get('skill_id') or report.get('task_id')==bundle.get('skill_id')))
+                        episodes=report.get('episodes',0) if matches else 0
+                        successes=report.get('successes',0) if matches else 0
+                        if type(episodes) is not int or type(successes) is not int or episodes<1 or not 0<=successes<=episodes:
+                            matches=False;episodes=successes=0
+                        rank=(1 if matches else 0, successes/episodes if matches else -1., successes,
+                              1 if job.get('state')=='validated_simulation' else 0, file.stat().st_mtime)
+                        candidates.append((rank,file.parent,bundle))
             except (ValueError, OSError, KeyError, TypeError, AttributeError):
                 pass
+        if candidates:
+            _,folder,bundle=max(candidates,key=lambda item:item[0])
+            self.latest_job_folder=folder
+            self.refresh_model_info(bundle)
+            return folder
         self.latest_job_folder = None
         self.model_info = None
         return None

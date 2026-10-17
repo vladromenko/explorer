@@ -275,6 +275,28 @@ def test_latest_model_skips_failed_incomplete_and_corrupt_jobs(tmp_path):
     runtime.close()
 
 
+def test_latest_model_prefers_matching_closed_loop_result_over_newer_checkpoint(tmp_path):
+    import os
+    class BundleReader:
+        @staticmethod
+        def read_bundle(folder):
+            digest=folder.name+'-weights'
+            return {'skill_id':'sock_basket','checkpoint_sha256':{'model.safetensors':digest}},folder
+    for name,stamp,successes in [('strong',10,7),('newer-regression',20,3)]:
+        folder=tmp_path/'runs'/name;folder.mkdir(parents=True)
+        (folder/'job.json').write_text(json.dumps({'state':'validated_simulation'}))
+        (folder/'bundle.json').write_text('{}')
+        (folder/'physics-validation.json').write_text(json.dumps({
+            'validation_kind':'closed_loop_policy','task_id':'sock_basket',
+            'model_weights_sha256':name+'-weights','episodes':10,'successes':successes,
+            'heldout_independent':True,'physics_validated':False,'real_hardware_accepted':False}))
+        os.utime(folder/'job.json',(stamp,stamp))
+    runtime=Runtime(FakeEnv,tmp_path,learning_module=BundleReader)
+    assert runtime.latest_model('sock_basket').name=='strong'
+    assert runtime.model_info['successes']==7
+    runtime.close()
+
+
 def test_held_key_at_joint_limit_clamps_without_pausing(tmp_path):
     from types import SimpleNamespace
     class BoundedEnv(FakeEnv):
