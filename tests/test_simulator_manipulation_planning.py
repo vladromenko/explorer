@@ -84,6 +84,29 @@ def test_cancelled_probe_planning_never_mutates_robot():
     finally:env.close()
 
 
+def test_five_axis_probe_finds_oriented_motion_outside_fixed_axis_targets():
+    env=ExplorerEnv(render=False)
+    try:
+        # Own arm posture from a failed verification. No scene coordinates or
+        # contact truth enter the planner or this regression.
+        env.command[:6]=[90.74468183694779,155.264615538495,10.110512424185991,
+                        .00004292858,81.09575785883922,170.]
+        apply_kinematic_pose(env,env.command[:6]);before=env.data.qpos.copy()
+        reference=hand_rotation(env);jaw=env.jaw_center().copy()
+        with pytest.raises(ValueError):plan_hold_probe(env,lowest_material_height_m=.12)
+        plan=plan_hold_probe(env,lowest_material_height_m=.12,kinematic=True)
+        assert plan.direction.startswith('kinematic_') and plan.command[5]==170.
+        np.testing.assert_array_equal(before,env.data.qpos)
+        start=env.command[:6].copy()
+        for fraction in np.linspace(0,1,101):
+            apply_kinematic_pose(env,start+(plan.command-start)*fraction)
+            assert Rotation.from_matrix(reference.T@hand_rotation(env)).magnitude()<=np.deg2rad(2.)
+        assert np.linalg.norm(env.jaw_center()-jaw)>=.015
+        assert np.linalg.norm(env.jaw_center()-plan.target)<=.008
+        assert .12+plan.target[2]-jaw[2]>=.065
+    finally:env.close()
+
+
 def test_upper_workspace_probe_can_descend_only_with_observed_material_clearance(monkeypatch):
     import simulator.manipulation_planning as planning
     env=ExplorerEnv(render=False)

@@ -53,6 +53,7 @@ def install():
         content=subprocess.check_output(['git','show',revision+':'+name],cwd=ROOT)
         path=source/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(content)
         hashes[name]=hashlib.sha256(content).hexdigest()
+    (source/'source-manifest.json').write_text(json.dumps(dict(revision=revision,files=hashes)))
     runtime=SUPPORT/'runtime/bin/python'
     environment=dict(os.environ,EXPLORER_SIM_MESH_DIR='/Volumes/ExplorerSim/assets/m3_reference/meshes',
         PYTHONPATH=str(source)+':'+str(source/'src'),HF_HOME='/Volumes/ExplorerSim/cache/huggingface',

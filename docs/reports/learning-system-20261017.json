@@ -1,0 +1,58 @@
+{
+  "schema": 1,
+  "created": 1792205633.077464,
+  "state": "tested_pending_install",
+  "hardware": {
+    "model": "Apple M4 Pro",
+    "cpu_cores": 14,
+    "ram_gib": 24,
+    "cpu_sample_percent_range": [
+      33.6,
+      54.2
+    ],
+    "gpu_sample_percent": 30,
+    "actors": 4,
+    "actor_rss_gib_range": [
+      1.05,
+      1.17
+    ]
+  },
+  "vision": {
+    "benchmark": "/Volumes/ExplorerSim/ExplorerSim/maintenance/vision-device-benchmark-20261017.json",
+    "speedup": 5.80224393995383,
+    "same_detection_decisions": true,
+    "max_box_difference_px": 0.000244140625,
+    "max_confidence_difference": 0.00019806623458862305,
+    "scope": "Two recorded RGB frames, same pinned FP32 model and unchanged thresholds; not whole-task speedup"
+  },
+  "changes": [
+    "Observed Jacobian-based reachable hold probe, unchanged pose/path gates",
+    "Warm-start preserves old controller program and historical repair priors without qualification credit",
+    "Automatic CPU/MPS conformance and bounded runtime fallback",
+    "One finite same-input 4-versus-up-to-8 full-trajectory comparison under existing physical owner; at least 20% speedup and 15% memory required",
+    "Resource pauses resume same checkpoint after 25% memory returns; operator pause remains respected; time budget not renewed",
+    "Portable observed controller package with code, CAD, policy, 30 independent scene proofs and inactive Jetson import",
+    "Sensor-only robot bridge behind existing mission/arm/STOP owners, calibrated preflight and observed lease",
+    "Explicit Linux runtime installer with backups and no motion; existing calibrations cannot be overwritten"
+  ],
+  "tests": {
+    "full_simulator_and_automatic_suite": 399,
+    "followup_targeted_suite": 74,
+    "javascript_syntax": true,
+    "python_compile": true
+  },
+  "previous": {
+    "request": "4c396d94abfd",
+    "training": "c0401404e396",
+    "completed_at_last_read": 136,
+    "ready": false
+  },
+  "simulation_ready": false,
+  "physical_ready": false,
+  "real_robot_contacted": false,
+  "remaining": [
+    "Run the installed program through actual independent qualifications; no current full task success claim",
+    "Measure current production MPS backend and parallelism after controlled installation",
+    "Real robot calibration/contact/actuation timing still requires preflight and an observed physical trial; current real sock closure reference is 160 degrees while simulator contract closes at 170, so adapter must refuse an unaccepted mapping"
+  ]
+}

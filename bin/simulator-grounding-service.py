@@ -8,6 +8,9 @@ import os
 from pathlib import Path
 import socket
 import time
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+os.environ.setdefault('PYTORCH_ENABLE_MPS_FALLBACK','1')
 
 
 def main():
@@ -30,6 +33,8 @@ def main():
         processor.image_processor.size={'shortest_edge':640,'longest_edge':960}
         model=AutoModelForZeroShotObjectDetection.from_pretrained(model_path,local_files_only=True).eval()
         model.config.disable_custom_kernels=True
+        from simulator.vision_backend import PinnedDetectorBackend
+        backend=PinnedDetectorBackend(torch,model,processor)
         endpoint.unlink(missing_ok=True)
         with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as server:
             server.bind(str(endpoint));os.chmod(endpoint,0o600);server.listen(16);server.settimeout(20.)
@@ -55,15 +60,14 @@ def main():
                                 if Path(request['model']).resolve()!=model_path:raise ValueError('Different model requested')
                                 image=Image.open(folder/'image.png').convert('RGB')
                                 inputs=processor(images=image,text=request['query'].strip().rstrip('.')+'.',return_tensors='pt')
-                                with torch.inference_mode():output=model(**inputs)
-                                result=processor.post_process_grounded_object_detection(output,inputs.input_ids,threshold=.35,
-                                    text_threshold=.25,target_sizes=[image.size[::-1]])[0]
+                                result=backend.infer(inputs,image.size[::-1])
+                                (root/'maintenance/vision-backend.json').write_text(json.dumps(backend.measurement))
                                 labels=result.get('text_labels',result.get('labels',[]))
                                 rows=[dict(bbox=box.tolist(),confidence=float(score),label=str(label))
                                     for box,score,label in zip(result['boxes'],result['scores'],labels)]
                                 value=dict(frame_id=request['frame_id'],detections=rows,model=lock['repository'],
                                     revision=lock['revision'],input='recorded_RGB_only',identity_proven=False,
-                                    backend='persistent_pinned_model',worker_pid=os.getpid())
+                                    backend='persistent_pinned_model',worker_pid=os.getpid(),runtime=backend.measurement)
                                 temp=folder/'result.pending.json';temp.write_text(json.dumps(value));temp.replace(folder/'result.json')
                                 reply=dict(ready=True,frame_id=request['frame_id'],pid=os.getpid())
                             last=time.monotonic()

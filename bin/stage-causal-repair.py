@@ -41,6 +41,7 @@ def main():
         content=subprocess.check_output(['git','show',revision+':'+name],cwd=ROOT)
         path=source/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(content)
         files[name]=hashlib.sha256(content).hexdigest()
+    write_json(source/'source-manifest.json',dict(revision=revision,files=files))
     value=dict(state='staged',revision=revision,request=identifier,root=str(data),source=str(source),
         support=str(SUPPORT),files=files,created=time.time(),stops_active_training=False)
     write_json(marker,value)

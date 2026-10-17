@@ -267,6 +267,12 @@ def episode(spec):
             reason=report.get('reason'),report=str(folder/'skill-workshops/attempt/state.json'),
             controller_program=report.get('controller_program'),
             domain_variation=env.domain_variation)
+        import resource
+        import sys
+        peak=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        result['peak_rss_bytes']=peak if sys.platform=='darwin' else peak*1024
+        commands=folder/'skill-workshops/attempt/execution/commands.jsonl'
+        result['trajectory_sha256']=hashlib.sha256(commands.read_bytes()).hexdigest()
         from .failure_repair import infrastructure_failure
         runtime_failure=infrastructure_failure(report)
         if runtime_failure and result['status']=='complete':
@@ -309,7 +315,9 @@ class SkillTraining:
             automatic_hardware_execution=False,controller=execution_fingerprint(),
             validation_seeds=[list(range(1300160000,1300160010)),list(range(1400160000,1400160010))])
         from .failure_repair import program
-        state.update(controller_program=program(),initial_attempt_budget=attempts,repair_trials=[],historical_diagnostics=[])
+        state.update(controller_program=program(),initial_attempt_budget=attempts,repair_trials=[],historical_diagnostics=[],historical_repair_trials=[])
+        from .observed_transfer import runtime_snapshot
+        state['runtime_files']=runtime_snapshot()
         memory=self.root/'maintenance'/('historical-joint-memory-'+task_id+'.json')
         if memory.is_file():
             from .experience_memory import checked_memory
@@ -334,6 +342,7 @@ class SkillTraining:
                 state['initialization']=dict(kind='bounded_parameter_warm_start',from_training_id=old['id'],
                     source_controller_sha256=old['controller']['sha256'],unverified=True,
                     old_episodes_counted_for_qualification=False)
+                state['controller_program']=program(old.get('controller_program'))
                 break
         if scene_recipe is not None and len(scene_recipe['request'])>1:
             state['validation_seeds'].append(list(range(1500160000,1500160010)))
@@ -352,6 +361,11 @@ class SkillTraining:
                 except (KeyError,ValueError):continue
                 state.update(incumbent=values,mean=dict(values),initialization=dict(kind='unverified_historical_policy_hint',
                     from_training_id=old['id'],old_episodes_counted_for_qualification=False))
+                state['controller_program']=program(old.get('controller_program'))
+            for previous in old.get('repair_trials',[]):
+                if len(state['historical_repair_trials'])>=64:break
+                state['historical_repair_trials'].append(dict(program=program(previous.get('program')),
+                    source_controller_sha256=old.get('controller',{}).get('sha256'),not_new_acceptance_evidence=True))
             for row in reversed(old.get('episodes',[])):
                 if row.get('status')!='complete' or row.get('split','train')!='train' or row.get('success') is True:continue
                 if len(state['historical_diagnostics'])<128:state['historical_diagnostics'].append(row)
@@ -364,7 +378,12 @@ class SkillTraining:
         # grasp or changing the scene, numeric policy or controller program.
         pending=list(specs);recovered=[]
         for restart in range(3):
-            try:return recovered+self._batch_once(state,pending,cancelled,progress)
+            try:
+                rows=recovered+self._batch_once(state,pending,cancelled,progress)
+                if not recovered and not state.get('infrastructure_events'):
+                    from .learning_capacity import calibrate
+                    calibrate(self,state,specs,cancelled,progress)
+                return rows
             except WorkerStalled as error:
                 if cancelled() or self.pause.exists():raise InterruptedError('Пауза сохранена') from error
                 done={r['episode_id']:r for r in state['episodes'] if r['status']=='complete'}
@@ -393,10 +412,18 @@ class SkillTraining:
                 pending=retry
         raise AssertionError('Unreachable')
 
+    def _pause_for_update(self,state):
+        if not (self.folder/'update.request').exists() or self.pause.exists():return False
+        state.update(state='maintenance_paused',active_workers=[],
+            reason='Сравнение завершено и сохранено; подключается исправление программы')
+        self.save(state);return True
+
     def _batch_once(self,state,specs,cancelled,progress):
-        workers=state['options']['workers'];pending=list(specs);results=[];active={}
+        workers=(state['options']['workers'] if state.get('capacity_replay') else
+            state.get('calibrated_workers',state['options']['workers']))
+        pending=list(specs);results=[];active={}
         previous_state=state['state']
-        reservation=int((3.2 if state.get('scene_recipe') else 1.7)*2**30)
+        reservation=state.get('measured_worker_reservation_bytes',int((3.2 if state.get('scene_recipe') else 1.7)*2**30))
         while True:
             memory=memory_budget()
             # Reserve each worker's measured-order 1.7 GiB footprint BEFORE
@@ -425,14 +452,17 @@ class SkillTraining:
                 while pending or active:
                     if cancelled():self.pause.touch(exist_ok=True)
                     memory=memory_budget()
+                    state['minimum_memory_fraction']=min(state.get('minimum_memory_fraction',1.),memory['available_bytes']/memory['total_bytes'])
                     if memory['available_bytes']/memory['total_bytes']<.15:
                         state['pause_kind']='memory';self.pause.touch(exist_ok=True)
                     while pending and len(active)<launch_limit and not self.pause.exists():
                         spec=pending.pop(0);slot=next(i for i in range(capacity) if i not in [x['slot'] for x in active.values()])
                         spec['slot']=slot;spec['owner_pid']=os.getpid();spec['started_at']=time.time()
                         active[pool.submit(episode,spec)]=spec
+                    state['actual_peak_workers']=max(state.get('actual_peak_workers',0),len(active))
                     state['active_workers']=[dict(slot=s['slot'],episode_id=s['episode_id'],seed=s['scene_seed'],
-                        candidate=s['candidate'],started_at=s['started_at']) for s in active.values()]
+                        candidate=s['candidate'],started_at=s['started_at'],
+                        frame_folder=str(Path(s['folder']).relative_to(self.root/'skill-training'/self.id))) for s in active.values()]
                     self.save(state);progress(state)
                     if self.pause.exists():
                         cancelling_since=cancelling_since or time.monotonic()
@@ -508,7 +538,7 @@ class SkillTraining:
             if state['state'] in ('simulation_qualified','needs_diagnosis','validation_failed'):return state
             if state['controller']['sha256']!=execution_fingerprint()['sha256']:
                 raise RuntimeError('Resume requires the exact saved controller revision')
-            if state['state'] in ('operator_paused','budget_paused','memory_paused','interrupted') and not resume:
+            if state['state'] in ('operator_paused','budget_paused','memory_paused','interrupted','maintenance_paused') and not resume:
                 return state
             if resume:self.pause.unlink(missing_ok=True)
             deadline=time.monotonic()+state['options']['hours']*3600
@@ -578,6 +608,7 @@ class SkillTraining:
                     specs.append(spec)
                 self.save(state)
                 results=finished+self._batch(state,specs,stopped,progress)
+                if self._pause_for_update(state):return state
                 if batch.get('repair_programs'):
                     import copy
                     while True:
@@ -586,6 +617,7 @@ class SkillTraining:
                         if not preview['last_selection']['improved'] or winner==0:break
                         if self._confirm_program(state,winner,stopped,progress):break
                         batch.setdefault('rejected_candidates',[]).append(winner);self.save(state)
+                if self._pause_for_update(state):return state
                 all_success=update_search(state,results)
                 state.setdefault('generations',[]).append(dict(index=state['generation'],selection=state['last_selection'],
                     episode_ids=[r['episode_id'] for r in results],phase_group=state['phase_group']))
@@ -749,6 +781,7 @@ class SkillTraining:
             report=dict(heldout_independent=True,episodes=10,successes=sum(r['success'] for r in rows),
                 scene_profile=state.get('scene_profile','sock_variants_v1') if index<2 else 'user_constraints',results=rows)
             state['validation'].append(report);self.save(state)
+            if self._pause_for_update(state):return
         passed=all(report_passes(r) for r in state['validation'])
         state.update(state='packaging' if passed else 'validation_failed',simulation_ready=False,validation_pending=passed,
             reason='Два независимых набора по десять сцен пройдены' if passed else 'Независимые сцены не пройдены; готовность не подтверждена',
@@ -769,7 +802,7 @@ class SkillTraining:
         def check():
             if cancelled():raise InterruptedError('Подготовка архива сохранена на паузе')
         frozen=self.folder/'accepted-source'
-        for name,digest in state['controller']['files'].items():
+        for name,digest in dict(state.get('runtime_files',{}),**state['controller']['files']).items():
             check()
             path=source/name
             if hashlib.sha256(path.read_bytes()).hexdigest()!=digest:raise RuntimeError('Controller changed before packaging')
@@ -778,7 +811,7 @@ class SkillTraining:
         files={}
         for p in self.folder.rglob('*'):
             check()
-            if p.is_file() and p.name not in ('state.json','pause.request','archive-manifest.json'):
+            if p.is_file() and p.relative_to(self.folder).as_posix() not in ('state.json','pause.request','archive-manifest.json'):
                 with p.open('rb') as handle:files[str(p.relative_to(self.folder))]=hashlib.file_digest(handle,'sha256').hexdigest()
         manifest=self.folder/'archive-manifest.json';write_json(manifest,dict(schema=1,files=files,
             controller_sha256=state['controller']['sha256'],physical_ready=False))

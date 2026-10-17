@@ -48,12 +48,20 @@ def ensure_legacy_service():
     raise ValueError('Не удалось запустить службу прежнего обучения; данные сохранены')
 
 
+def worker_folder(root,identifier,worker):
+    base=(Path(root)/'skill-training'/identity(identifier)).resolve()
+    relative=worker.get('frame_folder','episodes/'+identity(worker['episode_id']))
+    path=(base/relative).resolve()
+    if not path.is_relative_to(base):raise ValueError('Worker frame path escapes training')
+    return path
+
+
 def summarized(row,root=DEFAULT_ROOT):
     reasons=Counter(r.get('reason') for r in row.get('episodes',[]) if r.get('status')=='complete' and r.get('success') is not True and r.get('reason'))
     workers=[]
     for worker in row.get('active_workers',[]):
         item=dict(worker)
-        folder=Path(root)/'skill-training'/identity(row['id'])/'episodes'/identity(worker['episode_id'])
+        folder=worker_folder(root,row['id'],worker)
         try:
             path=folder/'progress.json'
             progress=json.loads(path.read_text());item.update(phase=progress.get('phase','initializing'),frame_age_s=max(0.,time.time()-path.stat().st_mtime))
@@ -73,6 +81,7 @@ def summarized(row,root=DEFAULT_ROOT):
         runtime_recoveries=len(row.get('runtime_recoveries',[])),
         promoted_repairs=sum(r.get('promoted') is True for r in row.get('repair_trials',[])),
         reused_recordings=row.get('experience',{}).get('admitted',0),
+        parallelism=row.get('capacity_calibration'),configured_workers=row.get('calibrated_workers',row['options'].get('workers',4)),
         validation_completed=sum(r.get('status')=='complete' and r.get('split') in ('validation','user_validation') for r in row.get('episodes',[])),
         validation_total=10*len(row.get('validation_seeds',[[],[]])),simulation_ready=row.get('simulation_ready',False),physical_ready=False)
 
@@ -128,6 +137,7 @@ def create_app(root=DEFAULT_ROOT,engine_factory=AutomaticLearning,start=True):
         engine=request.app.state.engine
         if action=='pause':return engine.pause(identifier)
         if action=='resume':return engine.resume(identifier)
+        if action=='prepare_update':return engine.prepare_update(identifier)
         raise HTTPException(404)
 
     @app.post('/api/queue/resume')
@@ -194,7 +204,7 @@ def create_app(root=DEFAULT_ROOT,engine_factory=AutomaticLearning,start=True):
         worker=next((w for w in workers if w['slot']==slot),None)
         episode=worker['episode_id'] if worker else (next((r['episode_id'] for r in reversed(row.get('episodes',[]))),None) if not workers and slot==0 else None)
         if episode is None:raise HTTPException(404,'Кадр ещё готовится')
-        identity(episode);folder=root/'skill-training'/identifier/'episodes'/episode
+        identity(episode);folder=worker_folder(root,identifier,worker or dict(episode_id=episode))
         if camera=='overview':path=folder/'overview-preview.jpg'
         else:
             frames=sorted((folder/'frames').glob('*.jpg'));path=frames[-1] if frames else None

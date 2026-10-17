@@ -555,7 +555,8 @@ class SimulatorSkillPort:
         from scipy.spatial.transform import Rotation
         probe_kwargs=dict(check=lambda:self.check(ctx),lowest_material_height_m=float(first['bounds_min'][2]))
         if self.repair_enabled('extended_hold_probe'):probe_kwargs['extended']=True
-        if self.repair_enabled('extended_hold_probe') or self.repair_enabled('probe_feasible_view'):
+        if self.repair_enabled('kinematic_hold_probe'):probe_kwargs['kinematic']=True
+        if any(self.repair_enabled(op) for op in ('extended_hold_probe','probe_feasible_view','kinematic_hold_probe')):
             probe_kwargs['obstacle']=self.destination
         probe_plan=plan_hold_probe(self.env,**probe_kwargs)
         self.move_angles(probe_plan.command,ctx)
@@ -743,7 +744,8 @@ class SimulatorSkillPort:
                 if self.repair_enabled('probe_feasible_view'):
                     from .manipulation_planning import probe_at_command
                     probe_at_command(self.env,candidate.command,lowest_material_height_m=None,
-                        extended=self.repair_enabled('extended_hold_probe'),obstacle=box,check=lambda:self.check(ctx))
+                        extended=self.repair_enabled('extended_hold_probe'),obstacle=box,check=lambda:self.check(ctx),
+                        kinematic=self.repair_enabled('kinematic_hold_probe'))
                 plan=candidate;break
             except ValueError as error:errors.append(str(error))
         if plan is None:return dict(outcome='unknown',reason='Нет пути изменения обзора: '+errors[-1])
@@ -887,6 +889,7 @@ class SimulatorSkillPort:
 
     def stop_motion(self):
         """Release base commands even during cancellation, physics or I/O errors."""
+        if callable(getattr(self.env,'stop_motion',None)):self.env.stop_motion()
         self.env.pending_command[6:]=0.;self.env.command[6:]=0.
         self.env.data.ctrl[self.env.wheel_ids]=0.
 

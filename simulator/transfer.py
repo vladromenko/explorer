@@ -386,7 +386,15 @@ def import_curriculum(archive, robot_root, register=False):
 
 def import_archive(archive, robot_root, register=False):
     with tarfile.open(archive,'r:gz') as handle:
-        curriculum = 'curriculum.json' in handle.getnames()
+        names=handle.getnames();curriculum = 'curriculum.json' in names
+        observed='observed-transfer.json' in names
+        observed_curriculum='manifest.json' in names
+    if observed:
+        from .observed_transfer import import_skill
+        return import_skill(archive,robot_root,register)
+    if observed_curriculum:
+        from .observed_transfer import import_curriculum as observed_import
+        return observed_import(archive,robot_root,register)
     return import_curriculum(archive,robot_root,register) if curriculum else import_package(archive,robot_root,register)
 
 

@@ -270,6 +270,8 @@ def observe_environment(env,*,raw_output=None) -> dict[str, Any]:
     MuJoCo camera pose is robot forward kinematics, equivalent to a calibrated
     wrist extrinsic plus joint state. No environment body or geometry is read.
     """
+    if callable(getattr(env,'capture_registered_frame',None)):
+        return env.capture_registered_frame(raw_output=raw_output)
     from .explorer_model import model_config
     depth = env.render_depth()
     robot_depth = render_robot_depth(env)

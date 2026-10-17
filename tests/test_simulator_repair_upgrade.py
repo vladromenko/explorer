@@ -23,6 +23,7 @@ def test_upgrade_respects_operator_pauses_orphans_and_success():
     s=snapshot('budget_paused');s['queue_pause']={'paused':True}
     assert decision(s,'a'*12)=='operator_pause'
     assert decision(snapshot('simulation_qualified'),'a'*12)=='qualified'
+    assert decision(snapshot('maintenance_paused'),'a'*12)=='ready'
 
 
 def test_resource_pause_can_recover_only_with_memory_headroom_and_no_operator_pause():

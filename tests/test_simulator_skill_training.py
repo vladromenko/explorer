@@ -122,6 +122,29 @@ def test_operator_pause_is_not_resumed_without_explicit_request(tmp_path,monkeyp
     assert trainer.run()['state']=='operator_paused'
 
 
+def test_program_update_drains_comparison_before_releasing_owner(tmp_path,monkeypatch):
+    trainer=SkillTraining(tmp_path,'d2'*6);trainer.create(attempts=16)
+    seen=[]
+    def batch(state,specs,*args):
+        seen.append(len(specs));(trainer.folder/'update.request').write_text('{}')
+        rows=[dict(episode_id=s['episode_id'],candidate=s['candidate'],seed=s['scene_seed'],status='complete',
+            split='train',score=3.,success=False,failure_group='pick') for s in specs]
+        state['episodes']+=rows;state['completed_attempts']+=len(rows);return rows
+    monkeypatch.setattr(trainer,'_batch',batch)
+    result=trainer.run()
+    assert seen==[8] and result['completed_attempts']==8
+    assert result['state']=='maintenance_paused' and not trainer.pause.exists()
+    assert len(result['episodes'])==8 and result['batch']
+    assert trainer.run()['state']=='maintenance_paused'
+
+
+def test_user_pause_takes_precedence_over_program_update(tmp_path):
+    trainer=SkillTraining(tmp_path,'d3'*6);state=trainer.create(attempts=8)
+    (trainer.folder/'update.request').write_text('{}');trainer.pause.touch()
+    assert not trainer._pause_for_update(state)
+    assert state['state']=='queued'
+
+
 def test_qualification_uses_two_disjoint_ten_scene_groups_never_for_search(tmp_path,monkeypatch):
     from simulator.domain_randomization import sample_sock_scene
     trainer=SkillTraining(tmp_path,'e'*12);state=trainer.create(attempts=8)

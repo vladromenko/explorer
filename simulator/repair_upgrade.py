@@ -44,7 +44,7 @@ def decision(snapshot,identifier):
         total=memory.get('total_bytes',0);available=memory.get('available_bytes',0)
         return 'ready' if total>0 and available/total>=.25 else 'waiting_for_memory'
     if target['state']=='simulation_qualified':return 'qualified'
-    if target['state'] in ('budget_paused','needs_diagnosis','validation_failed','failed'):return 'ready'
+    if target['state'] in ('budget_paused','needs_diagnosis','validation_failed','failed','maintenance_paused'):return 'ready'
     return 'active'
 
 
@@ -115,6 +115,8 @@ def activate(config,marker_path):
         app=Path.home()/'Applications/Explorer Simulator.app/Contents/MacOS/launch'
         if app.is_file():shutil.copy2(app,backup/'launch')
         write_json(marker_path,dict(config,state='activating',previous_source=old['source'],at=time.time()))
+        from .semantic_cache import stop_servers
+        if stop_servers(root):raise RuntimeError('Idle vision workers did not exit; update retained for diagnosis')
         old_process.send_signal(signal.SIGTERM)
         for _ in range(100):
             try:get('/api/session')

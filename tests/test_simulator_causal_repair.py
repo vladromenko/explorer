@@ -68,6 +68,31 @@ def confirmation():
             for c in (0,1) for s in (101,102)]
 
 
+def test_new_repair_is_explored_before_repeating_old_ideas_without_acceptance_credit():
+    state=dict(controller_program=program(),historical_repair_trials=[
+        dict(program=program({'schema':1,'operators':['extended_hold_probe']}))])
+    analysis={'causes':[{'operators':['extended_hold_probe','kinematic_hold_probe']}]}
+    proposals=repair_proposals(state,analysis)
+    assert proposals[1]['operators']==['kinematic_hold_probe']
+    assert any(p['operators']==['extended_hold_probe'] for p in proposals)
+    assert not state.get('repair_trials')
+
+
+def test_version_update_keeps_old_best_program_only_as_unverified_hint(tmp_path):
+    from simulator.skill_training import SkillTraining
+    from simulator.scene_recipes import compile_recipes
+    recipe=compile_recipes(dict(fully_supported=True,task_ids=['sock_basket']))['recipes'][0]
+    old=SkillTraining(tmp_path,'ac'*6);state=old.create(attempts=8,scene_recipe=recipe)
+    state['generation']=3;state['incumbent']['pick_fraction']=.25
+    state['controller_program']=program({'schema':1,'operators':['extended_hold_probe']})
+    state['repair_trials']=[dict(program=state['controller_program'])];old.save(state)
+    new=SkillTraining(tmp_path,'ad'*6).create(attempts=8,scene_recipe=recipe)
+    assert new['incumbent']['pick_fraction']==.25 and new['controller_program']==state['controller_program']
+    assert not new['episodes'] and not new['repair_trials'] and not new['simulation_ready']
+    assert new['initialization']['old_episodes_counted_for_qualification'] is False
+    assert len(new['historical_repair_trials'])==1
+
+
 def test_confirmation_rejects_pick_regression_malformed_evidence_and_unpaired_scenes():
     rows=confirmation();assert confirms_nonregression(rows,'pick')[0]
     rows[2]['phase_credit']['pick']=8.;assert confirms_nonregression(rows,'pick')==(False,'regressed_verified_pick')

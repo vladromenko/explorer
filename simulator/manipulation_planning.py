@@ -63,7 +63,37 @@ def _plan_oriented_translation(env,target,reference,*,check,check_path=False):
     return None
 
 
-def plan_hold_probe(env,*,check=lambda:None,lowest_material_height_m=None,extended=False,obstacle=None):
+def kinematic_probe_directions(env,*,check=lambda:None):
+    """Translation directions in the local orientation-preserving arm subspace.
+
+    Five arm axes cannot generally satisfy arbitrary Cartesian translations
+    plus three fixed orientation coordinates. Use only the known robot's
+    Jacobian to propose feasible directions, then retain the full nonlinear
+    endpoint and path checks. This predicts motion, never proves a hold.
+    """
+    import mujoco
+    from .explorer_model import ARM_JOINTS
+    check();scratch=mujoco.MjData(env.model);scratch.qpos[:]=env.data.qpos
+    mujoco.mj_kinematics(env.model,scratch);mujoco.mj_comPos(env.model,scratch)
+    position=np.zeros((3,env.model.nv));rotation=np.zeros_like(position)
+    mujoco.mj_jac(env.model,scratch,position,rotation,env.jaw_center(),env.model.body('arm5').id)
+    dofs=[env.model.joint(n).dofadr[0] for n in ARM_JOINTS[:5]]
+    _,singular,vh=np.linalg.svd(rotation[:,dofs],full_matrices=True)
+    null=vh[np.count_nonzero(singular>1e-6):].T
+    if null.shape[1]==0:return []
+    axes,gains,_=np.linalg.svd(position[:,dofs]@null,full_matrices=False)
+    axes=axes[:,gains>1e-5]
+    if axes.shape[1]==0:return []
+    result=[]
+    for angle in np.linspace(0.,2*np.pi,16,endpoint=False):
+        check();direction=axes[:,0]*np.cos(angle)
+        if axes.shape[1]>1:direction+=axes[:,1]*np.sin(angle)
+        norm=np.linalg.norm(direction)
+        if norm>1e-6:result.append(('kinematic_'+str(len(result)),.02*direction/norm))
+    return result
+
+
+def plan_hold_probe(env,*,check=lambda:None,lowest_material_height_m=None,extended=False,obstacle=None,kinematic=False):
     jaw=np.asarray(env.jaw_center(),float);reference=hand_rotation(env)
     radial=jaw[:2]-np.asarray(env.base_pose()[:2])
     directions=[('up',np.array([0.,0.,.02]))]
@@ -79,6 +109,11 @@ def plan_hold_probe(env,*,check=lambda:None,lowest_material_height_m=None,extend
     if (lowest_material_height_m is not None and np.isfinite(lowest_material_height_m)
         and lowest_material_height_m>=.085 and jaw[2]>=.25):
         directions.append(('down',np.array([0.,0.,-.02])))
+    if kinematic:
+        for name,delta in kinematic_probe_directions(env,check=check):
+            if delta[2]<-.0001 and (lowest_material_height_m is None or
+                    not np.isfinite(lowest_material_height_m) or lowest_material_height_m+delta[2]<.065):continue
+            directions.append((name,delta))
     for name,delta in directions:
         target=jaw+delta
         command=_plan_oriented_translation(env,target,reference,check=check,check_path=True)
@@ -91,7 +126,7 @@ def plan_hold_probe(env,*,check=lambda:None,lowest_material_height_m=None,extend
     raise ValueError('Проверочное движение недостижимо без изменения ориентации захвата')
 
 
-def probe_at_command(env,command,*,lowest_material_height_m,extended=False,obstacle=None,check=lambda:None):
+def probe_at_command(env,command,*,lowest_material_height_m,extended=False,obstacle=None,check=lambda:None,kinematic=False):
     """Reserve the follow-up proof at a proposed view using only own FK."""
     import copy
     import mujoco
@@ -103,7 +138,7 @@ def probe_at_command(env,command,*,lowest_material_height_m,extended=False,obsta
         branch.data.qpos[env.model.joint(name).qposadr[0]]=m*q[5]
     mujoco.mj_kinematics(env.model,branch.data)
     return plan_hold_probe(branch,lowest_material_height_m=lowest_material_height_m,extended=extended,
-        obstacle=obstacle,check=check)
+        obstacle=obstacle,check=check,kinematic=kinematic)
 
 
 @dataclass(frozen=True)

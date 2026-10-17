@@ -94,6 +94,9 @@ class Trainer:
 def engine(tmp_path,tasks=('sock_basket',)):
     planner=Mock();planner.plan.return_value=(interpretation(tasks),{'model':'test'})
     book=AutomaticLearning(tmp_path,planner=planner,trainer_factory=Trainer,scene_builder=lambda value,task:dict(preview='test',manifest=dict(recipe_sha256=task['recipe']['sha256'])))
+    # This suite isolates queue orchestration. Real evidence and package
+    # validation are exercised by test_simulator_observed_transfer.py.
+    book.portable_transfer=lambda task:task['result']['archive']
     book.model_status=Mock(return_value=dict(ready=True));return book
 
 
@@ -316,3 +319,20 @@ def test_stale_progress_cannot_erase_a_pause_or_its_history(tmp_path):
     book.active_id=None;book.resume(row['id'])
     assert not book.cancelled(row['id']) and book.get(row['id'])['state']=='queued'
     assert pause_event in book.get(row['id'])['events']
+
+
+def test_memory_pause_recovers_same_checkpoint_without_renewing_time_or_overriding_user(tmp_path,monkeypatch):
+    from simulator.skill_training import SkillTraining
+    book=AutomaticLearning(tmp_path,planner=object())
+    value=book.create('Носок в корзину',attempts=8,hours=2)
+    trainer=SkillTraining(tmp_path,'ca'*6);state=trainer.create(attempts=8)
+    state.update(state='memory_paused',pause_kind='memory',effective_workers=4);trainer.pause.touch();trainer.save(state)
+    value.update(state='memory_paused',elapsed_s=123.,tasks=[dict(task_id='sock_basket',training_id=trainer.id,state='memory_paused')]);book.save(value)
+    monkeypatch.setattr('simulator.resource_budget.memory_budget',lambda:dict(available_bytes=40,total_bytes=100))
+    book.resume_memory_wait()
+    assert book.get(value['id'])['state']=='queued' and book.get(value['id'])['elapsed_s']==123.
+    assert json.loads(trainer.path.read_text())['effective_workers']==2
+    assert trainer.pause.exists() # checkpoint runner clears its own flag under ownership, not this scheduler
+    value=book.get(value['id']);value['state']='memory_paused';book.save(value)
+    book.pause_queue(value['id']);book.resume_memory_wait()
+    assert book.get(value['id'])['state']=='memory_paused'

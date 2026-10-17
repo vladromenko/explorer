@@ -1,7 +1,7 @@
 'use strict';
 const $=id=>document.getElementById(id);
-const labels={queued:'В очереди',planning:'Разбор задачи',waiting_for_current:'Ожидает текущую очередь',building_scene:'Создание сцены',training:'Обучается',running:'Обучается',validating:'Независимая проверка',packaging:'Проверка пакета',waiting_for_memory:'Ожидает память',pausing:'Останавливается',operator_paused:'Пауза',memory_paused:'Пауза: память',budget_paused:'Бюджет завершён',interrupted:'Остановлено при перезапуске',needs_clarification:'Нужно уточнение',needs_diagnosis:'Остановлено без улучшения',validation_failed:'Проверка не пройдена',simulation_qualified:'Проверено в симуляции',failed:'Ошибка'};
-const paused=new Set(['operator_paused','memory_paused','budget_paused','interrupted']);
+const labels={queued:'В очереди',planning:'Разбор задачи',waiting_for_current:'Ожидает текущую очередь',building_scene:'Создание сцены',training:'Обучается',running:'Обучается',validating:'Независимая проверка',packaging:'Проверка пакета',waiting_for_memory:'Ожидает память',pausing:'Останавливается',operator_paused:'Пауза',maintenance_paused:'Сохранено для обновления программы',memory_paused:'Пауза: память',budget_paused:'Бюджет завершён',interrupted:'Остановлено при перезапуске',needs_clarification:'Нужно уточнение',needs_diagnosis:'Остановлено без улучшения',validation_failed:'Проверка не пройдена',simulation_qualified:'Проверено в симуляции',failed:'Ошибка'};
+const paused=new Set(['operator_paused','memory_paused','budget_paused','interrupted','maintenance_paused']);
 const active=new Set(['pausing','queued','planning','waiting_for_current','building_scene','training','running','validating','packaging','waiting_for_memory']);
 const phases={pick:'Захват и подъём',view:'Подъезд и обзор',place:'Размещение'};
 const searchModes={geometry:'точка и сторона подхода',contact:'смыкание и контакт',hold_view:'подъём и проверка захвата',inspection:'обзор корзины',release:'отпускание',withdraw:'отвод и проверка размещения',view:'ракурс камеры',causal_repair:'сравнение исправления причины',repair_confirmation:'перепроверка исправления на новых сценах'};
@@ -21,7 +21,7 @@ function showCurrent(s){
  else if(liveLegacy){row=legacy;kind='legacy';id=legacy.id;training=legacy;}
  else if(own){row=own;kind='requests';id=own.id;training=s.trainings.find(t=>own.tasks.some(task=>task.training_id===t.id&&task.state!=='simulation_qualified'));}
  else if(legacy&&paused.has(legacy.state)){row=legacy;kind='legacy';id=legacy.id;training=legacy;}
- else{row=s.requests.find(r=>active.has(r.state));if(row){kind='requests';id=row.id;}else if(!s.requests.length&&legacy){row=legacy;training=legacy;kind='legacy';id=legacy.id;}}
+ else{row=s.requests.find(r=>active.has(r.state))||s.requests.find(r=>paused.has(r.state)&&!r.superseded_by);if(row){kind='requests';id=row.id;training=s.trainings.find(t=>row.tasks?.some(task=>task.training_id===t.id));}else if(!s.requests.length&&legacy){row=legacy;training=legacy;kind='legacy';id=legacy.id;}}
  if(s.queue_pause&&(!row||row.state==='queued'||row.state==='waiting_for_current')){row={...row,state:'operator_paused',reason:'Очередь на паузе'};kind='queue';}
  target=row?{kind,id,state:row.state}:null;$('current-control').disabled=disconnecting||row?.state==='pausing';$('current-panel').hidden=!row;if(!row)return;
  $('current-title').textContent=row.title||row.plan?.title||'Ваша задача';$('current-status').textContent=training?.active_workers?.some(w=>w.unresponsive)?'Исполнитель не отвечает: симуляция не выдаёт кадры или прогресс.':row.reason||labels[row.state]||row.state;$('current-cause').textContent=!active.has(row.state)?(row.failure_causes||[]).map(c=>`${c.count} попыток: ${c.reason}`).join(' · '):'';
@@ -31,6 +31,8 @@ function showCurrent(s){
  $('workers').textContent=`Исполнителей: ${training?.active_workers?.length||0}`;$('phase').textContent=(phases[training?.phase]?'Подбор: '+phases[training.phase]:labels[row.state]||row.state)+(searchModes[training?.search_mode]?' · '+searchModes[training.search_mode]:'')+(training?.automatic_recoveries?' · смен стратегии: '+training.automatic_recoveries:'');
  let repair=$('repair-status');if(!repair){repair=node('p',undefined,'muted');repair.id='repair-status';$('phase').parentElement.after(repair);}
  repair.textContent=training?[(training.diagnosed_causes||[]).map(c=>c.title).join(' · '),training.repair_tests?`Проверок исправлений: ${training.repair_tests}; принятых улучшений: ${training.promoted_repairs}`:'',training.reused_recordings?`Используется архив из ${training.reused_recordings} совместимых записей`:''].filter(Boolean).join('. '):'';
+
+ const capacity=training?.parallelism;if(capacity){const explanation=capacity.state==='measuring'?`Измеряется параллелизм: ${capacity.workers} исполнителей; эти повторы не засчитываются в обучение и проверку`:capacity.state==='completed'?`Замер: ускорение ${capacity.speedup.toFixed(2)}×; выбранных исполнителей: ${training.configured_workers}; минимальный запас памяти ${(capacity.minimum_memory_fraction*100).toFixed(0)}%`:'Больше исполнителей будет проверено, когда хватит памяти';repair.textContent+='. '+explanation;}
  $('current-control').hidden=!(active.has(row.state)||paused.has(row.state));$('current-control').textContent=paused.has(row.state)?'Продолжить':'Пауза';
  if(training){
   const views=training.active_workers?.length?training.active_workers:[{slot:0}];

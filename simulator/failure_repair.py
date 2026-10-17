@@ -20,10 +20,11 @@ OPERATORS={
     'probe_feasible_view':'Проверить достижимость обзора вместе с последующим контрольным движением',
     'visibility_planned_lift':'Спланировать высокий подъём с видимым участком ткани на всём пути',
     'reacquire_surface':'Получить новый обзор и выбрать заново наблюдаемый участок ткани',
+    'kinematic_hold_probe':'Рассчитать проверочное движение в доступных направлениях пятиосевой руки',
 }
 CAUSES={
     'ik_infeasible':('Недостижимая траектория захвата',('history_ik_seeds','cartesian_feedback')),
-    'probe_infeasible':('Нет достижимого проверочного движения',('extended_hold_probe','probe_feasible_view','history_ik_seeds')),
+    'probe_infeasible':('Нет достижимого проверочного движения',('kinematic_hold_probe','extended_hold_probe','probe_feasible_view','history_ik_seeds')),
     'missed_material':('Ткань физически не поднята',('surface_axis_grasp','cartesian_feedback')),
     'held_but_unseen':('Физическое удержание есть, камера его не подтверждает',('visibility_planned_lift','probe_feasible_view','extended_hold_probe')),
     'hold_lost_or_occluded':('После подъёма потеряно удержание либо его видимость',('visibility_planned_lift','surface_axis_grasp')),
@@ -127,6 +128,10 @@ def repair_proposals(state,analysis):
         for name in cause['operators']:
             if name not in names:names.append(name)
     if state.get('experience',{}).get('ik_seeds') and 'history_ik_seeds' not in names:names.append('history_ik_seeds')
+    # Old trials guide exploration order, not acceptance. A newly implemented
+    # repair should not wait through another sweep of already explored ideas.
+    historical=Counter(op for row in state.get('historical_repair_trials',[]) for op in program(row['program'])['operators'])
+    names.sort(key=lambda op:historical[op])
     candidates=[current]
     modifications=[(name,) for name in names]+list(combinations(names,2))
     for change in modifications:

@@ -21,14 +21,18 @@ STAGE_TITLES=dict(find='Поиск предмета',approach='Подъезд',r
 def execution_fingerprint():
     root=Path(__file__).resolve().parents[1]
     files={name:hashlib.sha256((root/name).read_bytes()).hexdigest() for name in
-        ('src/task_executor.py','simulator/skill_port.py','simulator/rgbd_observation.py',
+        ('src/task_executor.py','src/observed_skill_execution.py','src/simulation-training.html','src/web.py',
+         'bin/prepare-observed-runtime.py','bin/import-simulation-policy.py',
+         'simulator/observed_robot.py','simulator/observed_transfer.py',
+         'simulator/skill_port.py','simulator/rgbd_observation.py',
          'simulator/placement_evidence.py','simulator/inspection_planning.py',
          'simulator/manipulation_planning.py','simulator/observed_free_space.py',
          'simulator/multiview_container.py','simulator/observed_navigation.py','simulator/grasp_planning.py',
          'simulator/skill_parameters.py','simulator/resource_budget.py','simulator/skill_training.py','simulator/skill_workshop.py',
          'simulator/failure_repair.py','simulator/experience_memory.py','simulator/repair_acceptance.py','simulator/repair_motion.py',
          'simulator/domain_randomization.py','simulator/scene_recipes.py','simulator/semantic_vision.py','simulator/semantic_cache.py',
-         'simulator/worker_runtime.py',
+         'simulator/worker_runtime.py','simulator/learning_capacity.py','simulator/vision_backend.py',
+         'simulator/learning.py','simulator/curriculum.py',
          'simulator/grounded_skill_port.py','simulator/surface_destination.py',
          'simulator/scan_navigation.py','bin/simulator-grounding.py','bin/simulator-grounding-service.py','config/grounding-model.json',
          'simulator/environment.py','simulator/explorer_model.py',

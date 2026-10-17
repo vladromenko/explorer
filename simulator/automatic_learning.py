@@ -23,7 +23,7 @@ from .scene_recipes import compile_recipes,validate_recipe,explicit_scene_reques
 from .skill_training import SkillTraining,identity,list_trainings
 
 ACTIVE={'queued','planning','waiting_for_current','building_scene','training','validating','waiting_for_memory','packaging'}
-PAUSED={'operator_paused','budget_paused','memory_paused','interrupted'}
+PAUSED={'operator_paused','budget_paused','memory_paused','interrupted','maintenance_paused'}
 TERMINAL={'needs_clarification','needs_diagnosis','validation_failed','simulation_qualified','failed'}
 
 
@@ -118,6 +118,19 @@ class AutomaticLearning:
             self.event(value,'pausing' if self.active_id==identifier else 'operator_paused','Останавливаю работников; записи сохраняются')
         return value
 
+    def prepare_update(self,identifier):
+        """Drain a complete comparison before a program update; not a user pause."""
+        with self.mutex:
+            value=self.get(identifier)
+            if self.pause_info() or value['state'] in ('operator_paused','pausing'):
+                raise ValueError('Ручная пауза имеет приоритет над обновлением')
+            if value['state'] not in ACTIVE|{'running'}:return value
+            for task in value.get('tasks',[]):
+                folder=self.root/'skill-training'/identity(task['training_id'])
+                if folder.is_dir():write_json(folder/'update.request',dict(request=identifier,at=time.time()))
+            value['pending_program_update']=True;self.save(value)
+            return value
+
     def revision_available(self,value):
         if value['state'] not in {'needs_diagnosis','validation_failed','failed'}|PAUSED:return False
         from .skill_workshop import execution_fingerprint
@@ -172,6 +185,9 @@ class AutomaticLearning:
                             saved['options']['attempts']=max(saved['options']['attempts'],target);trainer.save(saved)
             # A fresh time allowance resumes the same tasks/checkpoints.
             (self.folder/(identifier+'.pause')).unlink(missing_ok=True)
+            value.pop('pending_program_update',None)
+            for task in value.get('tasks',[]):
+                (self.root/'skill-training'/identity(task['training_id'])/'update.request').unlink(missing_ok=True)
             value['elapsed_s']=0.;value.pop('budget_exhausted',None);self.event(value,'queued','Продолжение сохранённой задачи');self.resume_queue()
         return value
 
@@ -309,6 +325,8 @@ class AutomaticLearning:
                 remaining=max(.001,value['budget']['hours']-(elapsed+time.monotonic()-started)/3600)
                 saved=trainer.create(attempts=value['budget']['attempts'],hours=min(24.,remaining),workers=4,
                     seed=int(value['id'],16)%1_000_000_000,task_id=task['task_id'],scene_recipe=task['recipe'])
+                if value.get('pending_program_update'):
+                    write_json(self.root/'skill-training'/task['training_id']/'update.request',dict(request=identifier,at=time.time()))
                 if saved['state'] in ('needs_diagnosis','validation_failed','failed'):
                     task['state']=saved['state'];task['result']=dict(simulation_ready=False,reason=saved.get('reason') or saved['state']);self.save(value);continue
                 self.event(value,'training','Обучаю: '+task['recipe']['title'])
@@ -354,18 +372,29 @@ class AutomaticLearning:
             value['elapsed_s']=elapsed+time.monotonic()-started;self.save(value)
         return value
 
+    def portable_transfer(self,task):
+        from .observed_transfer import export_skill,verified_archive
+        portable=self.root/'exports'/('observed-transfer-'+task['training_id']+'.tar.gz')
+        transfer=verified_archive(portable) if portable.exists() else export_skill(self.root/'skill-training'/task['training_id'],portable)
+        saved_policy=json.loads((self.root/'skill-training'/task['training_id']/'policy.json').read_text())
+        if transfer.get('policy',saved_policy)!=saved_policy:raise ValueError('Portable policy differs from qualified controller')
+        return transfer
+
     def package(self,value):
         import tarfile
         folder=self.root/'automatic-results'/value['id'];folder.mkdir(parents=True,exist_ok=True)
         manifest=dict(schema=1,request=value['text'],plan=value['plan'],tasks=[],simulation_ready=True,
-            physical_ready=False,automatic_hardware_execution=False,kind='observed_simulation_curriculum')
+            physical_ready=False,automatic_hardware_execution=False,kind='observed_simulation_curriculum',
+            format='explorer_observed_curriculum_transfer_v1')
         sources={}
         for task in value['tasks']:
             artifact=task['result']['archive'];path=Path(artifact['path']).resolve()
             if (task['state']!='simulation_qualified' or not path.is_relative_to(self.root/'exports') or
                 not artifact.get('verified') or sha256(path)!=artifact['sha256']):raise ValueError('Child package not qualified or changed')
-            name=task['task_id']+'.tar.gz';sources[name]=path
-            manifest['tasks'].append(dict(task_id=task['task_id'],file=name,sha256=artifact['sha256'],recipe=task['recipe']))
+            transfer=self.portable_transfer(task)
+            name=task['task_id']+'.tar.gz';sources[name]=Path(transfer['path'])
+            manifest['tasks'].append(dict(task_id=task['task_id'],file=name,sha256=transfer['sha256'],recipe=task['recipe'],
+                full_learning_archive_sha256=artifact['sha256']))
         write_json(folder/'manifest.json',manifest);sources['manifest.json']=folder/'manifest.json'
         hashes={n:sha256(p) for n,p in sources.items()}
         output=self.root/'exports'/('automatic-'+value['id']+'.tar.gz');temporary=output.with_suffix('.tmp')
@@ -398,6 +427,33 @@ class AutomaticLearning:
         if self.thread and self.thread.is_alive():return
         self.thread=threading.Thread(target=self.work,name='automatic-learning',daemon=True);self.thread.start()
 
+    def resume_memory_wait(self):
+        """Only resource pauses recover automatically; user pauses never do.
+
+        Keep the original elapsed time allowance and the same checkpoint.
+        """
+        if self.root.parent==Path('/Volumes/ExplorerSim') and not self.root.parent.is_mount():return
+        waiting=[v for v in reversed(self.list()) if v['state']=='memory_paused' and not v.get('pending_program_update')]
+        if not waiting or self.pause_info() or self.simulator_busy():return
+        from .resource_budget import memory_budget
+        memory=memory_budget()
+        if memory['available_bytes']/memory['total_bytes']<.25:return
+        for value in waiting:
+            if (self.folder/(value['id']+'.pause')).exists():continue
+            states=[]
+            for task in value.get('tasks',[]):
+                if task['state']=='simulation_qualified':continue
+                trainer=self.trainer_factory(self.root,task['training_id'])
+                saved=json.loads(trainer.path.read_text())
+                if saved.get('state')!='memory_paused' or saved.get('pause_kind')!='memory':break
+                states.append((trainer,saved))
+            else:
+                if not states:continue
+                for trainer,saved in states:
+                    saved['effective_workers']=max(1,saved.get('effective_workers',4)//2);trainer.save(saved)
+                self.event(value,'queued','Память освободилась; продолжаю сохранённые попытки с меньшим числом исполнителей')
+                return
+
     def work(self):
         owner=(self.folder/'scheduler.lock').open('a')
         try:fcntl.flock(owner,fcntl.LOCK_EX|fcntl.LOCK_NB)
@@ -406,6 +462,7 @@ class AutomaticLearning:
             self.recover_requests()
             while not self.stop.is_set():
                 if self.pause_info():self.stop.wait(.5);continue
+                self.resume_memory_wait()
                 pending=[v for v in reversed(self.list()) if v['state'] in ACTIVE]
                 if pending:
                     self.active_id=pending[0]['id'];self.advance(self.active_id);self.active_id=None

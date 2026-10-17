@@ -203,6 +203,7 @@ def stop_all():
         ("manual_arm",lambda owner:owner.stop()),
         ("policy_execution",lambda owner:owner.stop() if owner.lock.locked() else None),
         ("mobile_policy_execution",lambda owner:owner.stop() if owner.lock.locked() else None),
+        ("observed_skill_execution",lambda owner:owner.stop() if owner.lock.locked() else None),
         ("navigation_tasks",lambda owner:owner.cancel() if owner.status()["busy"] else None),
         ("target_gaze",lambda owner:owner.cancel()),
         ("onboard_agent",lambda owner:owner.cancel_all("Operator STOP")),
@@ -1322,6 +1323,36 @@ def room_task_cancel():return map_operation(navigation_tasks.cancel)
 delivery_robot=DeliveryRobot(ROOT,missions,manual_arm,trajectory_execution,object_finder,measured_vision,reference_arm)
 delivery_task=DeliveryTask(ROOT,delivery_robot,semantic_world)
 missions.compound_guard=delivery_robot.permit
+
+from observed_skill_execution import ObservedSkillExecution,FullScanCache
+observed_skill_scans=FullScanCache()
+node.create_subscription(LaserScan,'/scan0',lambda message:observed_skill_scans.receive(0,message,node.get_clock().now().nanoseconds/1e9),qos_profile_sensor_data)
+node.create_subscription(LaserScan,'/scan1',lambda message:observed_skill_scans.receive(1,message,node.get_clock().now().nanoseconds/1e9),qos_profile_sensor_data)
+observed_skill_execution=ObservedSkillExecution(ROOT,delivery_robot,emit,observed_skill_scans.snapshot,lidar_transform)
+
+class ObservedSkillStart(BaseModel):
+    candidate:str=Field(pattern='^[0-9a-f]{64}$')
+    observing:bool=False
+
+@app.get('/api/observed-skills')
+def observed_skills_status():
+    candidates=[]
+    for path in (ROOT/'data/observed-skill-candidates').glob('*/candidate.json'):
+        try:candidates.append(json.loads(path.read_text()))
+        except (OSError,ValueError):pass
+    return dict(candidates=candidates,execution=observed_skill_execution.status(),physical_ready=False)
+
+@app.get('/api/observed-skills/{identifier}/preflight')
+def observed_skills_preflight(identifier:str):return map_operation(observed_skill_execution.preflight,identifier)
+
+@app.post('/api/observed-skills/start')
+def observed_skills_start(body:ObservedSkillStart):return map_operation(profiles.admit,'policy',observed_skill_execution.start,body.candidate,body.observing)
+
+@app.post('/api/observed-skills/lease')
+def observed_skills_lease(body:PolicyExecutionLease):return map_operation(observed_skill_execution.heartbeat,body.session,body.held)
+
+@app.post('/api/observed-skills/stop')
+def observed_skills_stop():return observed_skill_execution.stop()
 
 from robot_readiness import status as robot_readiness
 from capability_readiness import CapabilityReadiness

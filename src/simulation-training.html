@@ -4,4 +4,29 @@ async function api(path,body){const response=await fetch(path,{method:body===und
 function message(text){$('state').textContent=text;}
 async function refresh(){try{const result=await api('/api/simulation-tasks');$('tasks').replaceChildren();$('goals').replaceChildren();for(const goal of result.goals||[]){const card=document.createElement('article');const title=document.createElement('h2');title.textContent=goal.title;const request=document.createElement('p');request.textContent='Ваша просьба: '+goal.request;const note=document.createElement('p');note.textContent=goal.note;card.append(title,request,note);for(const missing of goal.missing||[]){const p=document.createElement('p');p.textContent='Недостающий этап: '+missing;card.append(p);}$('goals').append(card);}if(!result.tasks.length)message('Импортированных моделей пока нет. Загрузите пакет с Mac.');for(const item of result.tasks){const card=document.createElement('article');const title=document.createElement('h2');title.textContent=item.task?.title||item.job_id;card.append(title);const info=document.createElement('p');info.textContent=item.error||`Симуляция: ${item.qualification.successes}/${item.qualification.episodes}. `+(item.trial.ready?'Готов к наблюдаемой проверке.':item.trial.blocked_by.join('; '));card.append(info);const start=document.createElement('button');start.textContent='Начать наблюдаемую проверку';start.disabled=!item.trial?.ready;start.onclick=async()=>{try{if(!$('observe').checked)throw Error('Подтвердите наблюдение и подготовку предмета');const accepted=await api('/api/simulation-tasks/'+item.task.id+'/trial',{observing:true});session=accepted.session;message('Проверка запущена. Оставьте эту вкладку открытой; снятие галочки или уход из вкладки остановит команды.');}catch(e){message(e.message);}};card.append(start);$('tasks').append(card);}}catch(e){message(e.message);}}
 $('refresh').onclick=refresh;$('stop').onclick=async()=>{session=null;await api('/api/skills/trial/stop',{});message('Остановка запрошена');};$('observe').onchange=()=>{if(!$('observe').checked&&session)$('stop').click();};setInterval(async()=>{if(session&&!document.hidden&&$('observe').checked){try{await api('/api/skills/trial/heartbeat',{session,observing:true});const state=await api('/api/skills/trial/status');message('Проверка: '+state.phase+' · шагов '+(state.steps||0)+(state.reason?' · '+state.reason:''));if(!state.busy)session=null;}catch(e){session=null;message(e.message);}}},250);document.addEventListener('visibilitychange',()=>{if(document.hidden&&session)$('stop').click();});window.addEventListener('pagehide',()=>{session=null;});
-</script></body></html>
+</script>
+<script>
+// Observed geometric skills have their own contract; never send them to ACT.
+let observedSession=null;
+const priorRefresh=refresh;
+async function refreshObserved(){
+ const data=await api('/api/observed-skills');
+ let section=$('observed-tasks');if(!section){section=document.createElement('div');section.id='observed-tasks';$('tasks').before(section);}section.replaceChildren();
+ for(const item of data.candidates){
+  const card=document.createElement('article'),title=document.createElement('h2'),info=document.createElement('p'),button=document.createElement('button');
+  title.textContent=item.task_id==='sock_basket'?'Носок → корзина · новый исполнитель':item.task_id;
+  info.textContent='Пакет проверен в симуляции. Проверяю датчики, установленную версию и калибровки…';button.textContent='Начать наблюдаемую проверку';button.disabled=true;card.append(title,info,button);section.append(card);
+  try{const check=await api(`/api/observed-skills/${item.id}/preflight`);info.textContent=check.ready?'Можно выполнить первую попытку под наблюдением.':check.blocked_by.join('; ');button.disabled=!check.ready;}catch(e){info.textContent=e.message;}
+  button.onclick=async()=>{try{if(!$('observe').checked)throw Error('Подтвердите, что вы рядом и наблюдаете');const result=await api('/api/observed-skills/start',{candidate:item.id,observing:true});observedSession=result.session;message('Наблюдаемая попытка: оставьте вкладку открытой.');}catch(e){message(e.message);}};
+ }
+ if(data.candidates.length)message('Новый пакет найден. Ниже указана готовность настоящего робота.');
+}
+refresh=async()=>{await priorRefresh();try{await refreshObserved();}catch(e){message(e.message);}};$('refresh').onclick=refresh;
+const priorStop=$('stop').onclick;
+$('stop').onclick=async()=>{if(observedSession){observedSession=null;try{await api('/api/observed-skills/stop',{});}catch(e){message(e.message);}}await priorStop();};
+setInterval(async()=>{if(!observedSession||document.hidden||!$('observe').checked)return;try{await api('/api/observed-skills/lease',{session:observedSession,held:true});const data=await api('/api/observed-skills');message('Проверка: '+data.execution.phase+(data.execution.reason?' · '+data.execution.reason:''));if(!data.execution.busy)observedSession=null;}catch(e){observedSession=null;message(e.message);}},250);
+$('observe').addEventListener('change',()=>{if(!$('observe').checked&&observedSession)$('stop').click();});
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&observedSession)$('stop').click();});
+window.addEventListener('pagehide',()=>{observedSession=null;});
+</script>
+</body></html>

@@ -11,7 +11,7 @@ import time
 def endpoint(root):
     source=Path(__file__).resolve().parents[1]
     script=source/'bin/simulator-grounding-service.py';lock=source/'config/grounding-model.json'
-    key=hashlib.sha256(script.read_bytes()+lock.read_bytes()).hexdigest()[:12]
+    key=hashlib.sha256(script.read_bytes()+lock.read_bytes()+(source/'simulator/vision_backend.py').read_bytes()).hexdigest()[:12]
     return Path(root)/'maintenance'/('vision-'+key+'.sock'),script
 
 
