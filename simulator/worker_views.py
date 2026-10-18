@@ -31,11 +31,15 @@ def capture_overview(env, folder, last_capture):
 def sources(root, snapshot, assignments):
     root = Path(root).resolve()
     jobs = snapshot.get('jobs', [])
-    kinds = ('trials', 'audit', 'validate', 'train','skill_train')
+    kinds = ('trials', 'audit', 'compare', 'validate', 'train','skill_train')
     active = next((job for job in reversed(jobs) if job.get('status') == 'running' and job.get('kind') in kinds), None)
     phase = active['kind'] if active else 'idle'
     views = []
-    if active and phase=='skill_train':
+    if active and active.get('external_recovery'):
+        for slot,view in enumerate((active.get('details') or {}).get('views',[])):
+            folder=Path(view['folder'])
+            views.append(dict(slot=slot,folder=folder,live=view.get('live',True),label=view['label'],identity=str(folder)))
+    elif active and phase=='skill_train':
         details=active.get('details') or {}
         for worker in details.get('active_workers',[]):
             folder=root/'skill-training'/details['training_id']/'episodes'/worker['episode_id']

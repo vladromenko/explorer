@@ -46,6 +46,26 @@ def simulation_qualification(folder, bundle):
             or coverage.get('distinct_seeds',0) < episodes
             or coverage.get('user_basket_25cm_diameter_30cm_rim_episodes',0) < 1):
             reasons.append('Независимая проверка не покрывает все высоты корзины нового профиля')
+    evidence_path=Path(folder)/'qualification-evidence.json'
+    if evidence_path.exists():
+        evidence=json.loads(evidence_path.read_text())
+        groups=evidence.get('groups',[])
+        from simulator.curriculum import report_passes
+        known=set()
+        for part in ('train','validation'):
+            provenance=Path(folder)/part/'explorer-provenance.json'
+            if not provenance.exists():provenance=Path(folder)/(part+'-provenance.json')
+            if provenance.exists():
+                lineage=json.loads(provenance.read_text()).get('episodes',[])
+                if not lineage or any(type(row['episode'].get('seed')) is not int for row in lineage):
+                    reasons.append('Нет происхождения учебных сцен для двух независимых групп')
+                known.update(row['episode'].get('seed') for row in lineage)
+            else:reasons.append('Нет происхождения учебных сцен для двух независимых групп')
+        if (len(groups)!=2 or not all(report_passes(g) and g.get('model_checkpoint_sha256')==checkpoints
+                and not known.intersection(g.get('seeds',[])) and len(set(g.get('seeds',[])))==10 for g in groups)
+                or set(groups[0].get('seeds',[]))&set(groups[1].get('seeds',[]))
+                or groups[-1]!={k:v for k,v in report.items() if k!='transfer_checkpoint_sha256'}):
+            reasons.append('Две независимые группы не подтверждают эти веса или пересекаются с данными')
     return dict(simulation_qualified=not reasons, blocked_by=reasons,
                 successes=successes, episodes=episodes, physical_accepted=False,
                 observed_transfer_validation_required=True,

@@ -82,6 +82,8 @@ def inspect_episode(folder):
         raise ValueError("Invalid simulator recording frequency")
     inputs = {"episode.json": sha256(folder / "episode.json"), "samples.jsonl": sha256(folder / "samples.jsonl")}
     for row in rows:
+        if type(row.get('training_target_valid',True)) is not bool:
+            raise ValueError('Invalid expert target mask')
         if row.get("sample_contract_sha256", episode.get("sample_contract_sha256")) != CONTRACT_SHA256:
             raise ValueError("Trajectory sample contract does not match Explorer")
         if row.get("joint_state_source", "command_estimate") != "command_estimate":
@@ -107,7 +109,25 @@ def inspect_episode(folder):
     return episode, rows, int(round(fps)), inputs
 
 
-def export_dataset(episode_folders, destination, repo_id="explorer/simulator", task="pick and place", cancelled=None):
+def expert_segments(rows, fps):
+    """Keep original clocks and prevent action chunks crossing a learner handoff."""
+    segments=[];current=[]
+    for index,row in enumerate(rows):
+        elapsed=float(row.get('actor_elapsed_s',index/fps))
+        if not math.isfinite(elapsed) or elapsed<0:
+            raise ValueError('Invalid recorded actor clock')
+        if index and abs(elapsed-float(rows[index-1].get('actor_elapsed_s',(index-1)/fps))-1/fps)>1e-5:
+            raise ValueError('Actor clock is discontinuous')
+        if row.get('training_target_valid',True):current.append((elapsed,row))
+        else:
+            if len(current)>=3:segments.append(current)
+            current=[]
+    if len(current)>=3:segments.append(current)
+    if not segments:raise ValueError('No contiguous expert-labelled segment')
+    return segments
+
+
+def export_dataset(episode_folders, destination, repo_id="explorer/simulator", task="pick and place", cancelled=None, correction_replays=1):
     """Write LeRobot data from pre-action state/image and that row's next command."""
     import numpy as np
     from PIL import Image
@@ -131,6 +151,8 @@ def export_dataset(episode_folders, destination, repo_id="explorer/simulator", t
         ACTOR_CLOCK["feature"]: {"dtype": "float32", "shape": (14,), "names": ACTOR_CLOCK_FOURIER["components"]},
     }
     fps = next(iter(rates))
+    if type(correction_replays) is not int or not 1<=correction_replays<=8:
+        raise ValueError('Invalid corrective replay weight')
     dataset = LeRobotDataset.create(repo_id=repo_id, root=destination, fps=fps,
         features=features, robot_type="rosmaster_m3pro_mobile_manipulation_simulated_command_estimate",
         use_videos=False, image_writer_threads=2)
@@ -140,22 +162,28 @@ def export_dataset(episode_folders, destination, repo_id="explorer/simulator", t
             alignment = episode.get("action_alignment", "pre_action_observation")
             if alignment not in ("pre_action_observation", "same_row_pre_action"):
                 raise ValueError("Expected a pre-action observation and its next applied command")
-            for frame_index, current in enumerate(rows):
-                if cancelled and cancelled():
-                    raise InterruptedError("Simulator training cancelled during dataset export")
-                with Image.open(_contained(folder, current["image"])) as image:
-                    rgb = np.asarray(image.convert("RGB").resize((320, 240))).copy()
-                observation_state = np.asarray(_vector(current.get("observation_state", current.get("command"))), dtype=np.float32)
-                training_action = np.asarray(_vector(current["applied_action"]), dtype=np.float32)
-                dataset.add_frame({
-                    "observation.state": observation_state,
-                    "action": training_action,
-                    "observation.images.wrist": rgb, "task": task or episode.get("name", "pick and place"),
-                    ACTOR_CLOCK["feature"]: np.asarray(clock_features({**ACTOR_CLOCK_FOURIER,"period_s":1/fps},frame_index/fps), dtype=np.float32),
-                })
-            dataset.save_episode()
+            segments=expert_segments(rows,fps)
+            repeats=correction_replays if episode.get('learner_intervention') else 1
+            for _ in range(repeats):
+                for segment in segments:
+                    for elapsed,current in segment:
+                        if cancelled and cancelled():
+                            raise InterruptedError("Simulator training cancelled during dataset export")
+                        with Image.open(_contained(folder, current["image"])) as image:
+                            rgb = np.asarray(image.convert("RGB").resize((320, 240))).copy()
+                        observation_state = np.asarray(_vector(current.get("observation_state", current.get("command"))), dtype=np.float32)
+                        training_action = np.asarray(_vector(current["applied_action"]), dtype=np.float32)
+                        dataset.add_frame({
+                            "observation.state": observation_state,
+                            "action": training_action,
+                            "observation.images.wrist": rgb, "task": task or episode.get("name", "pick and place"),
+                            ACTOR_CLOCK["feature"]: np.asarray(clock_features({**ACTOR_CLOCK_FOURIER,"period_s":1/fps},elapsed), dtype=np.float32),
+                        })
+                    dataset.save_episode()
             provenance.append({"episode": episode, "input_sha256": inputs,
-                               "samples": len(rows), "action_alignment": "pre_action_observation"})
+                               "samples": sum(len(s) for s in segments)*repeats,
+                               "recorded_frames":len(rows),'expert_segments':len(segments),
+                               'replay_weight':repeats,"action_alignment": "pre_action_observation"})
         dataset.finalize()
     finally:
         if dataset.writer is not None:
@@ -580,7 +608,7 @@ def resume_checkpoint(folder, episode_folders, skill_id):
 
 def train_job(job_folder, episode_folders, steps=3000, python_executable=None, device="auto", progress=None,
               task="pick and place", skill_id=None, cancelled=None, batch_size=16, seed=1000,
-              diagnostic_only=False, warm_start=None, minimum_epochs=0, resume=False):
+              diagnostic_only=False, warm_start=None, minimum_epochs=0, resume=False, correction_replays=1):
     """Blocking worker; call from the simulator's background executor.
 
     The subprocess has no robot connection. A nonzero learner exit is a failed
@@ -654,13 +682,18 @@ def train_job(job_folder, episode_folders, steps=3000, python_executable=None, d
             check_cancelled()
             split_function=(lambda folders,metadata:inherited_split(folders,metadata,warm_start)) if warm_start else split_episodes
             training, validation, heldout = split_function(folders, [item[0] for item in provenance])
-            frame_counts={path:len(item[1]) for path,item in zip(folders,provenance)}
+            if type(correction_replays) is not int or not 1<=correction_replays<=8:
+                raise ValueError('Invalid corrective replay weight')
+            frame_counts={path:sum(len(s) for s in expert_segments(item[1],item[2]))*
+                (correction_replays if item[0].get('learner_intervention') else 1)
+                for path,item in zip(folders,provenance)}
             budget=training_budget(steps,sum(frame_counts[path] for path in training),batch_size,minimum_epochs)
             if minimum_epochs and budget['expected_dataset_passes']<minimum_epochs:
                 raise ValueError('Объём данных превышает бюджет полных проходов; качество обучения не снижено')
             steps=budget['effective_steps']
             state.update(steps=steps,training_budget=budget)
-            export_dataset(training, folder / "train", "explorer/simulator-train", task, cancelled=cancelled)
+            state['correction_replays']=correction_replays
+            export_dataset(training, folder / "train", "explorer/simulator-train", task, cancelled=cancelled,correction_replays=correction_replays)
             check_cancelled()
             export_dataset(validation, folder / "validation", "explorer/simulator-validation", task, cancelled=cancelled)
             check_cancelled()

@@ -56,7 +56,7 @@ def learning_status(root,snapshot):
     details=(active or {}).get('details') or {}
     saved=task.get('stages',{}).get('train') or {}
     budget=details.get('training_budget') or saved.get('training_budget')
-    return dict(state=status,task_id=task_id,title=task_spec(task_id)['title'],cycle_id=current['id'] if current else None,
+    output=dict(state=status,task_id=task_id,title=task_spec(task_id)['title'],cycle_id=current['id'] if current else None,
         plan_id=plan['id'] if plan else None,phase=active['kind'] if active else (current or {}).get('phase','finished'),
         message=(active or {}).get('message') or (current or {}).get('reason'),iteration=task.get('iteration',task.get('round',1)),
         progress=(active or {}).get('progress',0),steps_completed=details.get('steps_completed',saved.get('steps_completed')),
@@ -67,3 +67,19 @@ def learning_status(root,snapshot):
         comparison=task.get('last_comparison'),
         teacher_profile=(plan or {}).get('options',{}).get('teacher_profile','legacy_v1'),
         resume_model_id=task.get('pending',{}).get('job_id') if task.get('pending',{}).get('stage')=='train' else None)
+    from .neural_recovery import current as recovery_current
+    recovery=recovery_current(root)
+    if recovery and (recovery.get('alive') or recovery['cycle_id']==output['cycle_id']):
+        state=recovery['state']
+        if state in ('running','queued') and not recovery['alive']:state='interrupted'
+        details=recovery.get('details',{})
+        output.update(state=state,phase=recovery.get('phase','diagnosis'),message=recovery.get('reason') or recovery.get('message'),
+            cycle_id=recovery['cycle_id'],model_id=Path(recovery['model']).name,
+            iteration=recovery.get('iteration',1),external_recovery_id=recovery['id'],
+            steps_completed=details.get('steps_completed'),training_budget=details.get('training_budget'),eta_s=details.get('eta_s'),
+            progress=100*recovery.get('completed',0)/max(1,recovery.get('total',1)),
+            simulation_ready=recovery.get('simulation_ready',False),archive=recovery.get('archive'),physical_ready=False,
+            worker_progress={'active_workers':recovery.get('views',[])},
+            recovery_counts={'completed':recovery.get('completed',0),'total':recovery.get('total',0)})
+        if state=='pausing':output['message']='Останавливаем исполнителей и сохраняем контрольную точку; диск пока не извлекайте'
+    return output

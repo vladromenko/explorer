@@ -97,7 +97,7 @@ def export_package(job_folder, destination, inference_device="cuda"):
                     value["pretrained_revision"] = None
                     value["pretrained_backbone_weights"] = None
                 write_json(copied, value)
-        for name in ("job.json", "validation.json", "split.json", "checkpoint-selection.json", "physics-validation.json", "preview-validation.json"):
+        for name in ("job.json", "validation.json", "split.json", "checkpoint-selection.json", "physics-validation.json", "preview-validation.json", "qualification-evidence.json"):
             source = folder / name
             if source.is_file():
                 shutil.copyfile(source, stage / name)

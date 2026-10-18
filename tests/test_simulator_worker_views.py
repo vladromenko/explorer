@@ -37,6 +37,16 @@ def test_training_shows_recordings_never_claims_live_workers(tmp_path):
     assert json.loads((dest/'state.json').read_text())==result
 
 
+def test_recovery_views_are_real_recordings_from_external_workers(tmp_path):
+    root=tmp_path/'data';folder=root/'neural-recovery'/'round-01'/'correction-01'/'episode'
+    (folder/'frames').mkdir(parents=True);(folder/'frames/000010.jpg').write_bytes(b'actual')
+    job=dict(id='a'*12,kind='trials',status='running',external_recovery=True,
+        details={'views':[dict(folder=str(folder),live=True,label='Корректирующий показ')]})
+    result=publish(root,tmp_path/'static',{'jobs':[job]}, {})
+    assert len(result['views'])==1 and result['views'][0]['live']
+    assert (tmp_path/'static/worker-0-wrist.jpg').read_bytes()==b'actual'
+
+
 def test_skill_learning_shows_actual_distinct_process_scenes(tmp_path):
     root=tmp_path/'data';training='c'*12;workers=[]
     for i in range(4):

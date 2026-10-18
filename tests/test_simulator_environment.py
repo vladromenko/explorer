@@ -97,6 +97,17 @@ class SimulatorEnvironmentTests(unittest.TestCase):
         finally:
             teacher.close()
 
+    def test_applied_interpolation_keeps_exact_reference_limits(self):
+        from simulator.environment import LOW,HIGH
+        # A bounded endpoint can round slightly below zero in the final
+        # start+(end-start) expression. Every physics substep must stay legal.
+        for value in (7.355060145493097e-9,.00000001,.025,1.23456789):
+            self.env.command[3]=value
+            target=self.env.command.copy();target[3]=0.
+            self.env.step(target,applied=True)
+            self.assertTrue(np.all(self.env.command>=LOW))
+            self.assertTrue(np.all(self.env.command<=HIGH))
+
     def test_rgb_reuse_never_carries_a_frame_across_physics_or_reset(self):
         renderer = MagicMock()
         renderer.render.return_value = np.zeros((240, 320, 3), np.uint8)

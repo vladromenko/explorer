@@ -182,9 +182,12 @@ class ExplorerEnv(gym.Env):
         endpoint[:6] += np.clip(self.pending_command[:6]-start[:6],
                                 -self.velocity_limit*PERIOD, self.velocity_limit*PERIOD)
         endpoint[6:] += np.clip(self.pending_command[6:]-start[6:], -.5*PERIOD, .5*PERIOD)
+        # Cancellation at an exact limit can round start+(target-start) a few
+        # ulps outside it. Retain the same limits through interpolation too.
+        endpoint=np.clip(endpoint,LOW,HIGH)
         for index in range(substeps):
             if applied:
-                self.command = start + (endpoint-start)*(index+1)/substeps
+                self.command = np.clip(start + (endpoint-start)*(index+1)/substeps,LOW,HIGH)
                 self.data.ctrl[self.servo_ids] = servo_to_joint(self.command[:6])
                 self.data.ctrl[self.wheel_ids] = wheel_targets(*self.command[6:])
             else:
@@ -368,7 +371,7 @@ class ExplorerEnv(gym.Env):
             raise ValueError(f"IK: цель недостижима, остаток {error:.3f} м")
         return np.r_[angles, gripper]
 
-    def make_episode_trial(self, output_dir, seed=0, progress=None, policy=None, task_id='sock_basket', scene_profile='baseline', teacher_profile='legacy_v1'):
+    def make_episode_trial(self, output_dir, seed=0, progress=None, policy=None, task_id='sock_basket', scene_profile='baseline', teacher_profile='legacy_v1', recovery_policy=None, recovery_phase=None, recovery_steps=20):
         """Attempt real physical pickup/place; failed trials remain failed data.
 
         Teacher may inspect simulated object truth for curriculum generation.
@@ -377,6 +380,9 @@ class ExplorerEnv(gym.Env):
         from src.mobile_policy_contract import CONTRACT_SHA256, SAMPLE_CONTRACT
         if teacher_profile not in ('legacy_v1', 'cartesian_close_v2', 'planned_grasp_v3', 'planned_release_v4'):
             raise ValueError('Unknown teacher motion profile')
+        if recovery_policy is not None and (policy is not None or recovery_phase not in
+                ('approach','transport','place','release') or type(recovery_steps) is not int or not 1<=recovery_steps<=40):
+            raise ValueError('Invalid finite learner intervention')
         folder = Path(output_dir)
         folder.mkdir(parents=True, exist_ok=False)
         (folder / "frames").mkdir()
@@ -401,6 +407,7 @@ class ExplorerEnv(gym.Env):
         manifest['domain_variation'] = self.domain_variation
         manifest['attempt_completed'] = False
         steps = 0
+        expert_target = True
         overview_at = -1.
         handle = (folder / "samples.jsonl").open("w")
         def tick(action):
@@ -411,6 +418,9 @@ class ExplorerEnv(gym.Env):
             row["action_alignment"] = "same_row_pre_action"
             row["wrist_rgb"] = f"frames/{steps:06d}.jpg"
             row["phase"] = self.phase
+            if recovery_policy is not None:
+                row['training_target_valid'] = expert_target
+                row['actor_elapsed_s'] = steps*PERIOD
             snapshot = self.state()
             row["simulated_outcome"] = dict(snapshot["task"])
             row["simulator_diagnostics"] = {key: snapshot[key] for key in
@@ -420,7 +430,7 @@ class ExplorerEnv(gym.Env):
             from .worker_views import capture_overview
             overview_at = capture_overview(self, folder, overview_at)
             row["requested_action"] = np.asarray(action, float).tolist()
-            self.step(action, applied=policy is not None)
+            self.step(action, applied=policy is not None or not expert_target)
             # The learner's target is the endpoint actually applied after the
             # host's bounded motion profile, paired with pre-action observation.
             row["action"] = self.command.tolist()
@@ -430,6 +440,30 @@ class ExplorerEnv(gym.Env):
                 progress(self.state())
             if self.last_error:
                 raise RuntimeError(self.last_error)
+        def intervene(phase):
+            """Visit learner-generated states, then record expert recovery.
+
+            Student commands are diagnostic samples, NEVER imitation targets.
+            Neither qpos nor object state is assigned during a handoff.
+            """
+            nonlocal expert_target
+            if recovery_policy is None or recovery_phase!=phase or self.task_success:return False
+            recovery_policy.reset()
+            recovery_policy.elapsed_s=steps*PERIOD
+            manifest['learner_intervention']=dict(phase=phase,first_frame=steps,
+                frames=recovery_steps,student_targets_excluded=True,
+                student_inputs=['command_estimate9','wrist_rgb','internal_elapsed_time'],
+                privileged_expert_labels_only=True)
+            expert_target=False
+            try:
+                for _ in range(recovery_steps):
+                    obs=self._observation()
+                    tick(np.clip(recovery_policy(obs['state'],obs['wrist']),LOW,HIGH))
+            finally:expert_target=True
+            # Resume the bounded teacher profile from the command ACT actually
+            # issued, rather than interpolating from its stale pending target.
+            self.pending_command=self.command.copy()
+            return True
         def arm_to(goal, duration=2.):
             start = self.pending_command[:6].copy()
             count = max(round(duration/PERIOD), round(np.max(np.abs(goal-start)/self.velocity_limit)/PERIOD)+10)
@@ -499,8 +533,9 @@ class ExplorerEnv(gym.Env):
                         break
                 for _ in range(16):
                     tick(np.r_[self.pending_command[:6], 0., 0., 0.])
-                center = self._sock_points().mean(axis=0)
                 self.phase = "approach"
+                intervene('approach')
+                center = self._sock_points().mean(axis=0)
                 approach = self.solve_ik([*center[:2], .13])
                 arm_to(approach)
                 grasp_plan=None
@@ -545,6 +580,10 @@ class ExplorerEnv(gym.Env):
                 if not self.ever_lifted:
                     raise RuntimeError("Контактное удержание при подъёме не подтверждено")
                 self.phase = "transport"
+                if intervene('transport'):
+                    arm_to(lifted)
+                    if not all(self.contacts):
+                        raise RuntimeError('Learner intervention lost the hold; no successful expert label is claimed')
                 if rooms:
                     self.phase = 'navigate_destination'
                     drive_to([.82,0.], lifted, speed=.04)
@@ -568,6 +607,11 @@ class ExplorerEnv(gym.Env):
                     if np.linalg.norm(error) < .01:
                         break
                 self.phase = "place"
+                if intervene('place'):
+                    # The learner can stop short of the rim. Re-observe the
+                    # actual base pose and correct it before aiming the arm.
+                    arm_to(lifted)
+                    drive_to(target_base,lifted,limit=200,speed=.1)
                 release_height = max(.14, self.bin_position[2]+self.bin_height+.035) if diversified else .14
                 # For a wide laundry basket, drop inside the near edge instead
                 # of demanding that this short arm reach its distant centre.
@@ -576,6 +620,7 @@ class ExplorerEnv(gym.Env):
                     drop_xy[0] -= max(0., self.bin_half_size[0]-.09)
                 placement = self.solve_ik([*drop_xy, release_height], lifted[:5], gripper=170., downward=not diversified)
                 arm_to(placement)
+                intervene('release')
                 opened = self.solve_ik([*drop_xy, release_height], placement[:5], gripper=30., downward=not diversified)
                 arm_to(opened, 2.)
                 for _ in range(60):

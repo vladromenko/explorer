@@ -572,6 +572,11 @@ class Runtime:
             snapshot['skill_workshops']=list_workshops(self.data_root)
             snapshot['skill_trainings']=list_trainings(self.data_root)
             snapshot['learning_status']=learning_status(self.data_root,snapshot)
+            from .neural_recovery import current as recovery_current
+            recovery=recovery_current(self.data_root)
+            if recovery and recovery.get('alive') and recovery['state'] in ('running','queued'):
+                snapshot['jobs']=list(snapshot['jobs'])+[dict(id=recovery['id'],kind=recovery.get('phase'),status='running',
+                    external_recovery=True,message=recovery.get('message'),details=recovery,progress=snapshot['learning_status']['progress'])]
             return jsonable(compact_value(snapshot) if compact else snapshot)
 
     def episodes(self):
@@ -586,6 +591,24 @@ class Runtime:
 
     def launch_job(self, kind, request):
         with self.lock:
+            from .neural_recovery import current as recovery_current
+            recovery=recovery_current(self.data_root)
+            if recovery and recovery.get('alive'):
+                raise HTTPException(409,'Работает программа корректирующего дообучения; второе задание запрещено')
+            if (recovery and kind=='cycle' and request.cycle_id==recovery['cycle_id']
+                    and recovery['state'] in ('paused','running','interrupted')):
+                for pid in recovery.get('active_pids',[]):
+                    try:os.kill(pid,0)
+                    except ProcessLookupError:continue
+                    raise HTTPException(409,'Исполнитель ещё завершает сохранение; дождитесь остановки')
+                folder=self.data_root/'neural-recovery'/recovery['id']
+                (folder/'pause.request').unlink(missing_ok=True)
+                with (folder/'owner.log').open('ab') as log:
+                    child=subprocess.Popen([sys.executable,'-m','simulator.neural_recovery','--root',str(self.data_root),'--id',recovery['id']],
+                        stdout=log,stderr=log,start_new_session=True)
+                recovery.update(state='queued',pid=child.pid)
+                module=importlib.import_module('simulator.learning');module.write_json(folder/'state.json',recovery)
+                return dict(id=recovery['id'],status='running',kind='cycle')
             task_spec(request.task_id)
             for identifier in request.task_ids:
                 task_spec(identifier)
@@ -1187,6 +1210,10 @@ def create_app(env_factory=None, data_root=DATA_ROOT, learning_module=None, star
     def cancel(request: Request):
         runtime=request.app.state.runtime
         with runtime.lock:
+            from .neural_recovery import current as recovery_current
+            recovery=recovery_current(runtime.data_root)
+            if recovery and recovery.get('alive'):
+                (runtime.data_root/'neural-recovery'/recovery['id']/'pause.request').touch()
             runtime.cancellation_context = {}
             runtime.cancel_job.set()
         return {'ok': True}
