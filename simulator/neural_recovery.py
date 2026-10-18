@@ -265,7 +265,7 @@ class Recovery:
                 try:os.kill(pid,0)
                 except ProcessLookupError:continue
                 raise RuntimeError('Surviving child found; no duplicate recovery started')
-            self.save(state='running',active_pids=[])
+            self.save(state='running',active_pids=[],reason=None)
             def pause(*_):self.stop.touch()
             signal.signal(signal.SIGTERM,pause);signal.signal(signal.SIGINT,pause)
             awake=subprocess.Popen(['/usr/bin/caffeinate','-i','-w',str(os.getpid())])
