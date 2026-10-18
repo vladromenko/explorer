@@ -45,10 +45,23 @@ def test_curriculum_reuses_failures_never_recorded_validation_and_includes_user_
         dict(seed=11,phase='approach'),dict(seed=12,phase='transport'),dict(seed=11,phase='approach')])
     plan=curriculum(evidence,{12},5000)
     assert len(plan)==24 and len({r['seed'] for r in plan})==24
-    assert plan[0]==dict(seed=11,phase='approach') and all(r['seed']!=12 for r in plan)
+    assert plan[0]==dict(seed=11,phase='approach',from_failure=True) and all(r['seed']!=12 for r in plan)
     assert sum(r['seed']%10==4 for r in plan)>=6
     assert set(r['seed']%5 for r in plan)==set(range(5))
     assert not set(fresh_seeds(set(range(100,110)),100,20))&set(range(100,110))
+
+
+def test_new_failure_replay_enters_training_without_moving_old_validation(tmp_path):
+    from simulator.learning import inherited_split
+    for part,seed in [('train',1),('validation',2)]:
+        write_json(tmp_path/part/'explorer-provenance.json',dict(episodes=[{'episode':{'source':'simulation','seed':seed}}]))
+    seed=1319870030  # Would be assigned to validation by the default hash.
+    metadata=[dict(source='simulation',seed=s) for s in (1,2,seed)]
+    paths=[Path(str(s)) for s in (1,2,seed)]
+    training,validation,independent=inherited_split(paths,metadata,tmp_path,force_training_seeds=[seed])
+    assert paths[-1] in training and paths[1] in validation and independent
+    with pytest.raises(ValueError,match='inherited validation'):
+        inherited_split(paths,metadata,tmp_path,force_training_seeds=[2])
 
 
 def test_post_rollout_diagnosis_distinguishes_failure_location_and_execution_errors(tmp_path):

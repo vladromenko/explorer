@@ -57,7 +57,7 @@ def curriculum(diagnosis,excluded,start,count=24):
     failures=[r for r in diagnosis['results'] if r['phase'] and r['seed'] not in excluded]
     distinct={}
     for row in failures:distinct.setdefault(row['seed'],row)
-    selected=[dict(seed=r['seed'],phase=r['phase']) for r in list(distinct.values())[:count//2]]
+    selected=[dict(seed=r['seed'],phase=r['phase'],from_failure=True) for r in list(distinct.values())[:count//2]]
     priorities=sorted(PHASES,key=lambda p:-diagnosis['failures'][p])
     used=set(excluded)|{r['seed'] for r in selected}
     # Reserve a quarter of fresh scenes for the exact user basket, while the
@@ -70,7 +70,7 @@ def curriculum(diagnosis,excluded,start,count=24):
         else:
             while seed in used:seed+=1
             candidate=seed;seed+=1
-        selected.append(dict(seed=candidate,phase=priorities[len(selected)%len(priorities)]));used.add(candidate)
+        selected.append(dict(seed=candidate,phase=priorities[len(selected)%len(priorities)],from_failure=False));used.add(candidate)
         fresh_index+=1
     return selected
 
@@ -128,7 +128,8 @@ def worker(request):
                 raise ValueError('Interrupted export retained; assign a new training identity')
             result=train_job(folder,[Path(p) for p in spec['episodes']],steps=1000,batch_size=32,
                 seed=spec['seed'],skill_id=spec['task_id'],task=spec['title'],minimum_epochs=8,
-                warm_start=spec['model'],resume=resume,correction_replays=4,progress=progress,cancelled=cancelled)
+                warm_start=spec['model'],resume=resume,correction_replays=4,
+                corrective_training_seeds=spec.get('corrective_training_seeds',[]),progress=progress,cancelled=cancelled)
             if result['state'] not in ('trained_simulation_unvalidated','validated_simulation'):
                 raise RuntimeError(result.get('error','Training failed'))
     else:
@@ -344,7 +345,8 @@ class Recovery:
                 training=self.root/'runs'/json.loads(training_path.read_text())['id']
             self.save(phase='train',message='Дообучаем ACT на прежних успехах и новых исправлениях; корректирующие примеры имеют вес 4',training_model_id=training.name)
             self.jobs([dict(kind='train',output=str(training),model=str(model),episodes=[str(p) for p in episodes],
-                seed=self.state['seed_base']+iteration,task_id=spec['id'],title=spec['title'])],parallel=1)
+                seed=self.state['seed_base']+iteration,task_id=spec['id'],title=spec['title'],
+                corrective_training_seeds=[r['seed'] for r in data_plan if r['from_failure']])],parallel=1)
             # Recorded MAE only shortlists diverse checkpoints. Actual task
             # completion, including the unchanged reference, chooses the model.
             self.save(phase='compare',message='Выбираем веса по самостоятельным доставкам, а не по ошибке повторения команд')

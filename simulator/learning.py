@@ -536,7 +536,7 @@ def stage_warm_start(source_folder, destination, target_policy):
                 source_weights_sha256=bundle["checkpoint_sha256"]["model.safetensors"], resized_tensors=resized)
 
 
-def inherited_split(folders, metadata, source_folder):
+def inherited_split(folders, metadata, source_folder, force_training_seeds=()):
     """Keep source training scenes out of validation after dataset expansion."""
     source_folder=Path(source_folder)
     train=json.loads((source_folder/'train/explorer-provenance.json').read_text())
@@ -549,10 +549,13 @@ def inherited_split(folders, metadata, source_folder):
     exposed={identity(item['episode']) for item in train['episodes']}
     heldout={identity(item['episode']) for item in validation['episodes']}
     if exposed & heldout:raise ValueError('Source training and validation overlap')
+    forced=set(force_training_seeds)
+    if any(type(seed) is not int for seed in forced) or forced&heldout:
+        raise ValueError('Corrective training cannot reuse inherited validation scenes')
     training=[];testing=[]
     for folder,episode in zip(folders,metadata):
         seed=identity(episode)
-        is_heldout=seed in heldout or seed not in exposed and int(hashlib.sha256(str(seed).encode()).hexdigest(),16)%5==0
+        is_heldout=seed in heldout or seed not in exposed and seed not in forced and int(hashlib.sha256(str(seed).encode()).hexdigest(),16)%5==0
         (testing if is_heldout else training).append(folder)
     if not testing or not training:raise ValueError('Inherited split needs independent train and validation scenes')
     return training,testing,True
@@ -608,7 +611,7 @@ def resume_checkpoint(folder, episode_folders, skill_id):
 
 def train_job(job_folder, episode_folders, steps=3000, python_executable=None, device="auto", progress=None,
               task="pick and place", skill_id=None, cancelled=None, batch_size=16, seed=1000,
-              diagnostic_only=False, warm_start=None, minimum_epochs=0, resume=False, correction_replays=1):
+              diagnostic_only=False, warm_start=None, minimum_epochs=0, resume=False, correction_replays=1, corrective_training_seeds=()):
     """Blocking worker; call from the simulator's background executor.
 
     The subprocess has no robot connection. A nonzero learner exit is a failed
@@ -680,7 +683,9 @@ def train_job(job_folder, episode_folders, steps=3000, python_executable=None, d
                 shutil.copy2(shared_backbone, backbone_cache / shared_backbone.name)
             state["device"] = choose_device(device)
             check_cancelled()
-            split_function=(lambda folders,metadata:inherited_split(folders,metadata,warm_start)) if warm_start else split_episodes
+            if corrective_training_seeds and not warm_start:
+                raise ValueError('Corrective replay requires inherited independent validation')
+            split_function=(lambda folders,metadata:inherited_split(folders,metadata,warm_start,corrective_training_seeds)) if warm_start else split_episodes
             training, validation, heldout = split_function(folders, [item[0] for item in provenance])
             if type(correction_replays) is not int or not 1<=correction_replays<=8:
                 raise ValueError('Invalid corrective replay weight')
@@ -698,7 +703,7 @@ def train_job(job_folder, episode_folders, steps=3000, python_executable=None, d
             export_dataset(validation, folder / "validation", "explorer/simulator-validation", task, cancelled=cancelled)
             check_cancelled()
             write_json(folder / "split.json", dict(train=[item.name for item in training],
-                validation=[item.name for item in validation], heldout_independent=bool(heldout)))
+                validation=[item.name for item in validation], heldout_independent=bool(heldout),corrective_training_seeds=list(corrective_training_seeds)))
             config = training_config(folder, steps, state["device"], batch_size, seed)
             if warm_start:
                 check_cancelled()
