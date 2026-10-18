@@ -89,3 +89,21 @@ def test_overview_capture_is_throttled_and_does_not_advance_physics(tmp_path):
     stamp=capture_overview(env,tmp_path,-1)
     assert capture_overview(env,tmp_path,stamp)==stamp and env.calls==1
     assert (tmp_path/'overview-preview.jpg').is_file()
+
+
+def test_publisher_waits_for_slow_first_service_start(tmp_path,monkeypatch):
+    import io
+    import urllib.error
+    from simulator import worker_views
+    calls=[]
+    def response(*args,**kwargs):
+        calls.append(1)
+        if len(calls)<=40:raise urllib.error.URLError('startup')
+        return io.BytesIO(json.dumps({'data_root':str(tmp_path)}).encode())
+    monkeypatch.setattr(worker_views.urllib.request,'urlopen',response)
+    monkeypatch.setattr(worker_views.time,'sleep',lambda _:None)
+    class Published(Exception):pass
+    def published(*args):raise Published()
+    monkeypatch.setattr(worker_views,'publish',published)
+    with pytest.raises(Published):worker_views.watch(8766,tmp_path/'static')
+    assert len(calls)==41 and not (tmp_path/'static/publisher.pid').exists()

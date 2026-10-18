@@ -131,13 +131,16 @@ def watch(port, destination):
         return
     with os.fdopen(fd, 'w') as handle:
         handle.write(str(os.getpid()))
-    assignments = {}; failures = 0
+    assignments = {}; failures = 0; first_publication=False; started=time.monotonic()
     try:
-        while failures < 30:
+        # Initial asset/model scans may take longer than 30 connection-refused
+        # responses. Do not permanently lose the cameras before startup ends.
+        while failures < 30 or not first_publication and time.monotonic()-started<180:
             try:
                 with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/state?compact=true', timeout=5) as response:
                     snapshot = json.load(response)
                 publish(snapshot['data_root'], destination, snapshot, assignments)
+                first_publication=True
                 failures = 0
             except (OSError, ValueError, KeyError):
                 failures += 1
