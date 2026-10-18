@@ -27,6 +27,9 @@ def test_snapshot_ignores_newest_checkpoint_and_last_link(tmp_path,monkeypatch):
     assert diagnostic.manifest(training)==before
     receipt=json.loads((target/'early-diagnostic.json').read_text())
     assert receipt['simulation_qualified'] is False and receipt['source_training_untouched'] is True
+    second=tmp_path/'second-copy'
+    assert diagnostic.snapshot(training,second,previous=target)==56000
+    assert diagnostic.manifest(second)==diagnostic.manifest(target)
 
 
 def test_changed_source_is_rejected_and_all_evidence_is_retained(tmp_path,monkeypatch):
@@ -59,3 +62,16 @@ def test_early_scene_is_reserved_from_future_final_tests(tmp_path,monkeypatch):
     monkeypatch.setattr(recovery,'training_seeds',lambda _:set())
     seed=diagnostic.choose_seed(tmp_path,tmp_path/'model')
     assert seed==1703000014  # same user's geometry, different independent scene
+
+
+def test_repaired_retry_cannot_relaunch_same_code_pause_or_accepted_scene():
+    import importlib.util
+    from pathlib import Path
+    path=Path(__file__).resolve().parents[1]/'bin/diagnose-live-room.py'
+    spec=importlib.util.spec_from_file_location('live_room_launcher_test',path)
+    module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+    old=dict(revision='previous');state=dict(state='failed',training='/runs/aaaaaaaaaaaa')
+    module.validate_repair_retry(old,state,'checked-new-revision','aaaaaaaaaaaa')
+    for bad in (dict(state,state='running'),dict(state,state='paused'),dict(state,state='complete',mission_success=True)):
+        with pytest.raises(ValueError):module.validate_repair_retry(old,bad,'checked-new-revision','aaaaaaaaaaaa')
+    with pytest.raises(ValueError):module.validate_repair_retry(old,state,'previous','aaaaaaaaaaaa')

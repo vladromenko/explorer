@@ -195,16 +195,13 @@ def demonstrate(spec):
 def historical_episodes(model,root):
     """Replay exactly compatible old data, including the inherited validation."""
     root,model=Path(root),Path(model);read_bundle(model)
-    lookup={p.parent.name:p.parent for pattern in ('demonstrations/*/episode.json',
-        'neural-recovery/*/round-*/correction-*/recovery-*/episode.json',
-        'room-learning/*/round-*/corrections/scene-*/room-expert-*/episode.json') for p in root.glob(pattern)}
+    from .episode_lineage import recording_index,trained_recording
+    lookup=recording_index(root);digests={}
     selected=[]
     for partition in ('train','validation'):
         provenance=json.loads((model/partition/'explorer-provenance.json').read_text())
         for row in provenance['episodes']:
-            path=lookup.get(row['episode']['id'])
-            if path is None:raise ValueError('Historical training input missing: '+row['episode']['id'])
-            if sha256(path/'samples.jsonl')!=row['input_sha256']['samples.jsonl']:raise ValueError('Historical sample checksum changed')
+            path=trained_recording(row,lookup,digests)
             selected.append(path)
     return sorted(set(selected))
 

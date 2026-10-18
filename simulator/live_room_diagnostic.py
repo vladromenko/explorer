@@ -30,7 +30,16 @@ def numeric_checkpoint(training):
 def manifest(path):return {str(p.relative_to(path)):sha256(p) for p in Path(path).rglob('*') if p.is_file()}
 
 
-def snapshot(training,destination):
+def snapshot(training,destination,previous=None):
+    if previous is not None:
+        import shutil
+        previous,destination=Path(previous),Path(destination)
+        read_bundle(previous);before=manifest(previous)
+        shutil.copytree(previous,destination)
+        if manifest(previous)!=before or manifest(destination)!=before:
+            raise ValueError('Prior frozen diagnostic snapshot changed')
+        read_bundle(destination)
+        return int(Path(json.loads((destination/'early-diagnostic.json').read_text())['source']).parent.name)
     from .checkpoint_experiment import stage_candidate
     training,destination=Path(training),Path(destination);source=numeric_checkpoint(training)
     before=manifest(source)
@@ -77,7 +86,7 @@ def choose_seed(root,model):
     return seed
 
 
-def run(root,folder,training):
+def run(root,folder,training,snapshot_copy=None):
     root,folder,training=Path(root),Path(folder),Path(training)
     if not root.parent.is_mount():raise ValueError('ExplorerSim disk is not mounted')
     folder.mkdir(parents=True,exist_ok=True)
@@ -95,7 +104,7 @@ def run(root,folder,training):
         try:
             save(state='preparing')
             # Data copy and proposal construction are read-only on live inputs.
-            step=snapshot(training,folder/'model')
+            step=snapshot(training,folder/'model',snapshot_copy)
             from .room_policy import build_profile
             build_profile(folder/'model',root,folder/'handoff.json')
             seed=choose_seed(root,folder/'model')
@@ -150,4 +159,5 @@ def run(root,folder,training):
 if __name__=='__main__':
     parser=argparse.ArgumentParser();parser.add_argument('--root',type=Path,required=True)
     parser.add_argument('--folder',type=Path,required=True);parser.add_argument('--training',type=Path,required=True)
-    args=parser.parse_args();run(args.root,args.folder,args.training)
+    parser.add_argument('--snapshot-copy',type=Path)
+    args=parser.parse_args();run(args.root,args.folder,args.training,args.snapshot_copy)

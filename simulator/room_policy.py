@@ -29,7 +29,7 @@ RUNTIME_FILES=('src/room_cleanup.py','src/room_cleanup_rpc.py','src/room_cleanup
     'simulator/manipulation_planning.py','simulator/grasp_planning.py','simulator/repair_motion.py',
     'simulator/explorer_model.py','simulator/model_config.json','simulator/domain_randomization.py','simulator/curriculum.py','simulator/environment.py',
     'simulator/learning.py','simulator/transfer.py','simulator/room_validation.py','simulator/room_transfer.py',
-    'simulator/room_archive.py','simulator/room_learning.py','simulator/room_control.py','simulator/executor_recovery.py','simulator/neural_recovery.py',
+    'simulator/room_archive.py','simulator/room_learning.py','simulator/room_control.py','simulator/executor_recovery.py','simulator/neural_recovery.py','simulator/episode_lineage.py',
     'simulator/server.py','simulator/learning_status.py','simulator/static/app.js','simulator/worker_views.py',
     'simulator/checkpoint_experiment.py','simulator/parallel_trials.py',
     'src/frontiers.py','config/arm_model.json','config/arm-motion.json',
@@ -44,15 +44,11 @@ def runtime_files():
 def build_profile(model,root,destination):
     model,root=Path(model),Path(root);bundle,_=read_bundle(model)
     provenance=json.loads((model/'train/explorer-provenance.json').read_text())
-    paths={p.parent.name:p.parent for p in (root/'demonstrations').glob('*/episode.json')}
-    paths.update({p.parent.name:p.parent for p in (root/'neural-recovery').glob('*/round-*/correction-*/recovery-*/episode.json')})
-    paths.update({p.parent.name:p.parent for p in (root/'room-learning').glob('*/round-*/corrections/scene-*/room-expert-*/episode.json')})
+    from .episode_lineage import recording_index,trained_recording
+    paths=recording_index(root);digests={}
     proposals=[];initial=[];pick_clocks=[]
     for source in provenance['episodes']:
-        episode=source['episode'];folder=paths.get(episode['id'])
-        if folder is None:raise ValueError('Missing original phase-labelled demonstration: '+episode['id'])
-        if sha256(folder/'samples.jsonl')!=source['input_sha256']['samples.jsonl']:
-            raise ValueError('Original phase labels changed after neural training')
+        episode=source['episode'];folder=trained_recording(source,paths,digests)
         rows=[json.loads(line) for line in (folder/'samples.jsonl').read_text().splitlines()]
         pickup=next(((i,r) for i,r in enumerate(rows) if r.get('phase')=='approach' and r.get('training_target_valid',True)),None)
         if pickup:
