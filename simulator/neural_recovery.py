@@ -86,6 +86,7 @@ def reserved_scene_seeds(root):
     root=Path(root);found=set()
     for pattern in ('learning-cycles/*.json','night-batches/*.json','checkpoint-experiments/*/state.json',
                     'feedback-audits/*/result.json','diagnostics/*/comparison.json',
+                    'diagnostics/live-room-*/request.json','diagnostics/live-room-*/trial*/result.json',
                     'neural-recovery/*/round-*/selection/*/result.json',
                     'neural-recovery/*/round-*/qualification-*/*/result.json'):
         for path in root.glob(pattern):found.update(persisted_seeds(json.loads(path.read_text())))

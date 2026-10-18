@@ -24,7 +24,7 @@ def main():
         import torch
         from transformers import AutoModelForZeroShotObjectDetection,AutoProcessor
         lock=json.loads((Path(__file__).resolve().parents[1]/'config/grounding-model.json').read_text())
-        model_path=root/'models/grounding-dino-tiny'
+        model_path=(root/'models/grounding-dino-tiny').resolve()
         for name,digest in lock['files'].items():
             with (model_path/name).open('rb') as handle:actual=hashlib.file_digest(handle,'sha256').hexdigest()
             if actual!=digest:raise ValueError('Grounding model checksum mismatch: '+name)

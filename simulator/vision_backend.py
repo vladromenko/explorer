@@ -1,6 +1,7 @@
 """One FP32 pinned detector; measured MPS acceleration with bounded fallback."""
 import sys
 import time
+import os
 
 
 def equivalent(a,b):
@@ -37,7 +38,7 @@ class PinnedDetectorBackend:
             # Warm CPU and accelerator on the exact same observed RGB. This
             # cannot create a demonstration or grant task qualification.
             first,_=self._infer(inputs,size,'cpu')
-            if sys.platform=='darwin' and self.torch.backends.mps.is_available():
+            if os.environ.get('EXPLORER_VISION_CPU_ONLY')!='1' and sys.platform=='darwin' and self.torch.backends.mps.is_available():
                 from .resource_budget import memory_budget
                 memory=memory_budget()
                 if memory['available_bytes']/memory['total_bytes']>=.25:

@@ -34,6 +34,16 @@ def test_runtime_accelerator_error_returns_to_same_fp32_cpu_model():
     assert moves==['cpu'] and backend.device=='cpu' and 'fallback' in backend.measurement
 
 
+def test_early_diagnostic_can_explicitly_keep_vision_off_training_gpu(monkeypatch):
+    monkeypatch.setenv('EXPLORER_VISION_CPU_ONLY','1')
+    torch=SimpleNamespace(backends=SimpleNamespace(mps=SimpleNamespace(
+        is_available=lambda:pytest.fail('Diagnostic must not probe or warm training GPU'))))
+    backend=PinnedDetectorBackend(torch,object(),object());calls=[]
+    backend._infer=lambda inputs,size,device:(calls.append(device) or detection(),.1)
+    backend.infer({},(12,16));backend.infer({},(12,16))
+    assert calls==['cpu','cpu']
+
+
 def test_accelerator_diagnostics_are_json_serializable(monkeypatch):
     import json
     import simulator.vision_backend as module
