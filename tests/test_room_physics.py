@@ -46,6 +46,9 @@ def test_own_footprint_and_room_scan_do_not_read_hidden_object_outcomes(tmp_path
         port._scan();assert port.grid.free.any() and port.grid.occupied.any()
         assert port.grid.radius>=.35
         outside=port.grid.cell([3.,3.]);assert not port.grid.free[outside]
+        frontiers=[g for g in port.survey_candidates() if g.get('information_source')=='observed_scan_frontier']
+        assert frontiers and any(port.plan(g)['reachable'] for g in frontiers)
+        assert all(g['information_gain']>0 for g in frontiers)
     finally:port.close();env.close()
 
 

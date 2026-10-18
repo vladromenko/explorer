@@ -70,6 +70,31 @@ def test_search_moves_to_unseen_floor_instead_of_zero_gain_rotation_loop():
     assert result['state']=='succeeded' and p.moves[0][0]['x']==.45
 
 
+def test_search_values_new_coverage_over_cheap_nearly_empty_local_turns():
+    p=Port();p.survey_candidates=lambda:[dict(x=0.,y=0.,yaw=0.,information_gain=1),
+        dict(x=.8,y=0.,yaw=0.,information_gain=40)]
+    p.plan=lambda goal,**k:dict(reachable=True,cost=goal['x'])
+    original=p.observe
+    def observe():
+        value=original()
+        if not p.moves:value['objects']=[]
+        return value
+    p.observe=observe;result=run(p)
+    assert result['state']=='succeeded' and p.moves[0][0]['x']==.8
+
+
+def test_search_does_not_drive_after_its_last_observation_budget():
+    from src.room_cleanup import CleanupLimits
+    p=Port();observe=p.observe
+    def empty():
+        value=observe();value['objects']=[];return value
+    p.observe=empty
+    core=RoomCleanup(p,lambda _:None,clock=p.clock,limits=CleanupLimits(search_stops=1))
+    result=core.run()
+    assert result['state']=='failed' and 'Search budget exhausted' in result['reason']
+    assert not p.moves and not p.phases
+
+
 def test_current_dual_scan_evidence_clears_ghost_but_preserves_concurrent_hits_and_unknown():
     grid=ScanMap();origin=np.array([0.,0.]);forward=np.array([[1.,0.]])
     grid.add(origin,forward,[.4]);ghost=grid.cell([.4,0.]);assert grid.occupied[ghost]

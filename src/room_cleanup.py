@@ -160,6 +160,7 @@ class RoomCleanup:
                 if all(k in self.targets for k in ('sock','basket')):break
             self.event('search',dict(stop=index+1,found=sorted(self.targets)))
             if all(k in self.targets for k in ('sock','basket')):return
+            if index+1==self.limits.search_stops:break  # no drive without a remaining observation
             if hasattr(self.port,'prepare_navigation'):self.view('prepare_navigation')
             choices=[]
             for pose in self.port.survey_candidates():
@@ -171,8 +172,10 @@ class RoomCleanup:
                     # not a claim that an unseen target is at this waypoint.
                     gain=max(0.,float(pose.get('information_gain',0.)))
                     yaw=self.port.pose()[2];turn=abs(math.atan2(math.sin(pose['yaw']-yaw),math.cos(pose['yaw']-yaw)))
-                    choices.append(((proposal.get('cost',float('inf'))+.12+.08*turn)/(1.+gain*.08),key,pose))
+                    choices.append(((proposal.get('cost',float('inf'))+.12+.08*turn)/max(1.,gain),key,pose))
             if not choices:raise ValueError('No unvisited reachable observation point; targets not found')
+            informative=[row for row in choices if row[2].get('information_gain',0)>0]
+            if informative:choices=informative
             _,key,goal=min(choices,key=lambda row:row[0]);visited.add(key)
             try:self.navigate(goal,'search_move')
             except ViewUnavailable as error:self.event('search_route_unavailable',dict(reason=str(error),goal=goal))

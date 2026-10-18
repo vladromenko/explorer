@@ -96,6 +96,15 @@ def choose_seed(root,model):
     return seed
 
 
+def diagnostic_seed(root,model,snapshot_copy=None):
+    from .neural_recovery import training_seeds
+    previous=json.loads((Path(snapshot_copy).parent/'state.json').read_text()) if snapshot_copy else {}
+    seed=previous.get('seed')
+    if type(seed) is not int:seed=choose_seed(root,model)
+    if seed in training_seeds(model):raise ValueError('Early room scene overlaps model training')
+    return seed
+
+
 def run(root,folder,training,snapshot_copy=None):
     root,folder,training=Path(root),Path(folder),Path(training)
     if not root.parent.is_mount():raise ValueError('ExplorerSim disk is not mounted')
@@ -117,7 +126,7 @@ def run(root,folder,training,snapshot_copy=None):
             step=snapshot(training,folder/'model',snapshot_copy)
             from .room_policy import build_profile
             build_profile(folder/'model',root,folder/'handoff.json')
-            seed=choose_seed(root,folder/'model')
+            seed=diagnostic_seed(root,folder/'model',snapshot_copy)
             vision=private_vision_root(root,folder);vision.mkdir(parents=True)
             (vision/'models').symlink_to(root/'models',target_is_directory=True)
             save(checkpoint_step=step,seed=seed,original_training_state=json.loads((training/'job.json').read_text())['state'])

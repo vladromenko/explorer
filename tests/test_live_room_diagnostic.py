@@ -75,6 +75,16 @@ def test_early_scene_is_reserved_from_future_final_tests(tmp_path,monkeypatch):
     assert seed==1703000014  # same user's geometry, different independent scene
 
 
+def test_code_repair_repeats_the_actual_failed_scene_on_the_same_snapshot(tmp_path,monkeypatch):
+    import simulator.neural_recovery as recovery
+    previous=tmp_path/'previous';write_json(previous/'state.json',{'seed':1703000014,'mission_success':False})
+    monkeypatch.setattr(recovery,'training_seeds',lambda _:set())
+    monkeypatch.setattr(diagnostic,'choose_seed',lambda *a:pytest.fail('A different scene cannot test that repair'))
+    assert diagnostic.diagnostic_seed(tmp_path,tmp_path/'copy',previous/'model')==1703000014
+    monkeypatch.setattr(recovery,'training_seeds',lambda _:{1703000014})
+    with pytest.raises(ValueError,match='overlaps'):diagnostic.diagnostic_seed(tmp_path,tmp_path/'copy',previous/'model')
+
+
 def test_repaired_retry_cannot_relaunch_same_code_pause_or_accepted_scene():
     import importlib.util
     from pathlib import Path

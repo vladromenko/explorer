@@ -111,6 +111,15 @@ class RoomCleanupPort:
         if hasattr(self.env,'transport') and hasattr(self.env.transport,'frontiers'):
             out.extend(self.env.transport.frontiers())
         self._scan();pose=np.asarray(self.pose())
+        from src.frontiers import candidates as frontiers
+        occupancy=np.where(self.grid.occupied,100,np.where(self.grid.free,0,-1)).T
+        # ScanMap indexes cell centres; the shared frontier routine uses a
+        # cell-corner origin and row-major [y,x]. Unknown space stays blocked.
+        origin=[-self.grid.extent-self.grid.resolution/2]*2
+        frontier_radius=(math.ceil(self.grid.radius/self.grid.resolution)+.5)*self.grid.resolution
+        for goal in frontiers(occupancy,self.grid.resolution,origin,pose[:2],radius=frontier_radius):
+            out.append(dict(goal,information_gain=goal['information_gain_cells'],
+                information_source='observed_scan_frontier'))
         # Observation sites come only from scanned cells and actual A* paths.
         # No hidden source/basket locations enter this exploration proposal.
         for distance in (0.,.45,.8,1.2,1.8):
@@ -126,7 +135,7 @@ class RoomCleanupPort:
                 for lateral in np.arange(-.25,.26,.08):
                     cell=self.grid.cell(np.array([goal['x'],goal['y']])+np.array([[c,-s],[s,c]])@np.array([forward,lateral]))
                     if self.grid.inside(cell) and self.grid.free[cell] and not self.grid.occupied[cell] and cell not in self.viewed_floor:gain+=1
-            goal['information_gain']=gain
+            goal['information_gain']=max(gain,goal.get('information_gain',0))
         return out
 
     def _stop_base(self):
