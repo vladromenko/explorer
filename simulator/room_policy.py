@@ -29,7 +29,7 @@ RUNTIME_FILES=('src/room_cleanup.py','src/room_cleanup_rpc.py','src/room_cleanup
     'simulator/manipulation_planning.py','simulator/grasp_planning.py','simulator/repair_motion.py',
     'simulator/explorer_model.py','simulator/model_config.json','simulator/domain_randomization.py','simulator/curriculum.py','simulator/environment.py',
     'simulator/learning.py','simulator/transfer.py','simulator/room_validation.py','simulator/room_transfer.py',
-    'simulator/room_archive.py','simulator/room_learning.py','simulator/room_control.py','simulator/neural_recovery.py',
+    'simulator/room_archive.py','simulator/room_learning.py','simulator/room_control.py','simulator/executor_recovery.py','simulator/neural_recovery.py',
     'simulator/server.py','simulator/learning_status.py','simulator/static/app.js','simulator/worker_views.py',
     'simulator/checkpoint_experiment.py','simulator/parallel_trials.py',
     'src/frontiers.py','config/arm_model.json','config/arm-motion.json',
@@ -71,6 +71,7 @@ def build_profile(model,root,destination):
         navigation_owner='observed_lidar_and_map_planner',actor_execution='arm_only_after_observed_alignment',
         actuator_quantization='integer_degree_error_diffusion_2deg_step',
         transport_height_m=.40,transport_maximum_reach_m=.28,
+        executor_recovery=[],
         actor_inputs_unchanged=True,teacher_fallback=False,
         execution_changed=True,requires_new_room_qualification=True,simulation_qualified=False,
         place_handoff='nearest_training_geometry_and_command_then_fresh_ACT_inference',
@@ -92,6 +93,8 @@ def place_clock(profile,basket,command):
 
 
 def validate_profile(profile):
+    from .executor_recovery import program
+    program(profile.get('executor_recovery',[]))
     if (profile.get('schema')!='explorer_room_act_handoff_v1'
             or profile.get('navigation_owner')!='observed_lidar_and_map_planner'
             or profile.get('actor_execution')!='arm_only_after_observed_alignment'
@@ -113,6 +116,14 @@ def validate_profile(profile):
         values=np.r_[row['observed_command'],row['half_size_m'],row['height_m'],row['elapsed_s']]
         if len(row['observed_command'])!=9 or len(row['half_size_m'])!=2 or not np.isfinite(values).all() or not 0<=row['elapsed_s']<=160:
             raise ValueError('Invalid placement training proposal')
+
+
+def mission_limits(profile):
+    from src.room_cleanup import CleanupLimits
+    from .executor_recovery import program
+    operators=program(profile.get('executor_recovery',[]))
+    return CleanupLimits(search_stops=36 if 'expanded_coverage' in operators else 24,
+        realignments=8 if 'expanded_approaches' in operators else 4)
 
 
 def issued_command(reference,prediction,residual=None):

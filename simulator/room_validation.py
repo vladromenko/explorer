@@ -66,6 +66,7 @@ class CollisionAudit:
 def trial(spec):
     from .environment import ExplorerEnv
     from .room_cleanup_port import RoomCleanupPort
+    from .room_policy import mission_limits
     from src.room_cleanup import RoomCleanup
     import torch
     torch.set_num_threads(1)
@@ -94,7 +95,7 @@ def trial(spec):
         profile=json.loads(Path(spec['profile']).read_text())
         cancelled=lambda:stopping or ('stop' in spec and Path(spec['stop']).exists())
         port=RoomCleanupPort(env,output/'observed',spec['model'],profile,spec['root'],cancelled=cancelled,progress=motion)
-        result=RoomCleanup(port,record,cancelled=cancelled).run()
+        result=RoomCleanup(port,record,cancelled=cancelled,limits=mission_limits(profile)).run()
         # Only AFTER action termination is truth used to score the run.
         truth=env.state()['task']
         if frozen_source()!=revision:raise ValueError('Qualification source changed during room execution')

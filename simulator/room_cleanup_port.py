@@ -65,11 +65,13 @@ class RoomCleanupPort:
         if (getattr(self,'scan_key',None)==key and (not hasattr(self.env,'transport')
                 or time.monotonic()-self.scan_at<.25)):return
         self.grid.radius=self.own_radius()
+        scans=[]
         for scanner in (0,1):
             scan=self.env.lidar_scan(scanner,rays=360);site=self.env.data.site('laser'+str(scanner)+'_frame')
             angles=scan['angle_min']+np.arange(len(scan['ranges']))*scan['angle_increment']
             directions=np.c_[np.cos(angles),np.sin(angles),np.zeros(len(angles))]@site.xmat.reshape(3,3).T
-            self.grid.add(site.xpos[:2],directions[:,:2],scan['ranges'])
+            scans.append((site.xpos[:2].copy(),directions[:,:2],scan['ranges']))
+        self.grid.add_current_scans(scans)
         cells=np.indices(self.grid.free.shape).transpose(1,2,0)*self.grid.resolution-self.grid.extent
         # Only the presently occupied chassis core is self-known. An extended
         # arm radius must not turn unseen space around the robot into free map.
@@ -163,9 +165,10 @@ class RoomCleanupPort:
             np.linalg.norm(jaw[:2]-base[:2])<=self.profile['transport_maximum_reach_m'])
 
     def navigate(self,goal,*,check,held=False):
+        from src.room_cleanup import ViewUnavailable
         from .room_navigation import HeadingFeedback
         feedback=TranslationFeedback(maximum_speed=.04);heading=HeadingFeedback();ctx=self._ctx(check)
-        path=[]
+        path=[];anchor=np.asarray(self.pose());anchor_yaw=abs(math.atan2(math.sin(goal['yaw']-anchor[2]),math.cos(goal['yaw']-anchor[2])))
         for index in range(2400):
             check();pose=np.asarray(self.pose());delta=np.array([goal['x'],goal['y']])-pose[:2]
             yaw_error=(goal['yaw']-pose[2]+np.pi)%(2*np.pi)-np.pi
@@ -180,7 +183,8 @@ class RoomCleanupPort:
                 continue
             if index%10==0:
                 planned=self.plan(goal,held=held)
-                if not planned.get('reachable'):raise ValueError('Navigation did not confirm a fresh full-footprint path')
+                if not planned.get('reachable'):
+                    self._stop_base();raise ViewUnavailable('Navigation did not confirm a fresh full-footprint path')
                 path=np.asarray(planned['points'])
                 self.progress(dict(phase='navigate',pose=pose.tolist(),goal=goal,remaining_m=float(np.linalg.norm(delta)),yaw_error_rad=float(yaw_error)))
                 if held and self.verify('hold',check=check)['outcome']!='success':raise ValueError('Hold lost during navigation')
@@ -188,7 +192,13 @@ class RoomCleanupPort:
             waypoint=next((p for p in path if np.linalg.norm(p-pose[:2])>.06),np.array([goal['x'],goal['y']]))
             speed=feedback.update(waypoint-pose[:2],pose[2],PERIOD)
             self.geometry.tick(self.env.command[:6],(*speed,heading.update(yaw_error,PERIOD)),ctx)
-        raise ValueError('Finite navigation budget exhausted: distance %.3f m, heading %.3f rad'%(np.linalg.norm(delta),yaw_error))
+            if index and index%400==0:
+                now=np.asarray(self.pose());turned=abs(math.atan2(math.sin(now[2]-anchor[2]),math.cos(now[2]-anchor[2])))
+                if np.linalg.norm(now[:2]-anchor[:2])<.015 and turned<.015 and abs(yaw_error)>=anchor_yaw-.01:
+                    self._stop_base();raise ViewUnavailable('Measured chassis made no route progress for 20 simulation seconds')
+                anchor=now;anchor_yaw=abs(yaw_error)
+        self._stop_base()
+        raise ViewUnavailable('Finite navigation budget exhausted: distance %.3f m, heading %.3f rad'%(np.linalg.norm(delta),yaw_error))
 
     def search_view(self,check,layer='floor'):
         from src.room_cleanup import ViewUnavailable

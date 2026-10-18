@@ -80,7 +80,7 @@ class RoomCleanup:
             # A model's cold start may finish after the exposure expired.
             # Acquire new pixels; never relabel the old exposure as fresh.
             self.event('expired_exposure',dict(attempt=attempt+1,captured_at=stamp,requested_at=requested,finished_at=self.clock()))
-        else:raise ValueError('Three fresh camera acquisitions expired before semantic inference completed')
+        else:raise ViewUnavailable('Three fresh camera acquisitions expired before semantic inference completed')
         self.sequence=sequence
         hints=[h for h in value.get('hints',[]) if h.get('kind')=='basket']
         if len(hints)==1:
@@ -95,7 +95,9 @@ class RoomCleanup:
         # with whichever candidate happened to be enumerated last.
         kinds=[item.get('kind') for item in value.get('objects',[])]
         for kind in ('sock','basket'):
-            if kinds.count(kind)>1:raise ValueError('Ambiguous visible '+kind+' candidates')
+            if kinds.count(kind)>1:
+                self.seen.pop(kind,None);self.targets.pop(kind,None)
+                raise ViewUnavailable('Ambiguous visible '+kind+' candidates')
         for item in value.get('objects',[]):
             kind=item.get('kind')
             if kind not in ('sock','basket'):continue
@@ -116,19 +118,26 @@ class RoomCleanup:
         self.check()
         if held:self.verify('hold')
         self.event(stage+'_moving',dict(goal=goal,held=held))
-        result=self.port.navigate(goal,check=self.check,held=held)
+        try:result=self.port.navigate(goal,check=self.check,held=held)
+        except ViewUnavailable:
+            # The stopped port may have driven part of a route. No exposure
+            # from before that failed attempt remains manipulation evidence.
+            self.base_revision+=1;self.last_motion_at=self.clock()
+            self.port.set_base_revision(self.base_revision);self.seen.clear()
+            raise
         if result.get('completed') is not True:raise ValueError('Navigation accepted without a completed arrival')
         self.check();self.base_revision+=1;self.last_motion_at=self.clock()
         self.port.set_base_revision(self.base_revision)
         self.seen.clear();self.event(stage,result)
 
     def view(self,operation,*args,**kwargs):
-        before=point(self.port.pose());result=getattr(self.port,operation)(*args,check=self.check,**kwargs)
-        after=point(self.port.pose())
-        if math.dist(before[:2],after[:2])>.003 or abs(math.atan2(math.sin(after[2]-before[2]),math.cos(after[2]-before[2])))>.01:
-            self.base_revision+=1;self.last_motion_at=self.clock();self.port.set_base_revision(self.base_revision);self.seen.clear()
-            self.event('observation_reposition',dict(operation=operation))
-        return result
+        before=point(self.port.pose())
+        try:return getattr(self.port,operation)(*args,check=self.check,**kwargs)
+        finally:
+            after=point(self.port.pose())
+            if math.dist(before[:2],after[:2])>.003 or abs(math.atan2(math.sin(after[2]-before[2]),math.cos(after[2]-before[2])))>.01:
+                self.base_revision+=1;self.last_motion_at=self.clock();self.port.set_base_revision(self.base_revision);self.seen.clear()
+                self.event('observation_reposition',dict(operation=operation))
 
     def search(self):
         visited=set();inspected=set()
@@ -161,10 +170,12 @@ class RoomCleanup:
                     # Coverage is a proposal over already scanned floor cells,
                     # not a claim that an unseen target is at this waypoint.
                     gain=max(0.,float(pose.get('information_gain',0.)))
-                    choices.append((proposal.get('cost',float('inf'))/(1.+gain*.08),key,pose))
+                    yaw=self.port.pose()[2];turn=abs(math.atan2(math.sin(pose['yaw']-yaw),math.cos(pose['yaw']-yaw)))
+                    choices.append(((proposal.get('cost',float('inf'))+.12+.08*turn)/(1.+gain*.08),key,pose))
             if not choices:raise ValueError('No unvisited reachable observation point; targets not found')
             _,key,goal=min(choices,key=lambda row:row[0]);visited.add(key)
-            self.navigate(goal,'search_move')
+            try:self.navigate(goal,'search_move')
+            except ViewUnavailable as error:self.event('search_route_unavailable',dict(reason=str(error),goal=goal))
         raise ValueError('Search budget exhausted; sock and basket not both observed')
 
     def align(self,kind,*,held=False):
@@ -179,14 +190,19 @@ class RoomCleanup:
                 if plan.get('reachable') is True:plans.append((plan.get('cost',float('inf')),goal))
             if not plans:raise ValueError('No collision-checked approach to observed '+kind)
             goal=min(plans,key=lambda r:r[0])[1];tried.add((round(goal['x']/.025),round(goal['y']/.025),round(goal['yaw']/.1)))
-            self.navigate(goal,'approach_'+kind,held=held)
+            try:self.navigate(goal,'approach_'+kind,held=held)
+            except ViewUnavailable as error:
+                self.event('approach_route_unavailable',dict(kind=kind,reason=str(error)));continue
             self.targets.pop(kind,None)
             try:self.view('look_at',target,held=held)
             except ViewUnavailable as error:
                 self.event('approach_view_unavailable',dict(kind=kind,reason=str(error)));continue
-            self.observe();self.observe()
+            try:self.observe();self.observe()
+            except ViewUnavailable as error:
+                self.event('approach_reobservation_unavailable',dict(kind=kind,reason=str(error)));continue
             fresh=self.targets.get(kind)
-            if fresh is None:raise ValueError('Target not confirmed after navigation: '+kind)
+            if fresh is None:
+                self.event('approach_target_missing',dict(kind=kind));continue
             if math.dist(point(target['center']),point(fresh['center']))>.06:
                 self.event('target_moved',dict(kind=kind,previous=target['center'],current=fresh['center']))
                 target=fresh;continue
@@ -198,7 +214,9 @@ class RoomCleanup:
             if local.get('completed') is not True:raise ValueError('Observed local alignment failed')
             self.base_revision+=1;self.last_motion_at=self.clock();self.port.set_base_revision(self.base_revision)
             self.targets.pop(kind,None);self.seen.clear()
-            self.view('look_at',fresh,held=held);self.observe();self.observe()
+            try:self.view('look_at',fresh,held=held);self.observe();self.observe()
+            except ViewUnavailable as error:
+                self.event('local_reobservation_unavailable',dict(kind=kind,reason=str(error)));target=fresh;continue
             confirmed=self.targets.get(kind)
             if confirmed and self.port.local_admission(kind,confirmed).get('inside_envelope') is True:return confirmed
             target=fresh

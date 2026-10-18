@@ -28,7 +28,8 @@ def run(folder):
         port=RoomCleanupPort(env,folder/'mission',package/'model',checked['profile'],config['semantic_root'],
             cancelled=transport.cancelled,device='cuda',progress=motion)
         if port.contract!=checked['mission_contract_sha256']:raise ValueError('Mission runtime differs from qualification')
-        result=RoomCleanup(port,record,cancelled=transport.cancelled).run()
+        from simulator.room_policy import mission_limits
+        result=RoomCleanup(port,record,cancelled=transport.cancelled,limits=mission_limits(checked['profile'])).run()
         save(folder/'result.json',result)
     finally:
         if port is not None:port.close()

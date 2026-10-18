@@ -32,6 +32,19 @@ class ScanMap:
         for x in range(max(0,lo[0]),min(self.size,hi[0]+1)):
             for y in range(max(0,lo[1]),min(self.size,hi[1]+1)):self.occupied[x,y]=True
 
+    def add_current_scans(self,scans):
+        """Clear a stale hit only where CURRENT measured rays pass through.
+
+        Merge all scanners before clearing: one sensor cannot erase another
+        sensor's positive return. Hit cells and their grid-quantization border
+        take precedence over a grazing free ray. Unknown space stays blocked.
+        """
+        observed=ScanMap(self.extent,self.resolution,self.radius)
+        for origin,directions,ranges in scans:observed.add(origin,directions,ranges)
+        hit_border=binary_dilation(observed.occupied,iterations=1)
+        self.occupied[observed.free&~hit_border]=False
+        self.occupied|=observed.occupied;self.free|=observed.free
+
     def route(self,start,goal):
         radius=int(math.ceil(self.radius/self.resolution));x,y=np.mgrid[-radius:radius+1,-radius:radius+1]
         structure=x*x+y*y<=radius*radius

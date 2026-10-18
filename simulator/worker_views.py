@@ -32,7 +32,7 @@ def sources(root, snapshot, assignments):
     root = Path(root).resolve()
     jobs = snapshot.get('jobs', [])
     kinds = ('trials', 'audit', 'compare', 'validate', 'train','skill_train',
-        'room_diagnostics','room_corrections','room_validation','room_checkpoint_comparison')
+        'room_diagnostics','room_corrections','room_validation','room_checkpoint_comparison','executor_repair')
     active = next((job for job in reversed(jobs) if job.get('status') == 'running' and job.get('kind') in kinds), None)
     phase = active['kind'] if active else 'idle'
     views = []

@@ -13,7 +13,7 @@ from PIL import Image
 
 from .environment import PERIOD
 from .learning import write_json,read_bundle,sha256
-from .room_policy import issued_command,place_clock
+from .room_policy import issued_command,place_clock,mission_limits
 from .neural_recovery import Recovery,training_seeds,fresh_seeds,persisted_seeds
 
 
@@ -176,7 +176,8 @@ def demonstrate(spec):
             def manipulate(self,phase,target):
                 self.event('expert_'+phase+'_running');expert(phase,target,self.check)
                 self.event('expert_'+phase,dict(training_only=True))
-        result=TrainingMission(port,lambda v:write_json(folder/'mission-progress.json',v),cancelled=cancelled).run()
+        result=TrainingMission(port,lambda v:write_json(folder/'mission-progress.json',v),cancelled=cancelled,
+            limits=mission_limits(profile)).run()
         truth=env.state()['task']  # evaluator only, after the complete mission stopped
         success=result['state']=='succeeded' and truth['success'] is True and not audit.contacts
         episodes=recorder.finish(success,truth)
@@ -223,6 +224,9 @@ class RoomLearning(Recovery):
         self.root,self.folder,self.state=Path(root),Path(folder),state
         self.stop=self.folder/'pause.request';self.children={};self.save=save
         self.excluded=set(excluded)
+        from .executor_recovery import program
+        saved=self.folder/'executor-program.json'
+        self.executor_program=program(json.loads(saved.read_text())['operators']) if saved.exists() else []
         for p in self.folder.glob('round-*/acceptance-seeds.json'):
             self.excluded.update(json.loads(p.read_text()))
 
@@ -243,8 +247,34 @@ class RoomLearning(Recovery):
 
     def profile(self,model,path):
         from .room_policy import build_profile
-        if not path.exists():build_profile(model,self.root,path)
+        if not path.exists():
+            value=build_profile(model,self.root,path);value['executor_recovery']=self.executor_program
+            write_json(path,value)
         return path
+
+    def repair_executor(self,model,profile,seeds,baseline,stage):
+        """A measured repair beats the control on the SAME ten full scenes."""
+        from .executor_recovery import propose,comparison,OPERATORS
+        if not profile.exists():return None
+        promoted=None
+        for attempt in range(len(OPERATORS)):
+            value=json.loads(profile.read_text());diagnosis=diagnose(baseline['results'])
+            proposal=propose(value.get('executor_recovery',[]),diagnosis)
+            if proposal is None:break
+            folder=stage/'executor-repair'/f'attempt-{attempt:02d}';folder.mkdir(parents=True,exist_ok=True);path=folder/'handoff.json'
+            candidate=dict(value,executor_recovery=proposal)
+            if path.exists() and json.loads(path.read_text())!=candidate:
+                raise ValueError('Executor repair contract changed; preserve evidence and use a new repair identity')
+            write_json(path,candidate);write_json(folder/'diagnosis.json',diagnosis)
+            self.save(phase='executor_repair',message='Проверяем исправление поиска/подхода против прежнего исполнителя на тех же десяти сценах')
+            repaired=self.evaluate_room(model,path,seeds,folder/'paired')
+            checked=comparison(baseline,repaired);write_json(folder/'comparison.json',checked)
+            if not checked['accepted']:break
+            self.executor_program=proposal
+            write_json(self.folder/'executor-program.json',dict(operators=proposal,paired_evidence=str(folder/'comparison.json'),
+                simulation_qualified=False,physical_ready=False))
+            baseline,profile=repaired,path;promoted=(baseline,profile)
+        return promoted
 
     def used_seeds(self):
         used=set(self.excluded)
@@ -267,6 +297,9 @@ class RoomLearning(Recovery):
                 message='Проверяем полный поиск и уборку фактической ACT без экспертной подмены')
             baseline=self.evaluate_room(model,profile,plan['seeds'],stage/'baseline')
             write_json(stage/'baseline.json',baseline)
+            if baseline['successes']<10:
+                repaired=self.repair_executor(model,profile,plan['seeds'],baseline,stage)
+                if repaired is not None:baseline,profile=repaired
             if baseline['successes']==10:
                 candidate=model;candidate_profile=profile
             else:
