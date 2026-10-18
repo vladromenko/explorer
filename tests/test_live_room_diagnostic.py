@@ -54,6 +54,17 @@ def test_low_memory_never_admits_a_side_diagnostic():
     assert not diagnostic.can_start(dict(free_percent=26.,available_gb=6.),after_pressure=True)
 
 
+def test_private_vision_keeps_unix_socket_short_without_changing_audit_folder():
+    from pathlib import Path
+    from simulator.semantic_cache import endpoint
+    root=Path('/Volumes/ExplorerSim/ExplorerSim')
+    folder=root/'diagnostics/live-room-d42fb2154305'
+    path=diagnostic.private_vision_root(root,folder)
+    assert path==root/'vprobe/d42fb2154305'
+    assert len(bytes(endpoint(path)[0]))<100
+    assert not path.is_relative_to(folder)
+
+
 def test_early_scene_is_reserved_from_future_final_tests(tmp_path,monkeypatch):
     import simulator.neural_recovery as recovery
     folder=tmp_path/'diagnostics/live-room-example'

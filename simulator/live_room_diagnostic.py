@@ -62,6 +62,16 @@ def can_start(value,after_pressure=False):
     return value['free_percent']>=(30 if after_pressure else 25) and value['available_gb']>=5.5
 
 
+def private_vision_root(root,folder):
+    # Darwin AF_UNIX sockets have a short byte limit. Keep logs in the long
+    # diagnostic folder, but its isolated inference transport near the root.
+    from .semantic_cache import endpoint
+    path=Path(root)/'vprobe'/Path(folder).name.removeprefix('live-room-')
+    address,_=endpoint(path)
+    if len(os.fsencode(address))>=100:raise ValueError('Private vision socket path exceeds the portable byte limit')
+    return path
+
+
 def stop_owned(child):
     import psutil
     try:owner=psutil.Process(child.pid);owned=owner.children(recursive=True)+[owner]
@@ -93,7 +103,7 @@ def run(root,folder,training,snapshot_copy=None):
     state=dict(state='preparing',diagnostic_only=True,simulation_qualified=False,
         physical_ready=False,training=str(training),pid=os.getpid())
     def save(**values):state.update(values,at=time.time());write_json(folder/'state.json',state)
-    stopping=False;child=None
+    stopping=False;child=None;vision=None
     def stop(*_):
         nonlocal stopping
         stopping=True
@@ -108,7 +118,7 @@ def run(root,folder,training,snapshot_copy=None):
             from .room_policy import build_profile
             build_profile(folder/'model',root,folder/'handoff.json')
             seed=choose_seed(root,folder/'model')
-            vision=folder/'vision-root';vision.mkdir()
+            vision=private_vision_root(root,folder);vision.mkdir(parents=True)
             (vision/'models').symlink_to(root/'models',target_is_directory=True)
             save(checkpoint_step=step,seed=seed,original_training_state=json.loads((training/'job.json').read_text())['state'])
             while True:
@@ -152,7 +162,7 @@ def run(root,folder,training,snapshot_copy=None):
             if child is not None:
                 # A private vision child can outlive a normally finished trial.
                 from .semantic_cache import stop_servers
-                stop_servers(folder/'vision-root')
+                if vision is not None:stop_servers(vision)
                 if child.poll() is None:stop_owned(child)
 
 
