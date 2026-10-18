@@ -82,4 +82,24 @@ def learning_status(root,snapshot):
             worker_progress={'active_workers':recovery.get('views',[])},
             recovery_counts={'completed':recovery.get('completed',0),'total':recovery.get('total',0)})
         if state=='pausing':output['message']='Останавливаем исполнителей и сохраняем контрольную точку; диск пока не извлекайте'
+    from .room_control import current as room_current
+    room=room_current(root)
+    if room:
+        output['room_followup']=dict(id=room['id'],state=room['state'],message=room.get('message'))
+        if not recovery or not recovery.get('alive'):
+            state=room['state'];details=room.get('details',{})
+            if state=='operator_paused':state='paused'
+            elif state=='ready_for_observed_transfer':state='ready_for_transfer'
+            elif state=='running' and not room['alive']:state='interrupted'
+            output.update(state=state,phase=room.get('phase','waiting'),cycle_id=room['id'],
+                external_room_id=room['id'],model_id=Path(room.get('model') or 'unselected').name,
+                title='Полный сценарий: найти носок и убрать в корзину',message=room.get('reason') or room.get('message'),
+                progress=details.get('progress',100*room.get('completed',0)/max(1,room.get('total',1))),
+                steps_completed=details.get('steps_completed'),training_budget=details.get('training_budget'),
+                eta_s=details.get('eta_s'),simulation_ready=room['state']=='ready_for_observed_transfer',
+                archive=room.get('archive'),physical_ready=False,
+                episodes=20 if room['state']=='ready_for_observed_transfer' else 0,
+                successes=20 if room['state']=='ready_for_observed_transfer' else 0,
+                recovery_counts={'completed':room.get('completed',0),'total':room.get('total',0)},
+                worker_progress={'active_workers':room.get('views',[])})
     return output

@@ -130,4 +130,4 @@ function renderAutonomyHelp(items){
 }
 async function loadAutonomy(){try{const state=await(await api('autonomy')).json(),job=state.active[0]||state.jobs[0];if(job)autonomyJob=job.id;$('autonomyState').textContent=job?('Состояние: '+job.state+'\nЦель: '+(job.spec.goal||'—')+'\nПлан: '+((job.plan.steps||[]).map(x=>x.skill).join(' → ')||'формируется')+'\nРезультат: '+JSON.stringify(job.result||{})): 'Нет задач';renderAutonomyHelp(state.help||[]);}catch(e){$('autonomyState').textContent=e.message}}
 setInterval(()=>{if(document.body.dataset.view==='autonomy')loadAutonomy()},1500);
-showTab('manual');loadControlScheme();updateControlHelp();selectInput('keyboard');paintArmSpeed();loadGoals();frameLoop();trainingFrameLoop();refresh();voiceLoop();</script><script src="/skill-ui.js"></script><script src="/mapping-ui.js"></script></html>
+showTab('manual');loadControlScheme();updateControlHelp();selectInput('keyboard');paintArmSpeed();loadGoals();frameLoop();trainingFrameLoop();refresh();voiceLoop();</script><script src="/skill-ui.js"></script><script src="/mapping-ui.js"></script><script src="/room-cleanup-ui.js"></script></html>

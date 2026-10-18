@@ -129,6 +129,7 @@ def worker(request):
             result=train_job(folder,[Path(p) for p in spec['episodes']],steps=1000,batch_size=32,
                 seed=spec['seed'],skill_id=spec['task_id'],task=spec['title'],minimum_epochs=8,
                 warm_start=spec['model'],resume=resume,correction_replays=4,
+                maximum_steps=spec.get('maximum_steps',200000),
                 corrective_training_seeds=spec.get('corrective_training_seeds',[]),progress=progress,cancelled=cancelled)
             if result['state'] not in ('trained_simulation_unvalidated','validated_simulation'):
                 raise RuntimeError(result.get('error','Training failed'))
@@ -212,10 +213,11 @@ class Recovery:
             if free<10:raise InterruptedError('Недостаточно памяти; сохранена пауза')
             while pending and len(self.children)<parallel and free>=25:
                 spec=pending.pop(0);output=Path(spec['output']);log=(output/'worker.log').open('ab')
-                child=subprocess.Popen([sys.executable,'-m','simulator.neural_recovery','worker',str(output/'request.json')],
+                child=subprocess.Popen([sys.executable,'-m',getattr(self,'worker_module','simulator.neural_recovery'),'worker',str(output/'request.json')],
                     stdout=log,stderr=log,start_new_session=True,
                     env=dict(os.environ,OMP_NUM_THREADS='2',OPENBLAS_NUM_THREADS='1',PYTHONUNBUFFERED='1'))
                 self.children[str(output)]=dict(child=child,log=log,spec=spec,started=time.monotonic())
+                free=memory_free_percent()
             details={}
             for key,item in list(self.children.items()):
                 child=item['child'];path=Path(key)
@@ -225,17 +227,18 @@ class Recovery:
                 else:
                     progress=path/'progress.json'
                     if progress.exists():details=json.loads(progress.read_text())
-                    limit=32*3600 if item['spec']['kind']=='train' else 1800
+                    limit=getattr(self,'training_timeout_s',32*3600) if item['spec']['kind']=='train' else 1800
                     if time.monotonic()-item['started']>limit:raise TimeoutError('Worker exceeded its finite budget: '+key)
             views=[]
             for item in self.children.values():
                 output=Path(item['spec']['output'])
                 folders=sorted(output.glob('recovery-*')) if item['spec']['kind']=='correct' else sorted(output.glob('scene-*'))
-                if folders:views.append(dict(folder=str(folders[-1]),live=True,label='Корректирующий показ' if item['spec']['kind']=='correct' else 'Самостоятельная проверка'))
+                if item['spec']['kind'] in ('room_correct','room_evaluate'):folders=[output]
+                if folders:views.append(dict(folder=str(folders[-1]),live=True,label='Корректирующий показ' if item['spec']['kind'] in ('correct','room_correct') else 'Самостоятельная проверка'))
             self.save(active_pids=[i['child'].pid for i in self.children.values()],views=views,
                 completed=len(results),total=len(specs),details=details,
                 waiting_for_memory=bool(pending and not self.children))
-            if time.monotonic()-started>36*3600:raise TimeoutError('Stage budget exhausted; evidence retained')
+            if time.monotonic()-started>getattr(self,'stage_timeout_s',36*3600):raise TimeoutError('Stage budget exhausted; evidence retained')
             time.sleep(1)
         return [results[spec['output']] for spec in specs]
 

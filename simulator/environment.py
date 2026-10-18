@@ -89,7 +89,8 @@ class ExplorerEnv(gym.Env):
         self.bin_position = np.array(options.get("bin_position", bin_default), float)
         self.model, self.data = load_model(mesh_dir=self.mesh_dir, scene=self.scene,
             sock_position=self.sock_position, bin_position=self.bin_position,
-            scene_parameters=sampled['parameters'] if sampled else None)
+            scene_parameters=sampled['parameters'] if sampled else None,
+            **({'room_layout':True} if self.config.get('room_layout') else {}))
         self.domain_variation = {"enabled": varied, "kind": "appearance_and_placement"}
         if varied:
             # Visual variation does not pretend to identify real contact physics.
@@ -140,6 +141,10 @@ class ExplorerEnv(gym.Env):
         # Let gravity settle the cloth and wheels, without changing commands.
         for _ in range(100):
             mujoco.mj_step(self.model, self.data)
+            # An independent evaluator may record every physical substep.
+            # Its observations never enter the actor sample or action path.
+            observer=getattr(self,'_outcome_observer',None)
+            if observer is not None:observer()
         self.start_height = self._sock_points()[:, 2].mean() if len(self.sock_ids) else 0.
         self.initial_sock_points = self._sock_points().copy()
         return self._observation(), self.state()

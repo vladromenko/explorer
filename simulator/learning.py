@@ -163,7 +163,7 @@ def export_dataset(episode_folders, destination, repo_id="explorer/simulator", t
             if alignment not in ("pre_action_observation", "same_row_pre_action"):
                 raise ValueError("Expected a pre-action observation and its next applied command")
             segments=expert_segments(rows,fps)
-            repeats=correction_replays if episode.get('learner_intervention') else 1
+            repeats=correction_replays if episode.get('learner_intervention') or episode.get('corrective_demonstration') is True else 1
             for _ in range(repeats):
                 for segment in segments:
                     for elapsed,current in segment:
@@ -215,18 +215,19 @@ def choose_device(request="auto"):
     return request
 
 
-def training_budget(requested_steps, frames, batch_size, minimum_epochs=0):
+def training_budget(requested_steps, frames, batch_size, minimum_epochs=0,maximum_steps=200000):
     """Keep the requested floor while scaling automatic training with real data."""
-    if (type(requested_steps) is not int or not 1<=requested_steps<=200000
+    if (type(maximum_steps) is not int or not 200000<=maximum_steps<=1000000
+            or type(requested_steps) is not int or not 1<=requested_steps<=maximum_steps
             or type(frames) is not int or frames<1 or type(batch_size) is not int or not 1<=batch_size<=32
             or type(minimum_epochs) is not int or not 0<=minimum_epochs<=20):
         raise ValueError('Invalid training exposure budget')
     required=math.ceil(frames*minimum_epochs/batch_size)
-    effective=min(200000,max(requested_steps,required))
+    effective=min(maximum_steps,max(requested_steps,required))
     return dict(requested_steps=requested_steps,effective_steps=effective,
                 training_frames=frames,batch_size=batch_size,minimum_epochs=minimum_epochs,
                 expected_dataset_passes=effective*batch_size/frames,
-                step_cap_reached=required>200000)
+                step_cap_reached=required>maximum_steps)
 
 
 class LoadedPolicy:
@@ -277,9 +278,9 @@ def load_policy(job_folder, device="cpu"):
     return LoadedPolicy(job_folder, device)
 
 
-def training_config(folder, steps, device, batch_size=16, seed=1000):
-    if type(steps) is not int or not 1 <= steps <= 200000:
-        raise ValueError("Training steps must be between 1 and 200000")
+def training_config(folder, steps, device, batch_size=16, seed=1000,maximum_steps=200000):
+    if type(maximum_steps) is not int or not 200000<=maximum_steps<=1000000 or type(steps) is not int or not 1 <= steps <= maximum_steps:
+        raise ValueError("Training steps exceed the explicit training budget")
     if type(batch_size) is not int or not 1 <= batch_size <= 32:
         raise ValueError("Batch size must be between 1 and 32")
     if type(seed) is not int or not 0 <= seed < 2 ** 32:
@@ -611,7 +612,7 @@ def resume_checkpoint(folder, episode_folders, skill_id):
 
 def train_job(job_folder, episode_folders, steps=3000, python_executable=None, device="auto", progress=None,
               task="pick and place", skill_id=None, cancelled=None, batch_size=16, seed=1000,
-              diagnostic_only=False, warm_start=None, minimum_epochs=0, resume=False, correction_replays=1, corrective_training_seeds=()):
+              diagnostic_only=False, warm_start=None, minimum_epochs=0, resume=False, correction_replays=1, corrective_training_seeds=(),maximum_steps=200000):
     """Blocking worker; call from the simulator's background executor.
 
     The subprocess has no robot connection. A nonzero learner exit is a failed
@@ -656,7 +657,7 @@ def train_job(job_folder, episode_folders, steps=3000, python_executable=None, d
                 raise ValueError("No simulator trajectories were selected")
             if len(set(folders)) != len(folders) or len({item.name for item in folders}) != len(folders):
                 raise ValueError("Duplicate trajectories cannot form independent train/validation episodes")
-            training_config(folder, steps, "cpu", batch_size, seed)  # Validate request before a heavy import/export.
+            training_config(folder, steps, "cpu", batch_size, seed,maximum_steps)  # Validate request before a heavy import/export.
             update("exporting")
             from importlib.metadata import version
             state["runtime_versions"] = {name: version(name) for name in ("lerobot", "torch", "torchvision")}
@@ -690,9 +691,9 @@ def train_job(job_folder, episode_folders, steps=3000, python_executable=None, d
             if type(correction_replays) is not int or not 1<=correction_replays<=8:
                 raise ValueError('Invalid corrective replay weight')
             frame_counts={path:sum(len(s) for s in expert_segments(item[1],item[2]))*
-                (correction_replays if item[0].get('learner_intervention') else 1)
+                (correction_replays if item[0].get('learner_intervention') or item[0].get('corrective_demonstration') is True else 1)
                 for path,item in zip(folders,provenance)}
-            budget=training_budget(steps,sum(frame_counts[path] for path in training),batch_size,minimum_epochs)
+            budget=training_budget(steps,sum(frame_counts[path] for path in training),batch_size,minimum_epochs,maximum_steps)
             if minimum_epochs and budget['expected_dataset_passes']<minimum_epochs:
                 raise ValueError('Объём данных превышает бюджет полных проходов; качество обучения не снижено')
             steps=budget['effective_steps']
@@ -704,7 +705,7 @@ def train_job(job_folder, episode_folders, steps=3000, python_executable=None, d
             check_cancelled()
             write_json(folder / "split.json", dict(train=[item.name for item in training],
                 validation=[item.name for item in validation], heldout_independent=bool(heldout),corrective_training_seeds=list(corrective_training_seeds)))
-            config = training_config(folder, steps, state["device"], batch_size, seed)
+            config = training_config(folder, steps, state["device"], batch_size, seed,maximum_steps)
             if warm_start:
                 check_cancelled()
                 source_bundle, _ = read_bundle(warm_start)

@@ -89,9 +89,9 @@ class SimulatorSkillPort:
             if motion_check is not None:motion_check()
         return goal
 
-    def look_at(self,point,ctx,*,gripper=None,distance_m=.24,min_camera_height_m=.12,transport_required=True):
+    def look_at(self,point,ctx,*,gripper=None,distance_m=.24,min_camera_height_m=.12,transport_required=True,height_reserve_m=0.):
         """Aim the calibrated wrist camera at an already observed location."""
-        from .inspection_planning import plan_camera_view,CameraViewUnavailable,ObservedMotionViolation
+        from .inspection_planning import plan_camera_view,CameraViewUnavailable,ObservedMotionViolation,CameraViewTrackingFailure
         from .manipulation_planning import hand_rotation
         if self.before_hold is not None and not hasattr(self,'hold_rotation'):
             raise CameraViewUnavailable('Нет исходной ориентации подтверждённого захвата')
@@ -99,9 +99,10 @@ class SimulatorSkillPort:
             if self.before_hold is not None and not getattr(self,'release_commanded',False) else None)
         minimum_jaw=(float(self.destination['bounds_max'][2])+.10
             if held_reference is not None and self.destination is not None and transport_required else None)
+        if not np.isfinite(height_reserve_m) or not 0<=height_reserve_m<=.06:raise ValueError('Invalid camera tracking reserve')
         plan=plan_camera_view(self.env,point,
             gripper=float(self.env.command[5] if gripper is None else gripper),distance_m=distance_m,
-            min_camera_height_m=min_camera_height_m,check=lambda:self.check(ctx),
+            min_camera_height_m=min_camera_height_m+height_reserve_m,check=lambda:self.check(ctx),
             maximum_hand_tilt_deg=2. if held_reference is not None else None,
             reference_hand_gravity=held_reference,minimum_jaw_height_m=minimum_jaw)
         def check_tilt():
@@ -114,6 +115,9 @@ class SimulatorSkillPort:
         # camera below the kinematic prediction. Do not silently accept it.
         camera=self.env.model.camera('wrist_depth').id
         if float(self.env.data.cam_xpos[camera,2])<min_camera_height_m-.008:
+            if (held_reference is None and float(self.env.data.cam_xpos[camera,2])>=.12
+                    and self.env.jaw_center()[2]>=.06):
+                raise CameraViewTrackingFailure('Свободная камера не достигла высоты обзора; захват остаётся над полом')
             raise ObservedMotionViolation('После движения камера не достигла рассчитанной высоты обзора')
         if held_reference is not None:check_tilt()
         if minimum_jaw is not None and self.env.jaw_center()[2]<minimum_jaw-.008:
@@ -271,8 +275,8 @@ class SimulatorSkillPort:
                 continue
             visited.append((point.copy(),distance))
             try:
-                self.look_at(point,ctx,distance_m=distance,min_camera_height_m=.30,
-                    transport_required=transport_required)
+                self.look_at(point,ctx,distance_m=distance,min_camera_height_m=getattr(self,'destination_camera_min_height',.30),
+                    transport_required=transport_required,height_reserve_m=getattr(self,'destination_height_reserve_m',0.))
                 frame=self.scene(ctx)
             except ObservedMotionViolation:raise
             except ValueError as error:

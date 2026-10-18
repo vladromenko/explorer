@@ -148,6 +148,23 @@ def _combine(records,*,now_simulation_time,max_map_age_s=30.,require_fresh=True)
         if (0.<=age<=max_map_age_s and frame.get('frame_id') and
             frame.get('robot_self_filter',{}).get('available') is True):
             available.append(record)
+    # Repeated stopped captures at the same camera pose add no independent
+    # baseline. Keep the newest at each such pose so old opening pixels cannot
+    # contradict a newly occupied basket. All raw records remain preserved;
+    # every genuinely distinct viewpoint still participates in the same proof.
+    unique=[]
+    for record in reversed(available):
+        matrix=np.asarray(record['frame']['optical_to_world'])
+        if any(record['frame']['intrinsics']==old['frame']['intrinsics']
+                and np.linalg.norm(_position(record)-_position(old))<.005
+                and np.linalg.norm(matrix[:3,:3]-np.asarray(old['frame']['optical_to_world'])[:3,:3])<.01
+                and np.shape(record['depth'])==np.shape(old['depth'])
+                and np.allclose(record['depth'],old['depth'],atol=.002,rtol=0.,equal_nan=True)
+                and np.allclose(record['robot_depth'],old['robot_depth'],atol=.002,rtol=0.,equal_nan=True)
+                and bool(record['frame'].get('observed_rims'))==bool(old['frame'].get('observed_rims'))
+                for old in unique):continue
+        unique.append(record)
+    available=list(reversed(unique))
     rims=[]
     for record in available:
         candidates=record['frame'].get('observed_rims',[])
@@ -218,6 +235,43 @@ def _combine(records,*,now_simulation_time,max_map_age_s=30.,require_fresh=True)
 
 def combine_registered_container(records,*,now_simulation_time):
     return _combine(records,now_simulation_time=now_simulation_time)
+
+
+def refresh_registered_container(records,candidate,latest):
+    """Recheck a known two-view opening on NEW pixels without pair search.
+
+    Does not update a timestamp on cached evidence. Requires the same observed
+    rim correspondences, current interior/free-volume witnesses, and an older
+    independent opening view. Original rim/uncertainty requirements remain.
+    """
+    evidence=candidate['evidence'];now=latest['frame']['simulation_time']
+    indexed={r['frame']['frame_id']:r for r in records if 0<=now-r['frame']['simulation_time']<=30.}
+    try:rim_records=[indexed[key] for key in evidence['complete_rim_frames']]
+    except KeyError:raise ObservationRefused('Original observed rim views expired') from None
+    points=[]
+    for record in rim_records:
+        rims=record['frame'].get('observed_rims',[])
+        if len(rims)!=1:raise ObservationRefused('Original complete rim is missing')
+        points.extend(rims[0]['evidence']['rim_points'])
+    points=np.asarray(points,float);lo,hi=np.asarray(candidate['bounds_min']),np.asarray(candidate['bounds_max'])
+    new=_opening(latest,lo,hi,points,candidate['uncertainty_m'])
+    if new and new.get('obstructed'):raise ObservationRefused('Fresh opening is obstructed')
+    old_views=evidence.get('opening_views') or evidence.get('opening_proof',{}).get('views',[])
+    independent=next((v for v in old_views if v['frame_id'] in indexed and _distinct(indexed[v['frame_id']],latest)),None)
+    if independent is None:raise ObservationRefused('Fresh opening lacks an independent recorded baseline')
+    refreshed=dict(evidence,refresh_source='new_registered_opening_pixels')
+    if new is not None and 'opening_views' in evidence:refreshed['opening_views']=[independent,new]
+    elif evidence.get('opening_proof'):
+        registration=_registered_rim(latest,lo,hi,points)
+        sensor=DepthFreeSpace(latest['depth'],latest['frame']['intrinsics'],np.asarray(latest['frame']['optical_to_world']),
+            latest['frame']['frame_id'],now)
+        witness=sensor.box_witness(evidence['opening_proof']['box_corners_world_m'])
+        if not registration or not witness or witness['covered_depth_pixels']<8:raise ObservationRefused('Fresh measured opening volume is unconfirmed')
+        witness.update(registration)
+        refreshed['opening_proof']=dict(evidence['opening_proof'],views=[independent,witness])
+    else:raise ObservationRefused('Fresh opening is not visible')
+    refreshed['opening_camera_baseline_m']=float(np.linalg.norm(_position(indexed[independent['frame_id']])-_position(latest)))
+    return dict(candidate,frame_id=latest['frame']['frame_id'],simulation_time=now,evidence=refreshed)
 
 
 def opening_refresh_hint(records,*,now_simulation_time):

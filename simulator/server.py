@@ -264,7 +264,7 @@ class Runtime:
         self.latest_job_folder = None
         self.model_info = None
         self.latest_model()
-        packages = sorted((p for p in (self.data_root / 'exports').glob('*.tar.gz') if not p.name.startswith('observed-skill-')), key=lambda path: path.stat().st_mtime, reverse=True)
+        packages = sorted((p for p in (self.data_root / 'exports').glob('*.tar.gz') if not p.name.startswith(('observed-skill-','room-cycle-'))), key=lambda path: path.stat().st_mtime, reverse=True)
         self.latest_package = packages[0] if packages else None
         self.tasks = queue.Queue()
         self.cached_state = {}
@@ -577,6 +577,11 @@ class Runtime:
             if recovery and recovery.get('alive') and recovery['state'] in ('running','queued'):
                 snapshot['jobs']=list(snapshot['jobs'])+[dict(id=recovery['id'],kind=recovery.get('phase'),status='running',
                     external_recovery=True,message=recovery.get('message'),details=recovery,progress=snapshot['learning_status']['progress'])]
+            from .room_control import current as room_current
+            room=room_current(self.data_root);snapshot['room_learning']=room
+            if room and room['alive'] and room['state']=='running':
+                snapshot['jobs']=list(snapshot['jobs'])+[dict(id=room['id'],kind=room.get('phase'),status='running',
+                    external_room_learning=True,message=room.get('message'),details=room,progress=snapshot['learning_status']['progress'])]
             return jsonable(compact_value(snapshot) if compact else snapshot)
 
     def episodes(self):
@@ -591,6 +596,12 @@ class Runtime:
 
     def launch_job(self, kind, request):
         with self.lock:
+            from .room_control import current as room_current,control as room_control
+            room=room_current(self.data_root)
+            if room and kind=='cycle' and request.cycle_id==room['id']:
+                return dict(room_control(self.data_root,'resume'),status='running',kind='cycle')
+            if room and room['alive']:
+                raise HTTPException(409,'Работает полный цикл поиска и уборки; второе задание не создаётся')
             from .neural_recovery import current as recovery_current
             recovery=recovery_current(self.data_root)
             if recovery and recovery.get('alive'):
@@ -1210,6 +1221,9 @@ def create_app(env_factory=None, data_root=DATA_ROOT, learning_module=None, star
     def cancel(request: Request):
         runtime=request.app.state.runtime
         with runtime.lock:
+            from .room_control import current as room_current,control as room_control
+            room=room_current(runtime.data_root)
+            if room and room['alive']:room_control(runtime.data_root,'pause')
             from .neural_recovery import current as recovery_current
             recovery=recovery_current(runtime.data_root)
             if recovery and recovery.get('alive'):
@@ -1286,6 +1300,18 @@ def create_app(env_factory=None, data_root=DATA_ROOT, learning_module=None, star
                 raise ValueError('Пакет изменён или отсутствует')
             return FileResponse(path,filename=path.name,media_type='application/gzip')
         except (OSError,ValueError,KeyError) as exc:raise HTTPException(404,str(exc)) from exc
+
+    @app.get('/api/room-learning/package')
+    def room_package(request:Request):
+        runtime=request.app.state.runtime
+        from .room_control import current
+        from .learning import sha256
+        room=current(runtime.data_root)
+        if not room or room['state']!='ready_for_observed_transfer':raise HTTPException(404,'Полная независимая проверка ещё не пройдена')
+        archive=room.get('archive',{});path=Path(archive.get('path','')).resolve()
+        if not path.is_relative_to((runtime.data_root/'exports').resolve()) or not path.is_file() or sha256(path)!=archive.get('sha256'):
+            raise HTTPException(404,'Пакет отсутствует или изменён')
+        return FileResponse(path,filename=path.name,media_type='application/gzip')
 
     @app.get('/api/package')
     def package(request: Request):

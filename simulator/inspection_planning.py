@@ -17,6 +17,10 @@ class ObservedMotionViolation(CameraViewUnavailable):
     """An executed motion violated its observed guard; never try another pose."""
 
 
+class CameraViewTrackingFailure(CameraViewUnavailable):
+    """Unheld camera missed its requested view, within measured floor clearance."""
+
+
 @dataclass(frozen=True)
 class CameraViewPlan:
     command: np.ndarray
@@ -26,7 +30,7 @@ class CameraViewPlan:
     hand_tilt_change_deg: float | None = None
 
 
-def check_observed_box_path(env,command,obstacle,*,check=lambda:None):
+def check_observed_box_path(env,command,obstacle,*,check=lambda:None,base_target=None):
     """Conservative own-geometry sweep outside one measured occupied extent.
 
     No free cavity is assumed: even empty interior is treated as occupied.
@@ -55,7 +59,14 @@ def check_observed_box_path(env,command,obstacle,*,check=lambda:None):
     scratch=mujoco.MjData(env.model);scratch.qpos[:]=env.data.qpos
     start=env.command[:6].copy()
     count=max(2,int(np.ceil(np.sum(np.abs(command[:5]-start[:5]))/.5)))
+    base_start=scratch.qpos[:2].copy()
+    if base_target is not None:
+        base_target=np.asarray(base_target,float)
+        if base_target.shape!=(2,) or not np.isfinite(base_target).all() or np.linalg.norm(base_target-base_start)>.45:
+            raise CameraViewUnavailable('Invalid finite local base alignment')
+        count=max(count,int(np.ceil(np.linalg.norm(base_target-base_start)/.005)))
     for fraction in np.linspace(0.,1.,count+1):
+        if base_target is not None:scratch.qpos[:2]=base_start+(base_target-base_start)*fraction
         check();q=servo_to_joint(start+(command-start)*fraction);scratch.qpos[env.joint_q]=q
         for name,m in (('rlink2_Joint',1),('llink1_Joint',1),('llink2_Joint',-1),('rlink3_Joint',-1),('llink3_Joint',1)):
             scratch.qpos[env.model.joint(name).qposadr[0]]=m*q[5]

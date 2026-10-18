@@ -204,6 +204,7 @@ def stop_all():
         ("policy_execution",lambda owner:owner.stop() if owner.lock.locked() else None),
         ("mobile_policy_execution",lambda owner:owner.stop() if owner.lock.locked() else None),
         ("observed_skill_execution",lambda owner:owner.stop() if owner.lock.locked() else None),
+        ("room_cleanup_execution",lambda owner:owner.stop() if owner.lock.locked() else None),
         ("navigation_tasks",lambda owner:owner.cancel() if owner.status()["busy"] else None),
         ("target_gaze",lambda owner:owner.cancel()),
         ("onboard_agent",lambda owner:owner.cancel_all("Operator STOP")),
@@ -1329,6 +1330,8 @@ observed_skill_scans=FullScanCache()
 node.create_subscription(LaserScan,'/scan0',lambda message:observed_skill_scans.receive(0,message,node.get_clock().now().nanoseconds/1e9),qos_profile_sensor_data)
 node.create_subscription(LaserScan,'/scan1',lambda message:observed_skill_scans.receive(1,message,node.get_clock().now().nanoseconds/1e9),qos_profile_sensor_data)
 observed_skill_execution=ObservedSkillExecution(ROOT,delivery_robot,emit,observed_skill_scans.snapshot,lidar_transform)
+from room_cleanup_execution import RoomCleanupExecution
+room_cleanup_execution=RoomCleanupExecution(ROOT,delivery_robot,emit,observed_skill_scans.snapshot,lidar_transform)
 
 class ObservedSkillStart(BaseModel):
     candidate:str=Field(pattern='^[0-9a-f]{64}$')
@@ -1353,6 +1356,27 @@ def observed_skills_lease(body:PolicyExecutionLease):return map_operation(observ
 
 @app.post('/api/observed-skills/stop')
 def observed_skills_stop():return observed_skill_execution.stop()
+
+@app.get('/api/room-cleanup')
+def room_cleanup_candidates():
+    base=ROOT/'data/room-cleanup-candidates'
+    candidates=[p.name for p in sorted(base.glob('*')) if p.is_dir() and len(p.name)==64 and not p.name.startswith('.')]
+    return dict(candidates=candidates,execution=room_cleanup_execution.status(),physical_ready=False)
+
+@app.get('/room-cleanup-ui.js')
+def room_cleanup_ui():return FileResponse(ROOT/'src/room-cleanup-ui.js',media_type='application/javascript')
+
+@app.get('/api/room-cleanup/{identifier}/preflight')
+def room_cleanup_preflight(identifier:str):return map_operation(room_cleanup_execution.preflight,identifier)
+
+@app.post('/api/room-cleanup/start')
+def room_cleanup_start(body:ObservedSkillStart):return map_operation(profiles.admit,'policy',room_cleanup_execution.start,body.candidate,body.observing)
+
+@app.post('/api/room-cleanup/lease')
+def room_cleanup_lease(body:PolicyExecutionLease):return map_operation(room_cleanup_execution.heartbeat,body.session,body.held)
+
+@app.post('/api/room-cleanup/stop')
+def room_cleanup_stop():return room_cleanup_execution.stop()
 
 from robot_readiness import status as robot_readiness
 from capability_readiness import CapabilityReadiness

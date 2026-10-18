@@ -145,12 +145,13 @@ def _sock(world, config, position):
     ET.SubElement(cloth, "elasticity", young=str(c["young_pa"]), poisson="0.3", thickness=str(c["thickness_m"]), elastic2d="bend", damping="0.001")
 
 
-def build_mjcf(mesh_dir=None, *, scene="sock", sock_position=(.33, 0., .015), bin_position=(.60, .25, 0.), camera_intrinsics=None, verify_assets=True, scene_parameters=None):
+def build_mjcf(mesh_dir=None, *, scene="sock", sock_position=(.33, 0., .015), bin_position=(.60, .25, 0.), camera_intrinsics=None, verify_assets=True, scene_parameters=None, room_layout=False):
     """Return self-contained MJCF XML with absolute, checksum-verified STL paths.
 
     scene='empty' excludes cloth/bin; 'sock' includes both; 'navigation' also
     adds obstacles. Intrinsics override must contain width,height,fx,fy,cx,cy.
     """
+    if type(room_layout) is not bool:raise ValueError('Invalid room layout request')
     if scene not in ("empty", "sock", "navigation", "cookie", "cube", "cloth"):
         raise ValueError("Unknown simulator scene")
     import numpy as np
@@ -364,6 +365,13 @@ def build_mjcf(mesh_dir=None, *, scene="sock", sock_position=(.33, 0., .015), bi
                 ('east',[1.55,.05,.25],[.025,.75,.25])):
             ET.SubElement(world,'geom',name='room_boundary_'+name,type='box',pos=_s(pos),size=_s(size),
                           contype='2',conaffinity='5',rgba='.55 .58 .62 1')
+    if room_layout:
+        for name,pos,size in (
+            ('north',[0.,2.,.35],[2.,.03,.35]),('south',[0.,-2.,.35],[2.,.03,.35]),
+            ('east',[2.,0.,.35],[.03,2.,.35]),('west',[-2.,0.,.35],[.03,2.,.35]),
+            ('divider_left',[.5,-1.22,.35],[.03,.78,.35]),('divider_right',[.5,1.22,.35],[.03,.78,.35])):
+            ET.SubElement(world,'geom',name='cleanup_room_'+name,type='box',pos=_s(pos),size=_s(size),
+                contype='2',conaffinity='5',rgba='.55 .55 .6 1')
     return ET.tostring(xml, encoding="unicode")
 
 

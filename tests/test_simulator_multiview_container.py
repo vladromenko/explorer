@@ -77,3 +77,15 @@ def test_visible_robot_surfaces_cannot_supply_interior_depth_proof():
     views=records()
     for record in views[2:]:record['robot_depth']=record['depth'].copy()
     with pytest.raises(ObservationRefused):combine_registered_container(views,now_simulation_time=4.)
+
+
+def test_slow_pair_search_cannot_refresh_timestamp_without_new_opening_pixels():
+    from simulator.multiview_container import refresh_registered_container
+    views=records();candidate=combine_registered_container(views,now_simulation_time=4.)
+    latest=capture('new-exposure',.028,-4,4.1);latest['frame']['observed_rims']=[]
+    fresh=refresh_registered_container(views+[latest],candidate,latest)
+    assert fresh['frame_id']=='new-exposure'
+    assert fresh['evidence']['opening_views'][-1]['frame_id']=='new-exposure'
+    assert fresh['evidence']['opening_camera_baseline_m']>=.02
+    obstructed=copy.deepcopy(latest);obstructed['depth'][50:78,46:74]=.7
+    with pytest.raises(ObservationRefused):refresh_registered_container(views+[obstructed],candidate,obstructed)

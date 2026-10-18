@@ -1,0 +1,108 @@
+{
+  "date": "2026-10-18",
+  "purpose": "Observed full-room composition above ACT; not local-grasp qualification",
+  "existing_training": {
+    "id": "1bd683a1d22b",
+    "recovery_id": "924d1ee5ab01",
+    "state": "training",
+    "steps_completed": 21724,
+    "steps": 133577,
+    "eta_s": 80327,
+    "interrupted": false,
+    "source_runtime_unchanged": true
+  },
+  "new_execution": {
+    "scope": "sock and basket in different observed positions; two rooms with door",
+    "search": "RGB semantic model with registered depth and two exposures; scanned free viewpoints",
+    "navigation": "map/scan planning with current robot and payload footprint; measured position and heading feedback",
+    "manipulation": "actual frozen ACT inference; externally planned base motion; no teacher fallback",
+    "phase_handoff": "training-derived experimental clock/pose proposals requiring separate full-room qualification",
+    "acceptance": "ten diagnostic scenes then two independent groups of ten; per-substep independent collision audit",
+    "evidence": "all prior data retained; separate checksummed inactive Jetson package and whole-cycle evidence archive",
+    "correction": "Cause-directed completed rollout diagnosis; 24 automated full-scene expert attempts, successful full missions only; historical data plus new phase recordings; actual one-ACT warm-start, >=8 full passes, physical checkpoint comparison",
+    "neural_teacher_distinction": "Observed geometric demonstrations are simulation-only data sources; never substituted for ACT in independent room validation or Jetson execution",
+    "failure_policy": "Up to three evidence-driven neural corrections; search, navigation, collisions outside actor phases and teacher faults require algorithm diagnosis rather than blind gradient retries",
+    "data_quality": "Old train/validation identities and samples checksums retained; successful correction targets get replay weight4; final room scenes never enter training"
+  },
+  "repairs": [
+    "Reacquire expired exposures after vision cold start without relabelling old pixels",
+    "Heading feedback overcomes measured rotational resistance; arrival is checked after braking",
+    "Observed 3D final approach is separate from conservative global footprint planning",
+    "Known target near lidar returns need a prior full CAD sweep; other near obstacles stop motion",
+    "Isolated Jetson inference uses owned RPC, two-second observer lease and existing STOP owners",
+    "Only immutable frozen-source scene results can qualify; mutable development diagnostics cannot",
+    "Sub-degree learned deltas accumulate before integer host quantization instead of disappearing",
+    "Metric RGB crop grounding with unchanged model threshold; observed basket walls cannot become sock crop proposals",
+    "Slow semantic inference is associated to separate fresh RGBD by stationary image/depth/pose checks",
+    "Fresh observed opening pixels refresh existing registered rim proof without repeating the full pair search after acquisition",
+    "User basket final stance is selected by full CAD volume clearance; the colliding 13.4cm rim reserve is not unconditionally used",
+    "Higher camera planning reserve and an above-rim survey target compensate measured camera undershoot without lowering the acceptance height",
+    "Neural opening outside an observed basket release envelope is stopped; loss of previously verified hold stops subsequent lift",
+    "Full room status, pause/resume, actual worker previews and ready-only checked package download use the room owner",
+    "Data collection reduces parallelism after memory pressure instead of relaunching the same overloaded capacity"
+  ],
+  "verification": {
+    "broad_suite_passed": 144,
+    "focused_final_run_passed": 61,
+    "complete_room_qualification_passed": false,
+    "hardware_accessed": false,
+    "physical_ready": false,
+    "perception_development_qualified": false,
+    "expanded_training_budget_verified": true
+  },
+  "development_diagnostics": [
+    "/Volumes/ExplorerSim/ExplorerSim/diagnostics/room-development-1792332861193110000",
+    "/Volumes/ExplorerSim/ExplorerSim/diagnostics/room-development-1792332642305686000",
+    "/Volumes/ExplorerSim/ExplorerSim/diagnostics/room-development-1792334502339594000",
+    "/Volumes/ExplorerSim/ExplorerSim/diagnostics/room-development-1792336050838977000",
+    "/Volumes/ExplorerSim/ExplorerSim/diagnostics/room-development-1792337433175294000",
+    "/Volumes/ExplorerSim/ExplorerSim/diagnostics/room-development-1792338247726525000"
+  ],
+  "background": "One dependent application process, launched after committing checked source; waits for existing recovery and does not alter its source/checkpoint. No Codex automation or reminder.",
+  "known_hardware_gates": [
+    "accepted map localization",
+    "camera extrinsics and registered rectified RGB-D",
+    "measured gripper aperture mapping",
+    "actual transferred CUDA inference self-test",
+    "observed physical trial"
+  ],
+  "development_outcomes": [
+    {
+      "path": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/room-development-1792332861193110000/trial/result.json",
+      "state": "failed",
+      "reason": "Finite navigation budget exhausted",
+      "qualification": false
+    },
+    {
+      "path": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/room-development-1792332642305686000/trial/result.json",
+      "state": "failed",
+      "reason": "Camera observation is stale, reused or belongs to a previous base pose",
+      "qualification": false
+    },
+    {
+      "path": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/room-development-1792338247726525000/trial/result.json",
+      "state": "perception_failed",
+      "reason": "После движения камера не достигла рассчитанной высоты обзора",
+      "qualification": false
+    },
+    {
+      "path": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/room-development-1792334502339594000/trial/result.json",
+      "state": "failed",
+      "reason": "Search budget exhausted; sock and basket not both observed",
+      "qualification": false
+    },
+    {
+      "path": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/room-development-1792337433175294000/trial/result.json",
+      "state": "perception_failed",
+      "reason": "Three fresh camera acquisitions expired before semantic inference completed",
+      "qualification": false
+    },
+    {
+      "path": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/room-development-1792336050838977000/trial/result.json",
+      "state": "perception_failed",
+      "reason": "Нет достаточно точной границы препятствия для проверки обзора",
+      "qualification": false
+    }
+  ],
+  "physical_ready": false
+}

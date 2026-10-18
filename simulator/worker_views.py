@@ -31,11 +31,12 @@ def capture_overview(env, folder, last_capture):
 def sources(root, snapshot, assignments):
     root = Path(root).resolve()
     jobs = snapshot.get('jobs', [])
-    kinds = ('trials', 'audit', 'compare', 'validate', 'train','skill_train')
+    kinds = ('trials', 'audit', 'compare', 'validate', 'train','skill_train',
+        'room_diagnostics','room_corrections','room_validation','room_checkpoint_comparison')
     active = next((job for job in reversed(jobs) if job.get('status') == 'running' and job.get('kind') in kinds), None)
     phase = active['kind'] if active else 'idle'
     views = []
-    if active and active.get('external_recovery'):
+    if active and (active.get('external_recovery') or active.get('external_room_learning')):
         for slot,view in enumerate((active.get('details') or {}).get('views',[])):
             folder=Path(view['folder'])
             views.append(dict(slot=slot,folder=folder,live=view.get('live',True),label=view['label'],identity=str(folder)))
@@ -91,6 +92,7 @@ def publish(root, destination, snapshot, assignments, now=None):
             raise ValueError('Worker view is outside simulator storage')
         frames = sorted((folder / 'frames').glob('*.jpg'))
         choices = {'overview':folder / 'overview-preview.jpg', 'wrist':frames[-1] if frames else None}
+        if (folder/'wrist-preview.jpg').is_file():choices['wrist']=folder/'wrist-preview.jpg'
         cameras = {}
         captured_at = 0
         for camera, path in choices.items():
