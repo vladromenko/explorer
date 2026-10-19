@@ -69,8 +69,12 @@ class PhaseRecorder:
         folder=self.folder/('room-expert-'+identity+'-'+phase)
         folder.mkdir(parents=True,exist_ok=False);(folder/'frames').mkdir()
         clock=self.profile['pick_elapsed_s'] if phase=='pick' else place_clock(self.profile,target,self.env.command)
-        self.active=dict(folder=folder,phase=phase,clock=clock,index=0,handle=(folder/'samples.jsonl').open('w'))
+        self.active=dict(folder=folder,phase=phase,clock=clock,index=0,expert_targets=True,handle=(folder/'samples.jsonl').open('w'))
         self.residual[:]=0
+
+    def targets(self,expert):
+        if type(expert) is not bool or self.active is None:raise ValueError('No active recording target mode')
+        self.active['expert_targets']=expert
 
     def end(self):
         if self.active is not None:
@@ -82,7 +86,7 @@ class PhaseRecorder:
         item=self.active;env=self.env;index=item['index'];image=f'frames/{index:06d}.jpg'
         row=dict(at=time.time(),simulation_time=float(env.data.time),observation=env.command.tolist(),
             wrist_rgb=image,phase='approach' if item['phase']=='pick' else 'place',
-            actor_elapsed_s=item['clock']+index*PERIOD,training_target_valid=True,
+            actor_elapsed_s=item['clock']+index*PERIOD,training_target_valid=item['expert_targets'],
             sample_contract_sha256=CONTRACT_SHA256,action_alignment='same_row_pre_action')
         Image.fromarray(env.render_rgb('wrist')).save(item['folder']/image,quality=92)
         command=issued_command(env.command,np.asarray(action,float),self.residual)
@@ -104,9 +108,11 @@ class PhaseRecorder:
                 success=success,physics_verified_success=success,outcome=outcome,
                 domain_variation=self.env.domain_variation,phase=item['phase'],
                 teacher_inputs='RGBD_own_FK_and_observed_targets',privileged_actor_inputs=False,
-                room_scene=True,full_mission_success=success)
+                room_scene=True,full_mission_success=success,learner_intervention=item.get('intervention'))
             write_json(item['folder']/'episode.json',manifest)
-            if success and item['index']>=3:paths.append(str(item['folder']))
+            if success and item['index']>=3:
+                rows=[json.loads(line) for line in (item['folder']/'samples.jsonl').read_text().splitlines()]
+                if sum(row['training_target_valid'] for row in rows)>=3:paths.append(str(item['folder']))
         return paths
 
 
@@ -143,6 +149,7 @@ def demonstrate(spec):
         profile=json.loads(Path(spec['profile']).read_text())
         class TrainingPort(RoomCleanupPort):
             def load_actor(self,model,profile,*,device):
+                if spec.get('student_steps',0):return super().load_actor(model,profile,device=device)
                 from types import SimpleNamespace
                 bundle,_=read_bundle(model)
                 return SimpleNamespace(sha=bundle['checkpoint_sha256']['model.safetensors'])
@@ -163,9 +170,15 @@ def demonstrate(spec):
             try:
                 if phase=='pick':
                     from .grasp_planning import observed_pick_patch
+                    if spec.get('student_steps',0):
+                        from .room_intervention import student_prefix,reacquire_pick
+                        student_prefix(port,recorder,target,spec['student_steps'],check)
+                        if not port.held:target=reacquire_pick(port,target,check)
+                        recorder.targets(True)
                     geometry.target=target
-                    geometry.grasp_xyz=observed_pick_patch(geometry.depth_records[-1],target,env.base_pose(),fraction=.25,lateral_fraction=.5)
-                    require(geometry.pregrasp(ctx));require(geometry.grasp(ctx));require(geometry.lift(ctx))
+                    if not port.held:
+                        geometry.grasp_xyz=observed_pick_patch(geometry.depth_records[-1],target,env.base_pose(),fraction=.25,lateral_fraction=.5)
+                        require(geometry.pregrasp(ctx));require(geometry.grasp(ctx));require(geometry.lift(ctx))
                     require(geometry.verify_hold(ctx));port.held=True
                     geometry.pick_lift_height=.42
                     require(geometry.raise_verified_hold(ctx))
@@ -188,7 +201,15 @@ def demonstrate(spec):
         result.update(success=success,physical_outcome=truth,seed=spec['seed'],
             collision_free=not audit.contacts,collision_evidence=audit.contacts,
             episodes=episodes,generator='room_observed_geometric_teacher',
+            student_interventions=[item['intervention'] for item in recorder.phases if item.get('intervention')],
             neural_qualification=False,physical_ready=False)
+        from .policy_trace import encode_trace
+        import subprocess
+        result['training_videos']=[]
+        for trace in sorted((folder/'observed').glob('policy-training-pick-prefix-*')):
+            try:result['training_videos'].append(dict(encode_trace(trace),training_only=True))
+            except (OSError,RuntimeError,ValueError,subprocess.SubprocessError) as error:
+                result['training_videos'].append(dict(trace=str(trace),encoding_error=str(error),raw_frames_retained=True))
         write_json(folder/'result.json',result);return result
     finally:
         if recorder is not None and env.step!=recorder.original:recorder.finish(False,{})
@@ -318,14 +339,20 @@ class RoomLearning(Recovery):
                     write_json(curriculum_path,correction_plan(diagnosis,self.excluded|training_seeds(model),
                         1601004000+iteration*100000))
                 curriculum=json.loads(curriculum_path.read_text())
+                from .room_intervention import prefix_budget
                 self.save(phase='room_corrections',message='Программа создаёт корректирующие показы в полных сценах; неудачи сохраняются отдельно')
                 corrected=self.jobs([dict(kind='room_correct',root=str(self.root),model=str(model),profile=str(profile),
+                    student_steps=prefix_budget(diagnosis,index),
                     seed=row['seed'],output=str(stage/'corrections'/f'scene-{index:02d}')) for index,row in enumerate(curriculum)])
                 successful=[r for r in corrected if r.get('success') is True]
-                if len(successful)<8:
+                recovered=[r for r in successful if any(i.get('applied_steps',0)>0 for i in r.get('student_interventions',[]))]
+                write_json(stage/'correction-coverage.json',dict(full_successes=len(successful),
+                    successful_student_state_corrections=len(recovered),minimum_full_successes=8,
+                    minimum_student_state_corrections=4,qualification=False))
+                if len(successful)<8 or len(recovered)<4:
                     teacher_diagnosis=diagnose(corrected);write_json(stage/'teacher-diagnosis.json',teacher_diagnosis)
                     self.save(state='needs_room_algorithm_repair',phase='teacher_diagnosis',diagnosis=teacher_diagnosis,
-                        reason=f'Получено {len(successful)} из требуемых 8 успешных полных показов; не обучаем модель на неудачных целях')
+                        reason=f'Полных показов {len(successful)}/8, исправлений состояний ACT {len(recovered)}/4; недостаточно подтверждённых корректирующих целей')
                     return None
                 selection_path=stage/'data-selection.json'
                 if not selection_path.exists():

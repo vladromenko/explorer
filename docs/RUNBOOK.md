@@ -57,6 +57,8 @@ export OPENBLAS_NUM_THREADS=1
 
 Для анализа записанного кадра без движения есть `bin/probe-saved-policy.py --model <bundle> --frame <recorded.npz> --output <new.json>`. Он проверяет ресурсный резерв; не требует робота, не выдаёт допуск и не меняет learner. Исторический clock counterfactual не является новой попыткой задачи.
 
+`bin/probe-room-intervention.py --model <finished-bundle> --profile <its-handoff.json> --output <new-directory> --wait` — конечная физическая проверка20 действий обучающего префикса. Ждёт общий diagnostic lease и резерв памяти, сохраняет RGB/trace/video и маску; её записи никогда не допускаются в обучение. Это проверка времени и маски, не успешная полная уборка и не доказательство работоспособности экспертного восстановления.
+
 ## Проверка исправлений и установка
 
 ```sh

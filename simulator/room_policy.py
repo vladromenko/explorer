@@ -29,7 +29,7 @@ RUNTIME_FILES=('src/room_cleanup.py','src/room_cleanup_rpc.py','src/room_cleanup
     'simulator/manipulation_planning.py','simulator/grasp_planning.py','simulator/repair_motion.py',
     'simulator/explorer_model.py','simulator/model_config.json','simulator/domain_randomization.py','simulator/curriculum.py','simulator/environment.py',
     'simulator/learning.py','simulator/transfer.py','simulator/room_validation.py','simulator/room_transfer.py',
-    'simulator/room_archive.py','simulator/room_learning.py','simulator/room_control.py','simulator/executor_recovery.py','simulator/neural_recovery.py','simulator/episode_lineage.py',
+    'simulator/room_archive.py','simulator/room_learning.py','simulator/room_intervention.py','simulator/room_control.py','simulator/executor_recovery.py','simulator/neural_recovery.py','simulator/episode_lineage.py',
     'simulator/server.py','simulator/training_activity.py','simulator/learning_status.py','simulator/static/app.js','simulator/worker_views.py',
     'simulator/checkpoint_experiment.py','simulator/parallel_trials.py',
     'simulator/checkpoint_monitor.py','simulator/live_room_diagnostic.py','simulator/train_entry.py',

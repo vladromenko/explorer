@@ -117,7 +117,10 @@ def test_failed_room_manipulation_drives_data_collection_real_train_request_and_
     requests=[];evaluations=[]
     def jobs(specs,parallel=None):
         requests.extend(specs)
-        if specs[0]['kind']=='room_correct':return [dict(success=True,episodes=[str(tmp_path/f'expert-{i}')]) for i in range(24)]
+        if specs[0]['kind']=='room_correct':
+            return [dict(success=True,episodes=[str(tmp_path/f'expert-{i}')],
+                student_interventions=[dict(applied_steps=spec['student_steps'])] if spec['student_steps'] else [])
+                for i,spec in enumerate(specs)]
         assert len(specs)==1 and parallel==1 and specs[0]['kind']=='train'
         write_json(Path(specs[0]['output'])/'checkpoint-selection.json',{})
         return [dict(state='trained_simulation_unvalidated')]
@@ -128,10 +131,30 @@ def test_failed_room_manipulation_drives_data_collection_real_train_request_and_
     monkeypatch.setattr(runner,'jobs',jobs);monkeypatch.setattr(runner,'evaluate_room',evaluate)
     result=runner.run_learning(tmp_path/'model')
     assert result is not None and len(requests)==25
+    assert [r['student_steps'] for r in requests[:-1]][:4]==[0,50,0,100]
     training=requests[-1];assert str(tmp_path/'old') in training['episodes'] and len(training['episodes'])==25
     assert len(training['corrective_training_seeds'])==24
     assert not set(evaluations[0])&set(evaluations[1])
     assert not set(training['corrective_training_seeds'])&set(evaluations[-1]+evaluations[-2])
+
+
+def test_room_loop_does_not_train_when_only_unperturbed_teacher_examples_succeed(tmp_path,monkeypatch):
+    import simulator.room_learning as module
+    folder=tmp_path/'room-learning'/'aaaaaaaaaaaa';folder.mkdir(parents=True)
+    state={};runner=RoomLearning(tmp_path,folder,state,lambda **v:state.update(v),set())
+    monkeypatch.setattr(runner,'check',lambda:None)
+    monkeypatch.setattr(module,'training_seeds',lambda _:set())
+    monkeypatch.setattr(runner,'profile',lambda model,path:path)
+    monkeypatch.setattr(runner,'evaluate_room',lambda *a:dict(successes=0,results=[failed(10,'policy_pick_running')]))
+    def only_controls(specs,parallel=None):
+        assert all(s['kind']=='room_correct' for s in specs)
+        return [dict(seed=s['seed'],success=not s['student_steps'],events=[],reason='correction failed',
+            student_interventions=[],episodes=[]) for s in specs]
+    monkeypatch.setattr(runner,'jobs',only_controls)
+    assert runner.run_learning(tmp_path/'model') is None
+    assert state['state']=='needs_room_algorithm_repair'
+    coverage=json.loads((folder/'round-00/correction-coverage.json').read_text())
+    assert coverage['full_successes']==12 and coverage['successful_student_state_corrections']==0
 
 
 def test_train_worker_really_requests_eight_passes_and_preserves_warm_start(tmp_path,monkeypatch):
