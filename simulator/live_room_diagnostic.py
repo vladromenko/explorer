@@ -17,6 +17,25 @@ import time
 from .learning import sha256,write_json,read_bundle
 
 
+class ActiveTrialBudget:
+    """Only a running trial spends the finite diagnostic time allowance."""
+    def __init__(self,seconds=3600,clock=time.monotonic):
+        self.limit,self.clock,self.spent,self.started=seconds,clock,0.,None
+
+    def elapsed(self):return self.spent+(self.clock()-self.started if self.started is not None else 0.)
+
+    def check(self):
+        if self.elapsed()>=self.limit:raise TimeoutError('One-hour active early diagnostic budget exhausted')
+
+    def start(self):
+        self.check()
+        if self.started is not None:raise ValueError('Diagnostic time budget already running')
+        self.started=self.clock()
+
+    def pause(self):
+        if self.started is not None:self.spent=self.elapsed();self.started=None
+
+
 def numeric_checkpoint(training):
     rows=sorted((p for p in (Path(training)/'model/checkpoints').iterdir()
         if p.is_dir() and p.name.isdecimal()),key=lambda p:int(p.name))
@@ -119,7 +138,7 @@ def run(root,folder,training,snapshot_copy=None):
     signal.signal(signal.SIGTERM,stop)
     with (root/'diagnostics/live-room.lock').open('a') as lease:
         fcntl.flock(lease,fcntl.LOCK_EX|fcntl.LOCK_NB)
-        deadline=time.monotonic()+3600;pressured=False
+        budget=ActiveTrialBudget();pressured=False
         try:
             save(state='preparing')
             # Data copy and proposal construction are read-only on live inputs.
@@ -133,10 +152,10 @@ def run(root,folder,training,snapshot_copy=None):
             while True:
                 if stopping or (folder/'pause.request').exists():raise InterruptedError('Early diagnostic paused')
                 if not root.parent.is_mount():return
-                if time.monotonic()>deadline:raise TimeoutError('One-hour early diagnostic budget exhausted')
+                budget.check()
                 available=memory()
                 if not can_start(available,pressured):
-                    save(state='resource_wait',memory=available);time.sleep(2);continue
+                    save(state='resource_wait',memory=available,active_seconds=budget.elapsed());time.sleep(2);continue
                 output=folder/('trial-retry' if pressured else 'trial')
                 spec=dict(root=str(vision),model=str(folder/'model'),profile=str(folder/'handoff.json'),
                     seed=seed,output=str(output),stop=str(folder/'pause.request'))
@@ -147,16 +166,18 @@ def run(root,folder,training,snapshot_copy=None):
                 with (folder/'worker.log').open('ab') as log:
                     child=subprocess.Popen([sys.executable,'-m','simulator.room_validation','trial',str(folder/'request.json')],
                         env=env,stdout=log,stderr=log,start_new_session=True)
+                budget.start()
                 save(state='running',trial=str(output),child_pid=child.pid,memory=available)
                 exhausted=False
                 while child.poll() is None:
                     available=memory()
                     if stopping or (folder/'pause.request').exists():raise InterruptedError('Early diagnostic paused')
-                    if time.monotonic()>deadline:raise TimeoutError('One-hour early diagnostic budget exhausted')
+                    budget.check()
                     if available['free_percent']<15:
-                        stop_owned(child);exhausted=True;save(state='resource_wait',memory=available,
+                        stop_owned(child);budget.pause();exhausted=True;save(state='resource_wait',memory=available,active_seconds=budget.elapsed(),
                             reason='Only diagnostic processes stopped to preserve the active learner');break
                     time.sleep(.5)
+                budget.pause()
                 if exhausted:
                     if pressured:raise InterruptedError('Two resource-limited diagnostic attempts retained; learner untouched')
                     pressured=True;continue
@@ -166,7 +187,8 @@ def run(root,folder,training,snapshot_copy=None):
                     reason=result.get('reason'),memory=memory())
                 return
         except Exception as error:
-            save(state='paused' if isinstance(error,InterruptedError) else 'failed',reason=str(error));raise
+            budget.pause()
+            save(state='paused' if isinstance(error,InterruptedError) else 'failed',reason=str(error),active_seconds=budget.elapsed());raise
         finally:
             if child is not None:
                 # A private vision child can outlive a normally finished trial.

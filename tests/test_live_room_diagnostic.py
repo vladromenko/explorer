@@ -8,6 +8,16 @@ from simulator import live_room_diagnostic as diagnostic
 from simulator.learning import write_json
 
 
+def test_memory_wait_does_not_spend_the_active_trial_budget():
+    now=[0.];budget=diagnostic.ActiveTrialBudget(seconds=3600,clock=lambda:now[0])
+    now[0]=7200.;budget.check();assert budget.elapsed()==0.
+    budget.start();now[0]+=900.;budget.pause()
+    now[0]+=20000.;budget.check();assert budget.elapsed()==900.
+    budget.start();now[0]+=2700.
+    with pytest.raises(TimeoutError,match='active early diagnostic'):budget.check()
+    budget.pause();assert budget.elapsed()==3600.
+
+
 def checkpoint(root,name):
     p=root/'model/checkpoints'/name/'pretrained_model';p.mkdir(parents=True)
     for n in ('model.safetensors','config.json','policy_preprocessor.json','policy_postprocessor.json'):
