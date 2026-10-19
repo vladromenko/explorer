@@ -30,6 +30,19 @@ class CameraViewPlan:
     hand_tilt_change_deg: float | None = None
 
 
+def observed_rim_aims(target):
+    """Frame a measured rim below the optical axis of a high wrist camera.
+
+    A framing direction is not an object position or opening proof. All
+    reach, height and independent RGB-D confirmation gates remain required.
+    """
+    center=np.asarray(target['center'],float);lo=np.asarray(target['bounds_min'],float);hi=np.asarray(target['bounds_max'],float)
+    if center.shape!=(3,) or lo.shape!=(3,) or hi.shape!=(3,) or not np.isfinite(np.r_[center,lo,hi]).all() or np.any(hi<=lo):
+        raise CameraViewUnavailable('Invalid observed rim framing extent')
+    framing=np.r_[center[:2],hi[2]+.14]
+    return [(framing.copy(),distance) for distance in (.45,.50,.40)]+[(center.copy(),.45)]
+
+
 def check_observed_box_path(env,command,obstacle,*,check=lambda:None,base_target=None):
     """Conservative own-geometry sweep outside one measured occupied extent.
 

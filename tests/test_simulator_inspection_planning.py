@@ -27,6 +27,30 @@ def test_unreachable_camera_height_is_not_accepted_as_an_approximate_view():
     finally:env.close()
 
 
+def test_observed_rim_framing_keeps_high_camera_and_real_rim_in_image():
+    import mujoco,math
+    from simulator.inspection_planning import observed_rim_aims
+    from simulator.explorer_model import servo_to_joint
+    env=ExplorerEnv(render=False)
+    target=dict(center=[.534,0.,.1945],bounds_min=[.404,-.08,.0894],bounds_max=[.664,.08,.2996])
+    try:
+        minimum=target['bounds_max'][2]+.14
+        with pytest.raises(CameraViewUnavailable):
+            plan_camera_view(env,target['center'],gripper=30.,distance_m=.45,min_camera_height_m=minimum)
+        aim,distance=observed_rim_aims(target)[0]
+        plan=plan_camera_view(env,aim,gripper=30.,distance_m=distance,min_camera_height_m=minimum)
+        assert plan.position[2]>=minimum-.008 and plan.lateral_error_m<=.04 and plan.range_error_m<=.04
+        scratch=mujoco.MjData(env.model);scratch.qpos[:]=env.data.qpos
+        scratch.qpos[env.joint_q]=servo_to_joint(plan.command)
+        mujoco.mj_kinematics(env.model,scratch);mujoco.mj_camlight(env.model,scratch)
+        camera=env.model.camera('wrist_depth').id
+        rim=np.r_[target['center'][:2],target['bounds_max'][2]]
+        optical=scratch.cam_xmat[camera].reshape(3,3).T@(rim-scratch.cam_xpos[camera])
+        assert optical[2]<-.035
+        assert abs(optical[1]/optical[2])<math.tan(math.radians(float(env.model.cam_fovy[camera]))/2)
+    finally:env.close()
+
+
 def test_optimizer_success_cannot_hide_wrong_pose(monkeypatch):
     env=ExplorerEnv(render=False)
     monkeypatch.setattr('scipy.optimize.least_squares',lambda fun,start,**kwargs:

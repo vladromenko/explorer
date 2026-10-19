@@ -78,7 +78,7 @@ def test_partial_hypothesis_only_guides_next_camera_view(tmp_path):
         assert result['outcome']=='unknown'
         assert port.destination is None
         assert len(calls)==2
-        np.testing.assert_allclose(calls[1][0][0],hint['center'])
+        np.testing.assert_allclose(calls[1][0][0],np.r_[hint['center'][:2],hint['bounds_max'][2]+.14])
     finally:port.close()
 
 
@@ -103,7 +103,8 @@ def test_repeated_hint_does_not_consume_budget_for_distinct_views(tmp_path):
         assert result['outcome']=='unknown'
         assert len(calls)==3
         assert result['evidence']['views']==3
-        np.testing.assert_allclose(calls[2][0][0],[.4,-.24,.15])
+        np.testing.assert_allclose(calls[2][0][0],calls[1][0][0])
+        assert abs(calls[2][1]['distance_m']-calls[1][1]['distance_m'])>=.025
     finally:port.close()
 
 

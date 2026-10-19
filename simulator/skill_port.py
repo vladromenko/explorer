@@ -246,7 +246,9 @@ class SimulatorSkillPort:
                 forward_z=-float(self.env.data.cam_xmat[camera].reshape(3,3)[2,2])
                 for distance in (.65,.70,.60,.75):
                     aims.append((np.r_[center[:2],current_height+forward_z*distance],distance))
-            else:aims.append((center,.45))
+            else:
+                from .inspection_planning import observed_rim_aims
+                aims.extend(observed_rim_aims(self.destination))
         for forward,side,height in ((.40,.24,.15),(.40,-.24,.15),(.50,.35,.20),
                                     (.50,-.35,.20),(.35,.28,.25),(.35,-.28,.25)):
             aims.append((np.r_[pose[:2]+forward*direction+side*lateral,height],.40))
@@ -335,7 +337,10 @@ class SimulatorSkillPort:
                     camera=self.env.model.camera('wrist_depth').id
                     forward_z=-float(self.env.data.cam_xmat[camera].reshape(3,3)[2,2])
                     point[2]=float(self.env.data.cam_xpos[camera,2])+forward_z*.55
-                aims.insert(0,(point,.55 if self.before_hold is not None else .45))
+                if self.before_hold is not None:aims.insert(0,(point,.55))
+                else:
+                    from .inspection_planning import observed_rim_aims
+                    aims[:0]=observed_rim_aims(hint)
         self.surveys.append(dict(outcome='unknown',views=notes))
         needs_new_view=self.before_hold is not None and new_complete==0
         reason=('Не найден обзор корзины с сохранением удержания; нужна другая точка обзора'
