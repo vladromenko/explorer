@@ -20,17 +20,27 @@ def main():
     with lock_path.open('a') as lease:
         try:fcntl.flock(lease,fcntl.LOCK_EX|fcntl.LOCK_NB)
         except BlockingIOError:return
+        started=time.monotonic()
+        def stage(phase,**values):
+            value=dict(pid=os.getpid(),phase=phase,at=time.time(),elapsed_s=time.monotonic()-started,**values)
+            temporary=root/'maintenance/vision-startup.pending.json'
+            temporary.write_text(json.dumps(value));temporary.replace(root/'maintenance/vision-startup.json')
+            print(json.dumps(value),flush=True)
+        stage('importing')
         from PIL import Image
         import torch
         from transformers import AutoModelForZeroShotObjectDetection,AutoProcessor
         lock=json.loads((Path(__file__).resolve().parents[1]/'config/grounding-model.json').read_text())
         model_path=(root/'models/grounding-dino-tiny').resolve()
+        stage('verifying_model')
         for name,digest in lock['files'].items():
             with (model_path/name).open('rb') as handle:actual=hashlib.file_digest(handle,'sha256').hexdigest()
             if actual!=digest:raise ValueError('Grounding model checksum mismatch: '+name)
         torch.set_num_threads(2)
+        stage('loading_processor')
         processor=AutoProcessor.from_pretrained(model_path,local_files_only=True)
         processor.image_processor.size={'shortest_edge':640,'longest_edge':960}
+        stage('loading_model')
         model=AutoModelForZeroShotObjectDetection.from_pretrained(model_path,local_files_only=True).eval()
         model.config.disable_custom_kernels=True
         from simulator.vision_backend import PinnedDetectorBackend
@@ -38,6 +48,7 @@ def main():
         endpoint.unlink(missing_ok=True)
         with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as server:
             server.bind(str(endpoint));os.chmod(endpoint,0o600);server.listen(16);server.settimeout(20.)
+            stage('ready',ready=True)
             last=time.monotonic()
             try:
                 while time.monotonic()-last<300:

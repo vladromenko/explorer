@@ -263,7 +263,8 @@ class Runtime:
         self.language = LocalLanguageModel(self.data_root)
         self.latest_job_folder = None
         self.model_info = None
-        self.latest_model()
+        if initialize:
+            self.latest_model()
         packages = sorted((p for p in (self.data_root / 'exports').glob('*.tar.gz') if not p.name.startswith(('observed-skill-','room-cycle-'))), key=lambda path: path.stat().st_mtime, reverse=True)
         self.latest_package = packages[0] if packages else None
         self.tasks = queue.Queue()
@@ -350,11 +351,11 @@ class Runtime:
                 self.log_file.flush()
 
     def reset(self, command: Reset):
+        task_spec(command.task_id)
+        self.latest_model(command.task_id)
         with self.lock:
             if self.record_file:
                 self.stop_recording('unknown')
-            task_spec(command.task_id)
-            self.latest_model(command.task_id)
             self.observation, self.info = self.env.reset(seed=command.seed, options={'difficulty': command.difficulty, 'task_id':command.task_id})
             self.command = Control()
             self.command_at = 0.
@@ -369,6 +370,10 @@ class Runtime:
             self.log(f'Сцена начата заново · seed {command.seed}')
 
     def on_owner(self, callback):
+        if self.thread and not self.ready.is_set():
+            raise HTTPException(503, 'Физическая сцена ещё загружается; обучение имеет отдельный статус')
+        if self.initialization_error:
+            raise HTTPException(503, 'Физическая сцена недоступна: '+str(self.initialization_error))
         if not self.thread or threading.current_thread() is self.thread:
             return callback()
         future = Future()
@@ -388,12 +393,12 @@ class Runtime:
                 self.capture_images()
                 self.frame_at = time.monotonic()
 
-    def start(self):
+    def start(self, wait=True):
         self.thread = threading.Thread(target=self.loop, name='explorer-simulation', daemon=True)
         self.thread.start()
-        if not self.ready.wait(timeout=30):
+        if wait and not self.ready.wait(timeout=30):
             raise RuntimeError('Физическая модель не запустилась за 30 секунд')
-        if self.initialization_error:
+        if wait and self.initialization_error:
             raise RuntimeError(f'Не удалось создать сцену: {self.initialization_error}')
 
     def close(self):
@@ -496,6 +501,8 @@ class Runtime:
             self.images['depth'] = output.getvalue()
 
     def control(self, command: Control):
+        if self.env is None or self.initialization_error:
+            raise HTTPException(503, 'Дождитесь готовности физической сцены')
         with self.lock:
             if self.job_thread and self.job_thread.is_alive() and self.jobs[-1]['kind'] in {'trials', 'validate', 'skill_trial','skill_train'}:
                 return
@@ -572,6 +579,9 @@ class Runtime:
             snapshot['skill_workshops']=list_workshops(self.data_root)
             snapshot['skill_trainings']=list_trainings(self.data_root)
             snapshot['learning_status']=learning_status(self.data_root,snapshot)
+            snapshot['simulation_initialization']={
+                'state':'failed' if self.initialization_error else 'ready' if self.ready.is_set() or not self.thread else 'loading',
+                'error':str(self.initialization_error) if self.initialization_error else None}
             from .neural_recovery import current as recovery_current
             recovery=recovery_current(self.data_root)
             if recovery and recovery.get('alive') and recovery['state'] in ('running','queued'):
@@ -1138,7 +1148,7 @@ def create_app(env_factory=None, data_root=DATA_ROOT, learning_module=None, star
         runtime = Runtime(env_factory or default_env, Path(data_root), learning_module, initialize=not start_loop)
         app.state.runtime = runtime
         if start_loop:
-            runtime.start()
+            runtime.start(wait=False)
         try:
             yield
         finally:

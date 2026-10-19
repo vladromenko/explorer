@@ -58,7 +58,16 @@ def snapshot(training,destination,previous=None):
         if manifest(previous)!=before or manifest(destination)!=before:
             raise ValueError('Prior frozen diagnostic snapshot changed')
         read_bundle(destination)
-        return int(Path(json.loads((destination/'early-diagnostic.json').read_text())['source']).parent.name)
+        receipt=destination/'early-diagnostic.json'
+        if receipt.exists():
+            return int(Path(json.loads(receipt.read_text())['source']).parent.name)
+        job=json.loads((destination/'job.json').read_text())
+        relative=job.get('source_checkpoint_relative') or job.get('checkpoint_relative','')
+        step=Path(relative).parent.name
+        if not step.isdecimal():raise ValueError('Frozen bundle has no numeric checkpoint provenance')
+        write_json(receipt,dict(source=str(previous/relative),files=before,
+            source_training_untouched=True,diagnostic_only=True,simulation_qualified=False))
+        return int(step)
     from .checkpoint_experiment import stage_candidate
     training,destination=Path(training),Path(destination);source=numeric_checkpoint(training)
     before=manifest(source)
@@ -124,7 +133,7 @@ def diagnostic_seed(root,model,snapshot_copy=None):
     return seed
 
 
-def run(root,folder,training,snapshot_copy=None):
+def run(root,folder,training,snapshot_copy=None,model_source=None,scene_seed=None):
     root,folder,training=Path(root),Path(folder),Path(training)
     if not root.parent.is_mount():raise ValueError('ExplorerSim disk is not mounted')
     folder.mkdir(parents=True,exist_ok=True)
@@ -142,10 +151,13 @@ def run(root,folder,training,snapshot_copy=None):
         try:
             save(state='preparing')
             # Data copy and proposal construction are read-only on live inputs.
-            step=snapshot(training,folder/'model',snapshot_copy)
+            step=snapshot(training,folder/'model',model_source or snapshot_copy)
             from .room_policy import build_profile
             build_profile(folder/'model',root,folder/'handoff.json')
-            seed=diagnostic_seed(root,folder/'model',snapshot_copy)
+            seed=diagnostic_seed(root,folder/'model',snapshot_copy) if scene_seed is None else scene_seed
+            from .neural_recovery import training_seeds
+            if type(seed) is not int or seed in training_seeds(folder/'model'):
+                raise ValueError('Diagnostic scene overlaps training or has invalid identity')
             vision=private_vision_root(root,folder);vision.mkdir(parents=True)
             (vision/'models').symlink_to(root/'models',target_is_directory=True)
             save(checkpoint_step=step,seed=seed,original_training_state=json.loads((training/'job.json').read_text())['state'])
@@ -156,6 +168,11 @@ def run(root,folder,training,snapshot_copy=None):
                 available=memory()
                 if not can_start(available,pressured):
                     save(state='resource_wait',memory=available,active_seconds=budget.elapsed());time.sleep(2);continue
+                from .semantic_cache import ensure_started
+                save(state='starting_vision',memory=available,active_seconds=budget.elapsed())
+                def startup_cancelled():
+                    return stopping or (folder/'pause.request').exists() or not root.parent.is_mount() or memory()['free_percent']<15
+                ensure_started(vision,cancelled=startup_cancelled)
                 output=folder/('trial-retry' if pressured else 'trial')
                 spec=dict(root=str(vision),model=str(folder/'model'),profile=str(folder/'handoff.json'),
                     seed=seed,output=str(output),stop=str(folder/'pause.request'))
@@ -190,10 +207,10 @@ def run(root,folder,training,snapshot_copy=None):
             budget.pause()
             save(state='paused' if isinstance(error,InterruptedError) else 'failed',reason=str(error),active_seconds=budget.elapsed());raise
         finally:
+            from .semantic_cache import stop_servers
+            if vision is not None:stop_servers(vision)
             if child is not None:
                 # A private vision child can outlive a normally finished trial.
-                from .semantic_cache import stop_servers
-                if vision is not None:stop_servers(vision)
                 if child.poll() is None:stop_owned(child)
 
 
@@ -201,4 +218,5 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser();parser.add_argument('--root',type=Path,required=True)
     parser.add_argument('--folder',type=Path,required=True);parser.add_argument('--training',type=Path,required=True)
     parser.add_argument('--snapshot-copy',type=Path)
-    args=parser.parse_args();run(args.root,args.folder,args.training,args.snapshot_copy)
+    parser.add_argument('--model-source',type=Path);parser.add_argument('--scene-seed',type=int)
+    args=parser.parse_args();run(args.root,args.folder,args.training,args.snapshot_copy,args.model_source,args.scene_seed)

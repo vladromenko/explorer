@@ -7,6 +7,32 @@ from types import SimpleNamespace
 import pytest
 
 
+def test_cold_start_is_separate_from_inference_and_records_no_false_result(tmp_path,monkeypatch):
+    from simulator import semantic_cache as cache
+    clock=[0.];calls=[]
+    class Child:
+        def poll(self):return None
+    def request(endpoint,message,**kwargs):
+        calls.append((message,kwargs['timeout']))
+        if clock[0]<121:raise FileNotFoundError()
+        return dict(ready=True)
+    monkeypatch.setattr(cache,'request',request)
+    monkeypatch.setattr(cache.subprocess,'Popen',lambda *a,**k:Child())
+    monkeypatch.setattr(cache.time,'monotonic',lambda:clock[0])
+    monkeypatch.setattr(cache.time,'sleep',lambda seconds:clock.__setitem__(0,clock[0]+61))
+    assert cache.ensure_started(tmp_path).parent==tmp_path/'maintenance'
+    assert all(message==dict(kind='ping') and timeout==5 for message,timeout in calls)
+    assert not list(tmp_path.rglob('result.json'))
+
+
+def test_zero_exit_before_readiness_is_a_startup_failure(tmp_path,monkeypatch):
+    from simulator import semantic_cache as cache
+    monkeypatch.setattr(cache,'request',lambda *a,**k:(_ for _ in ()).throw(FileNotFoundError()))
+    monkeypatch.setattr(cache.subprocess,'Popen',lambda *a,**k:SimpleNamespace(poll=lambda:0))
+    monkeypatch.setattr(cache.time,'sleep',lambda _:None)
+    with pytest.raises(RuntimeError,match='exited before readiness'):cache.ensure_started(tmp_path)
+
+
 def test_vision_and_compute_failures_are_not_misdiagnosed_as_bad_robot_motion():
     from simulator.failure_repair import diagnose_report,infrastructure_failure
     for reason,kind in [('TimeoutError: Модель зрения не ответила за 60 секунд','vision_timeout'),

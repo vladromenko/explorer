@@ -53,6 +53,36 @@ def auth(connection):
     return {'X-Explorer-Sim-Token': connection.get('/api/session').json()['token']}
 
 
+def test_status_survives_slow_scene_startup_and_refuses_early_motion(tmp_path):
+    import threading
+    release=threading.Event()
+    def delayed():
+        assert release.wait(4)
+        return FakeEnv()
+    try:
+        with TestClient(create_app(env_factory=delayed,data_root=tmp_path,start_loop=True),
+                        base_url='http://127.0.0.1:8766') as connection:
+            headers=auth(connection)
+            value=connection.get('/api/state?compact=true').json()
+            assert value['simulation_initialization']['state']=='loading'
+            assert 'learning_status' in value
+            assert connection.post('/api/control',json={'base':[.1,0,0]},headers=headers).status_code==503
+            release.set()
+            assert connection.app.state.runtime.ready.wait(3)
+            assert connection.get('/api/state').json()['simulation_initialization']['state']=='ready'
+    finally:release.set()
+
+
+def test_failed_scene_keeps_status_and_stop_available(tmp_path):
+    def failed():raise ValueError('measured fixture failure')
+    with TestClient(create_app(env_factory=failed,data_root=tmp_path,start_loop=True),
+                    base_url='http://127.0.0.1:8766') as connection:
+        assert connection.app.state.runtime.ready.wait(2)
+        value=connection.get('/api/state').json()
+        assert value['simulation_initialization']==dict(state='failed',error='measured fixture failure')
+        assert connection.post('/api/stop-manual',json={},headers=auth(connection)).status_code==200
+
+
 def test_maintenance_cancel_is_owned_and_operator_cancel_takes_precedence(tmp_path):
     with client(tmp_path) as connection:
         headers=auth(connection);runtime=connection.app.state.runtime

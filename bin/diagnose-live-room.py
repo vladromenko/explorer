@@ -24,7 +24,9 @@ def validate_repair_retry(previous,state,revision,training):
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--training',default='1bd683a1d22b')
     parser.add_argument('--root',type=Path,default=Path('/Volumes/ExplorerSim/ExplorerSim'))
-    parser.add_argument('--status',action='store_true');parser.add_argument('--retry-repaired',action='store_true');args=parser.parse_args()
+    parser.add_argument('--status',action='store_true');parser.add_argument('--retry-repaired',action='store_true')
+    parser.add_argument('--model',help='Finished immutable model bundle to test instead of the previous snapshot')
+    args=parser.parse_args()
     root=args.root
     if not root.parent.is_mount():raise ValueError('Connect the existing ExplorerSim disk')
     marker=root/'diagnostics/early-room-current.json'
@@ -33,6 +35,17 @@ def main():
         path=Path(value['folder'])/'state.json' if 'folder' in value else None
         print(json.dumps(json.loads(path.read_text()) if path and path.exists() else value,ensure_ascii=False));return
     if not re.fullmatch('[0-9a-f]{12}',args.training):raise ValueError('Invalid training identity')
+    model_source=None
+    if args.model:
+        from simulator.learning import read_bundle
+        if not re.fullmatch('[0-9a-f]{12}',args.model):raise ValueError('Invalid model identity')
+        model_source=root/'runs'/args.model
+        read_bundle(model_source)
+        job=json.loads((model_source/'job.json').read_text())
+        if job.get('state') not in ('validated_simulation','trained_simulation_unvalidated'):
+            raise ValueError('Only a finished immutable bundle can be evaluated')
+        if job.get('source_training_job',args.training)!=args.training:
+            raise ValueError('Model lineage differs from the diagnostic training identity')
     marker.parent.mkdir(exist_ok=True)
     with (marker.parent/'early-room-launch.lock').open('a') as lease:
         fcntl.flock(lease,fcntl.LOCK_EX|fcntl.LOCK_NB)
@@ -55,6 +68,7 @@ def main():
             command=[sys.executable,'-m','simulator.live_room_diagnostic',
                 '--root',str(root),'--folder',str(folder),'--training',str(root/'runs'/args.training)]
             if previous:command+=['--snapshot-copy',str(Path(previous['folder'])/'model')]
+            if model_source:command+=['--model-source',str(model_source)]
             child=subprocess.Popen(command,
                 cwd=source,env=env,stdout=log,stderr=log,start_new_session=True)
         value=dict(folder=str(folder),pid=child.pid,source=str(source),revision=revision,

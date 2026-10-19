@@ -33,22 +33,38 @@ def request(endpoint,message,*,cancelled=lambda:False,timeout=60.):
     return reply
 
 
-def infer(root,folder,*,cancelled=lambda:False):
+def ensure_started(root,*,cancelled=lambda:False,startup_timeout=600.):
+    """Cold imports/model hashes are startup, never a robot inference result.
+
+    Keep the inference deadline separate. A finite startup allowance is useful
+    when dataset verification competes for the external disk; record its phase
+    so a quiet child cannot be mistaken for a running detector.
+    """
     from .semantic_vision import vision_python
-    root=Path(root);folder=Path(folder);socket_path,script=endpoint(root)
-    socket_path.parent.mkdir(exist_ok=True);spawned=None;deadline=time.monotonic()+120.
+    root=Path(root);socket_path,script=endpoint(root)
+    socket_path.parent.mkdir(exist_ok=True);spawned=None;started=time.monotonic()
     while True:
         if cancelled():raise InterruptedError('Распознавание остановлено')
-        try:return request(socket_path,dict(kind='infer',folder=str(folder.resolve())),cancelled=cancelled,timeout=60.)
+        try:
+            reply=request(socket_path,dict(kind='ping'),cancelled=cancelled,timeout=5.)
+            if reply.get('ready') is not True:raise RuntimeError('Vision service did not confirm readiness')
+            return socket_path
         except (FileNotFoundError,ConnectionRefusedError):
-            if time.monotonic()>deadline:raise TimeoutError('Persistent vision service did not start')
+            if spawned is not None and spawned.poll() is not None:
+                raise RuntimeError('Persistent vision service exited before readiness; vision-cache.log')
+            if time.monotonic()-started>startup_timeout:
+                raise TimeoutError('Persistent vision service did not start; see vision-startup.json and vision-cache.log')
             if spawned is None:
                 with (root/'maintenance/vision-cache.log').open('ab') as log:
                     spawned=subprocess.Popen([str(vision_python(root)),str(script),str(root),str(socket_path)],
                         stdout=log,stderr=log,start_new_session=True,
                         env=dict(os.environ,HF_HUB_OFFLINE='1',HF_HUB_DISABLE_TELEMETRY='1',OMP_NUM_THREADS='2'))
-            elif spawned.poll() not in (None,0):raise RuntimeError('Persistent vision service failed; vision-cache.log')
             time.sleep(.1)
+
+
+def infer(root,folder,*,cancelled=lambda:False):
+    socket_path=ensure_started(root,cancelled=cancelled)
+    return request(socket_path,dict(kind='infer',folder=str(Path(folder).resolve())),cancelled=cancelled,timeout=60.)
 
 
 def stop_servers(root):

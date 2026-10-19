@@ -57,6 +57,18 @@ def test_single_checkpoint_may_still_be_writing(tmp_path):
     with pytest.raises(ValueError,match='two numeric'):diagnostic.numeric_checkpoint(tmp_path)
 
 
+def test_finished_selected_bundle_retains_actual_checkpoint_not_job_end_step(tmp_path,monkeypatch):
+    source=tmp_path/'selected';source.mkdir()
+    diagnostic.write_json(source/'job.json',dict(source_checkpoint_relative='model/checkpoints/029000/pretrained_model',
+                                                steps_completed=133577))
+    monkeypatch.setattr(diagnostic,'read_bundle',lambda target:({},target))
+    before=diagnostic.manifest(source)
+    target=tmp_path/'snapshot'
+    assert diagnostic.snapshot(tmp_path/'unused-training',target,previous=source)==29000
+    assert diagnostic.manifest(source)==before
+    assert json.loads((target/'early-diagnostic.json').read_text())['simulation_qualified'] is False
+
+
 def test_low_memory_never_admits_a_side_diagnostic():
     assert not diagnostic.can_start(dict(free_percent=24.9,available_gb=6.))
     assert not diagnostic.can_start(dict(free_percent=30.,available_gb=5.))
