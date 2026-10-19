@@ -237,6 +237,25 @@ class RoomCleanup:
             raise ValueError('Observed '+kind+' is unconfirmed; motion is stopped')
         self.event('verify_'+kind,result);return result
 
+    def manipulation_observation(self,kind):
+        """Remembered search targets cannot substitute for a current handoff."""
+        self.targets.pop(kind,None);self.seen.pop(kind,None)
+        for attempt in range(4):
+            value=self.observe()
+            visible=[item for item in value.get('objects',[]) if item.get('kind')==kind]
+            target=self.targets.get(kind)
+            current=(len(visible)==1 and target is not None
+                and target['frame_id']==visible[0]['frame_id']
+                and target['captured_at']==value['captured_at']
+                and target['base_revision']==self.base_revision
+                and self.clock()-target['captured_at']<=self.limits.target_max_age_s)
+            if current:return target
+            if not visible:
+                self.targets.pop(kind,None);self.seen.pop(kind,None)
+            self.event('manipulation_observation_pending',dict(kind=kind,attempt=attempt+1,
+                visible=len(visible),remembered_target_admitted=False))
+        raise ViewUnavailable('Two fresh consecutive observations missing after policy preparation: '+kind)
+
     def manipulate(self,phase,target):
         self.check()
         if target['base_revision']!=self.base_revision or self.clock()-target['captured_at']>self.limits.target_max_age_s:
@@ -260,13 +279,11 @@ class RoomCleanup:
             self.port.begin(check=self.check);self.search()
             source=self.align('sock');self.view('prepare_policy','pick')
             # Camera/arm preparation may change the view even without a drive.
-            self.targets.pop('sock',None);self.observe();self.observe();source=self.targets.get('sock')
-            if source is None:raise ValueError('Sock lost during policy preparation')
+            source=self.manipulation_observation('sock')
             self.manipulate('pick',source);self.verify('hold');self.held=True
             basket=self.align('basket',held=True)
             self.view('prepare_policy','place',held=True)
-            self.targets.pop('basket',None);self.observe();self.observe();basket=self.targets.get('basket')
-            if basket is None:raise ValueError('Basket lost during policy preparation')
+            basket=self.manipulation_observation('basket')
             self.manipulate('place',basket);self.verify('place');self.held=False
             result.update(state='succeeded',placed_verified=True,policy_sha256=self.policy_sha256)
         except Exception as error:result.update(reason=str(error),cancelled=isinstance(error,InterruptedError))

@@ -54,6 +54,39 @@ class Port:
 def run(port):return RoomCleanup(port,lambda _:None,clock=port.clock).run()
 
 
+def test_policy_handoff_reacquires_two_current_frames_after_a_missing_target():
+    p=Port();original=p.observe;calls=0
+    def observe():
+        nonlocal calls
+        calls+=1;value=original()
+        if calls==2:
+            value['objects']=[item for item in value['objects'] if item['kind']!='sock']
+            p.clock.now+=3.  # the first confirmation expires during this call
+            value['captured_at']=p.clock()
+        return value
+    p.observe=observe;coordinator=RoomCleanup(p,lambda _:None,clock=p.clock)
+    coordinator.scope=p.scope();coordinator.deadline=p.clock()+100
+    target=coordinator.manipulation_observation('sock')
+    assert calls==4 and target['frame_id']=='4'
+    assert p.clock()-target['captured_at']<coordinator.limits.target_max_age_s
+    assert coordinator.seen['sock']['frame_id']=='4' and not p.phases
+
+
+def test_missing_handoff_target_cannot_reuse_a_single_old_confirmation():
+    from src.room_cleanup import ViewUnavailable
+    p=Port();original=p.observe;calls=0
+    def observe():
+        nonlocal calls
+        calls+=1;value=original()
+        if calls>1:value['objects']=[item for item in value['objects'] if item['kind']!='sock']
+        return value
+    p.observe=observe;coordinator=RoomCleanup(p,lambda _:None,clock=p.clock)
+    coordinator.scope=p.scope();coordinator.deadline=p.clock()+100
+    with pytest.raises(ViewUnavailable,match='consecutive'):coordinator.manipulation_observation('sock')
+    assert calls==4 and 'sock' not in coordinator.targets and 'sock' not in coordinator.seen
+    assert not p.phases
+
+
 @pytest.mark.parametrize('positions',[
     {'sock':[1.,-.6,.02],'basket':[-1.,.8,.30]},
     {'sock':[-1.2,.7,.02],'basket':[1.,-.9,.12]}])
