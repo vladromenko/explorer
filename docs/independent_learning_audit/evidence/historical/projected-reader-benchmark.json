@@ -1,0 +1,28 @@
+{
+  "kind": "real_cached_action_query_benchmark",
+  "arrow": "/Volumes/ExplorerSim/ExplorerSim/runs/d4f59a63085b/data/hf-learning-cache/datasets/parquet/default-d3e680bbb96842b7/0.0.0/ec3958b52035e87929642b609b5a781870321434b151a14fbe8fd5a26ff494bb/parquet-train-00000-of-00026.arrow",
+  "at": 1792431510.744568,
+  "results": {
+    "baseline": {
+      "queries": 50,
+      "future_rgb_decodes": 1000,
+      "total_s": 0.7808247071807273,
+      "p50_s": 0.01632154150865972,
+      "p95_s": 0.018827885919017715
+    },
+    "projected": {
+      "queries": 50,
+      "future_rgb_decodes": 0,
+      "total_s": 0.0031315437518060207,
+      "p50_s": 6.158300675451756e-05,
+      "p95_s": 6.763766868971288e-05
+    }
+  },
+  "action_tensors_bit_identical": true,
+  "source_cache_unchanged": true,
+  "speedup": 249.34178445707835,
+  "applies_to": "future action column queries, not complete training step throughput",
+  "training_performed": false,
+  "simulation_qualified": false,
+  "robot_verified": false
+}

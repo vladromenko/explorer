@@ -1,0 +1,841 @@
+{
+  "date": "2026-10-12",
+  "scope": "Mac simulator sock curriculum; no robot connection",
+  "user_basket": {
+    "shape": "round",
+    "diameter_m": 0.25,
+    "height_m": 0.3,
+    "dimensions_status": "owner approximate"
+  },
+  "scene_profile": "sock_variants_v1",
+  "tests": {
+    "passed": 82
+  },
+  "readiness": {
+    "ready": true,
+    "blocked_by": [],
+    "versions": {
+      "lerobot": "0.6.1",
+      "torch": "2.11.0",
+      "torchvision": "0.26.0"
+    },
+    "device": "mps",
+    "free_gib": 889.4,
+    "backbone_cached": true,
+    "recommended_attempts": 100,
+    "recommended_steps": 10000,
+    "hours": 8,
+    "extra_model_download_required": false,
+    "physical_success_guaranteed": false
+  },
+  "teacher_trials": [
+    {
+      "run": "domain-final-preflight-20261012",
+      "id": "teacher-4",
+      "success": false,
+      "error": null,
+      "frames": 831,
+      "outcome": {
+        "id": "sock_basket",
+        "phase": "release_retreat",
+        "grasp_contact": false,
+        "finger_contacts": [
+          false,
+          true
+        ],
+        "lifted": true,
+        "placed": false,
+        "success": false,
+        "lift_hold_s": 0.0
+      },
+      "domain_variation": {
+        "profile": "sock_variants_v1",
+        "seed": 4,
+        "parameters": {
+          "sock": {
+            "length_m": 0.19544448844578943,
+            "width_m": 0.05278318882035904,
+            "mass_kg": 0.034524874114154086,
+            "friction": 0.9242508071686807,
+            "young_pa": 11644.134991970177,
+            "yaw_rad": -0.08622863092003184,
+            "initial_thickness_m": 0.010811407241914844
+          },
+          "bin": {
+            "height_m": 0.3,
+            "shape": "round",
+            "inner_half_size_m": [
+              0.125,
+              0.125
+            ]
+          }
+        },
+        "sock_position": [
+          0.32351531206107986,
+          0.028155055580119187,
+          0.015
+        ],
+        "bin_position": [
+          0.44908614095356825,
+          0.3222198511091765,
+          0.0
+        ],
+        "sock_rgb": [
+          0.691710038158247,
+          0.838114749948341,
+          0.3772943444893216
+        ],
+        "basket_rgb": [
+          0.7313597215897409,
+          0.7074158326592517,
+          0.2566155514571887
+        ],
+        "lighting_scale": 0.9739832275800463,
+        "floor_rgb": [
+          0.30326483384683306,
+          0.36512895657358346,
+          0.2930709284110959
+        ],
+        "parameter_status": "estimated",
+        "unsupported": [
+          "arbitrary folds or knots",
+          "basket rim above 0.30 m",
+          "unseen room layout",
+          "measured real cloth dynamics"
+        ],
+        "enabled": true,
+        "kind": "bounded_geometry_material_appearance_placement"
+      },
+      "physics_outcome_diagnostics": {
+        "inside_fraction": 1.0,
+        "within_height": false,
+        "sock_speed_max_m_s": 0.09482499032918025,
+        "sock_height_bounds_m": [
+          0.3203441344530663,
+          0.4186404979056661
+        ]
+      }
+    },
+    {
+      "run": "domain-final-preflight-20261012",
+      "id": "teacher-14",
+      "success": true,
+      "error": null,
+      "frames": 842,
+      "outcome": {
+        "id": "sock_basket",
+        "phase": "release_retreat",
+        "grasp_contact": false,
+        "finger_contacts": [
+          false,
+          false
+        ],
+        "lifted": true,
+        "placed": true,
+        "success": true,
+        "lift_hold_s": 0.0
+      },
+      "domain_variation": {
+        "profile": "sock_variants_v1",
+        "seed": 14,
+        "parameters": {
+          "sock": {
+            "length_m": 0.18647866551112893,
+            "width_m": 0.04902366667085641,
+            "mass_kg": 0.029054786111641098,
+            "friction": 1.1580356359957782,
+            "young_pa": 11847.904884728989,
+            "yaw_rad": 0.033763889224874694,
+            "initial_thickness_m": 0.01057388053518716
+          },
+          "bin": {
+            "height_m": 0.3,
+            "shape": "round",
+            "inner_half_size_m": [
+              0.125,
+              0.125
+            ]
+          }
+        },
+        "sock_position": [
+          0.3257967150546118,
+          0.01724256520639182,
+          0.015
+        ],
+        "bin_position": [
+          0.43254255676556785,
+          0.33087504170835497,
+          0.0
+        ],
+        "sock_rgb": [
+          0.6520428571718082,
+          0.399069133845956,
+          0.4803868977415926
+        ],
+        "basket_rgb": [
+          0.2872323766581744,
+          0.5401165085083132,
+          0.732770558520404
+        ],
+        "lighting_scale": 0.8344208881261065,
+        "floor_rgb": [
+          0.24033600521395274,
+          0.35181961400619083,
+          0.263364228097351
+        ],
+        "parameter_status": "estimated",
+        "unsupported": [
+          "arbitrary folds or knots",
+          "basket rim above 0.30 m",
+          "unseen room layout",
+          "measured real cloth dynamics"
+        ],
+        "enabled": true,
+        "kind": "bounded_geometry_material_appearance_placement"
+      },
+      "physics_outcome_diagnostics": {
+        "inside_fraction": 1.0,
+        "within_height": true,
+        "sock_speed_max_m_s": 0.0016177427904725623,
+        "sock_height_bounds_m": [
+          0.008968834255841024,
+          0.03355659675956633
+        ]
+      }
+    },
+    {
+      "run": "domain-final-preflight-20261012",
+      "id": "teacher-200",
+      "success": false,
+      "error": null,
+      "frames": 844,
+      "outcome": {
+        "id": "sock_basket",
+        "phase": "release_retreat",
+        "grasp_contact": false,
+        "finger_contacts": [
+          false,
+          true
+        ],
+        "lifted": true,
+        "placed": false,
+        "success": false,
+        "lift_hold_s": 0.0
+      },
+      "domain_variation": {
+        "profile": "sock_variants_v1",
+        "seed": 200,
+        "parameters": {
+          "sock": {
+            "length_m": 0.17174673149433106,
+            "width_m": 0.05659799928448532,
+            "mass_kg": 0.015598033048846037,
+            "friction": 0.9533494027012726,
+            "young_pa": 11440.979895496192,
+            "yaw_rad": 0.03571922264493852,
+            "initial_thickness_m": 0.009161522649888896
+          },
+          "bin": {
+            "height_m": 0.08,
+            "shape": "round",
+            "inner_half_size_m": [
+              0.13699925701773613,
+              0.13699925701773613
+            ]
+          }
+        },
+        "sock_position": [
+          0.3086011619576913,
+          -0.01809100687762237,
+          0.015
+        ],
+        "bin_position": [
+          0.43176692107340836,
+          0.3533495605428619,
+          0.0
+        ],
+        "sock_rgb": [
+          0.4950496749188418,
+          0.1851892324043077,
+          0.20593085945704706
+        ],
+        "basket_rgb": [
+          0.4181086296388248,
+          0.4508947593724594,
+          0.6212183285234988
+        ],
+        "lighting_scale": 0.7185313414552721,
+        "floor_rgb": [
+          0.19070443009892943,
+          0.34091901434196575,
+          0.3591165002897644
+        ],
+        "parameter_status": "estimated",
+        "unsupported": [
+          "arbitrary folds or knots",
+          "basket rim above 0.30 m",
+          "unseen room layout",
+          "measured real cloth dynamics"
+        ],
+        "enabled": true,
+        "kind": "bounded_geometry_material_appearance_placement"
+      },
+      "physics_outcome_diagnostics": {
+        "inside_fraction": 1.0,
+        "within_height": false,
+        "sock_speed_max_m_s": 0.015896068722516053,
+        "sock_height_bounds_m": [
+          0.1213012571853014,
+          0.20614451648827625
+        ]
+      }
+    },
+    {
+      "run": "domain-final-preflight-20261012",
+      "id": "teacher-201",
+      "success": true,
+      "error": null,
+      "frames": 857,
+      "outcome": {
+        "id": "sock_basket",
+        "phase": "release_retreat",
+        "grasp_contact": false,
+        "finger_contacts": [
+          false,
+          false
+        ],
+        "lifted": true,
+        "placed": true,
+        "success": true,
+        "lift_hold_s": 0.0
+      },
+      "domain_variation": {
+        "profile": "sock_variants_v1",
+        "seed": 201,
+        "parameters": {
+          "sock": {
+            "length_m": 0.19925869959033216,
+            "width_m": 0.05341583319668386,
+            "mass_kg": 0.02476682697371662,
+            "friction": 1.077592318023637,
+            "young_pa": 12104.44055896581,
+            "yaw_rad": 0.01375611369256193,
+            "initial_thickness_m": 0.006908327260399441
+          },
+          "bin": {
+            "height_m": 0.12,
+            "shape": "rectangular",
+            "inner_half_size_m": [
+              0.16784943624074822,
+              0.18722387835153032
+            ]
+          }
+        },
+        "sock_position": [
+          0.3566116086512234,
+          0.00044238428682195414,
+          0.015
+        ],
+        "bin_position": [
+          0.45235708597461677,
+          0.3734176626870104,
+          0.0
+        ],
+        "sock_rgb": [
+          0.10194851514051725,
+          0.6875303622831036,
+          0.290615554337055
+        ],
+        "basket_rgb": [
+          0.20414263492938617,
+          0.277293603515337,
+          0.2896675372888858
+        ],
+        "lighting_scale": 0.8927477695341823,
+        "floor_rgb": [
+          0.3291983842692867,
+          0.13438753448864998,
+          0.1688409426568059
+        ],
+        "parameter_status": "estimated",
+        "unsupported": [
+          "arbitrary folds or knots",
+          "basket rim above 0.30 m",
+          "unseen room layout",
+          "measured real cloth dynamics"
+        ],
+        "enabled": true,
+        "kind": "bounded_geometry_material_appearance_placement"
+      },
+      "physics_outcome_diagnostics": {
+        "inside_fraction": 1.0,
+        "within_height": true,
+        "sock_speed_max_m_s": 0.013701606587172937,
+        "sock_height_bounds_m": [
+          0.008462186115277184,
+          0.035809733958294065
+        ]
+      }
+    },
+    {
+      "run": "domain-final-preflight-20261012",
+      "id": "teacher-202",
+      "success": true,
+      "error": null,
+      "frames": 846,
+      "outcome": {
+        "id": "sock_basket",
+        "phase": "release_retreat",
+        "grasp_contact": false,
+        "finger_contacts": [
+          false,
+          false
+        ],
+        "lifted": true,
+        "placed": true,
+        "success": true,
+        "lift_hold_s": 0.0
+      },
+      "domain_variation": {
+        "profile": "sock_variants_v1",
+        "seed": 202,
+        "parameters": {
+          "sock": {
+            "length_m": 0.14770299999389938,
+            "width_m": 0.051091397699360226,
+            "mass_kg": 0.031315102671529024,
+            "friction": 1.106247504235046,
+            "young_pa": 9802.555947265973,
+            "yaw_rad": -0.04178895041859196,
+            "initial_thickness_m": 0.009381064909459641
+          },
+          "bin": {
+            "height_m": 0.16,
+            "shape": "round",
+            "inner_half_size_m": [
+              0.19145027699236092,
+              0.19145027699236092
+            ]
+          }
+        },
+        "sock_position": [
+          0.30523235626248013,
+          0.01947797665803215,
+          0.015
+        ],
+        "bin_position": [
+          0.45098967783763305,
+          0.38540694550814564,
+          0.0
+        ],
+        "sock_rgb": [
+          0.5179776710965548,
+          0.46439975009731227,
+          0.21435358808445587
+        ],
+        "basket_rgb": [
+          0.4184895243221605,
+          0.7067058077774134,
+          0.5449074473735476
+        ],
+        "lighting_scale": 0.7539785700347098,
+        "floor_rgb": [
+          0.30237979940605414,
+          0.30184080517713546,
+          0.24868435641395414
+        ],
+        "parameter_status": "estimated",
+        "unsupported": [
+          "arbitrary folds or knots",
+          "basket rim above 0.30 m",
+          "unseen room layout",
+          "measured real cloth dynamics"
+        ],
+        "enabled": true,
+        "kind": "bounded_geometry_material_appearance_placement"
+      },
+      "physics_outcome_diagnostics": {
+        "inside_fraction": 1.0,
+        "within_height": true,
+        "sock_speed_max_m_s": 0.005239926161993477,
+        "sock_height_bounds_m": [
+          0.009019895961190025,
+          0.03555516888781553
+        ]
+      }
+    },
+    {
+      "run": "domain-final-preflight-20261012",
+      "id": "teacher-203",
+      "success": true,
+      "error": null,
+      "frames": 861,
+      "outcome": {
+        "id": "sock_basket",
+        "phase": "release_retreat",
+        "grasp_contact": false,
+        "finger_contacts": [
+          false,
+          false
+        ],
+        "lifted": true,
+        "placed": true,
+        "success": true,
+        "lift_hold_s": 0.0
+      },
+      "domain_variation": {
+        "profile": "sock_variants_v1",
+        "seed": 203,
+        "parameters": {
+          "sock": {
+            "length_m": 0.1824754439539813,
+            "width_m": 0.04860770071707152,
+            "mass_kg": 0.016748897447148525,
+            "friction": 0.9692937718315427,
+            "young_pa": 9902.041969290329,
+            "yaw_rad": 0.2528122285414055,
+            "initial_thickness_m": 0.009709496634789105
+          },
+          "bin": {
+            "height_m": 0.2,
+            "shape": "rectangular",
+            "inner_half_size_m": [
+              0.1549184483793844,
+              0.16716928389632135
+            ]
+          }
+        },
+        "sock_position": [
+          0.35073642326183296,
+          -0.021877667827957404,
+          0.015
+        ],
+        "bin_position": [
+          0.4347961274483993,
+          0.37666934569452326,
+          0.0
+        ],
+        "sock_rgb": [
+          0.7357482386649569,
+          0.2536761314522772,
+          0.8198828950177861
+        ],
+        "basket_rgb": [
+          0.44273099847383335,
+          0.16576802232460733,
+          0.5823726270095402
+        ],
+        "lighting_scale": 1.0085028420571702,
+        "floor_rgb": [
+          0.31339712637690414,
+          0.17002095477382692,
+          0.30658244953784486
+        ],
+        "parameter_status": "estimated",
+        "unsupported": [
+          "arbitrary folds or knots",
+          "basket rim above 0.30 m",
+          "unseen room layout",
+          "measured real cloth dynamics"
+        ],
+        "enabled": true,
+        "kind": "bounded_geometry_material_appearance_placement"
+      },
+      "physics_outcome_diagnostics": {
+        "inside_fraction": 1.0,
+        "within_height": true,
+        "sock_speed_max_m_s": 0.013794906019754615,
+        "sock_height_bounds_m": [
+          0.007976089065736314,
+          0.04485811893579543
+        ]
+      }
+    },
+    {
+      "run": "domain-release-preflight-20261012",
+      "id": "teacher-4",
+      "success": false,
+      "error": null,
+      "frames": 1047,
+      "outcome": {
+        "id": "sock_basket",
+        "phase": "release_unhook",
+        "grasp_contact": false,
+        "finger_contacts": [
+          false,
+          true
+        ],
+        "lifted": true,
+        "placed": false,
+        "success": false,
+        "lift_hold_s": 0.0
+      },
+      "domain_variation": {
+        "profile": "sock_variants_v1",
+        "seed": 4,
+        "parameters": {
+          "sock": {
+            "length_m": 0.19544448844578943,
+            "width_m": 0.05278318882035904,
+            "mass_kg": 0.034524874114154086,
+            "friction": 0.9242508071686807,
+            "young_pa": 11644.134991970177,
+            "yaw_rad": -0.08622863092003184,
+            "initial_thickness_m": 0.010811407241914844
+          },
+          "bin": {
+            "height_m": 0.3,
+            "shape": "round",
+            "inner_half_size_m": [
+              0.125,
+              0.125
+            ]
+          }
+        },
+        "sock_position": [
+          0.32351531206107986,
+          0.028155055580119187,
+          0.015
+        ],
+        "bin_position": [
+          0.44908614095356825,
+          0.3222198511091765,
+          0.0
+        ],
+        "sock_rgb": [
+          0.691710038158247,
+          0.838114749948341,
+          0.3772943444893216
+        ],
+        "basket_rgb": [
+          0.7313597215897409,
+          0.7074158326592517,
+          0.2566155514571887
+        ],
+        "lighting_scale": 0.9739832275800463,
+        "floor_rgb": [
+          0.30326483384683306,
+          0.36512895657358346,
+          0.2930709284110959
+        ],
+        "parameter_status": "estimated",
+        "unsupported": [
+          "arbitrary folds or knots",
+          "basket rim above 0.30 m",
+          "unseen room layout",
+          "measured real cloth dynamics"
+        ],
+        "enabled": true,
+        "kind": "bounded_geometry_material_appearance_placement"
+      },
+      "physics_outcome_diagnostics": {
+        "inside_fraction": 1.0,
+        "within_height": false,
+        "sock_speed_max_m_s": 0.03706484966725903,
+        "sock_height_bounds_m": [
+          0.30874553853884434,
+          0.41236656657437365
+        ]
+      }
+    },
+    {
+      "run": "domain-release-preflight-20261012",
+      "id": "teacher-200",
+      "success": true,
+      "error": null,
+      "frames": 1060,
+      "outcome": {
+        "id": "sock_basket",
+        "phase": "release_unhook",
+        "grasp_contact": false,
+        "finger_contacts": [
+          false,
+          false
+        ],
+        "lifted": true,
+        "placed": true,
+        "success": true,
+        "lift_hold_s": 0.0
+      },
+      "domain_variation": {
+        "profile": "sock_variants_v1",
+        "seed": 200,
+        "parameters": {
+          "sock": {
+            "length_m": 0.17174673149433106,
+            "width_m": 0.05659799928448532,
+            "mass_kg": 0.015598033048846037,
+            "friction": 0.9533494027012726,
+            "young_pa": 11440.979895496192,
+            "yaw_rad": 0.03571922264493852,
+            "initial_thickness_m": 0.009161522649888896
+          },
+          "bin": {
+            "height_m": 0.08,
+            "shape": "round",
+            "inner_half_size_m": [
+              0.13699925701773613,
+              0.13699925701773613
+            ]
+          }
+        },
+        "sock_position": [
+          0.3086011619576913,
+          -0.01809100687762237,
+          0.015
+        ],
+        "bin_position": [
+          0.43176692107340836,
+          0.3533495605428619,
+          0.0
+        ],
+        "sock_rgb": [
+          0.4950496749188418,
+          0.1851892324043077,
+          0.20593085945704706
+        ],
+        "basket_rgb": [
+          0.4181086296388248,
+          0.4508947593724594,
+          0.6212183285234988
+        ],
+        "lighting_scale": 0.7185313414552721,
+        "floor_rgb": [
+          0.19070443009892943,
+          0.34091901434196575,
+          0.3591165002897644
+        ],
+        "parameter_status": "estimated",
+        "unsupported": [
+          "arbitrary folds or knots",
+          "basket rim above 0.30 m",
+          "unseen room layout",
+          "measured real cloth dynamics"
+        ],
+        "enabled": true,
+        "kind": "bounded_geometry_material_appearance_placement"
+      },
+      "physics_outcome_diagnostics": {
+        "inside_fraction": 1.0,
+        "within_height": true,
+        "sock_speed_max_m_s": 0.02880432883373197,
+        "sock_height_bounds_m": [
+          0.009137091937651302,
+          0.03882027967841808
+        ]
+      }
+    }
+  ],
+  "learned_skill_qualified": false,
+  "hardware_verified": false,
+  "night_training_started": false,
+  "real_robot_followup": [
+    "Check executor timing against model clock and inference speed",
+    "Verify accepted hardware calibration and camera observations",
+    "Run watched trial only for qualified weights"
+  ],
+  "training_smoke": {
+    "state": "trained_simulation_unvalidated",
+    "steps": 20,
+    "device": "mps",
+    "scene_profile": "sock_variants_v1",
+    "validation": {
+      "samples": 128,
+      "heldout_independent": true,
+      "validation_total_frames": 857,
+      "sampling": "uniform_across_validation_frames",
+      "normalized_mae": 1.095940329807303,
+      "normalized_hold_baseline_mae": 0.010424795889801627,
+      "joint_mae_deg": 16.40543967982133,
+      "base_mae_mixed": 0.005059289674098484,
+      "improves_hold_baseline": false,
+      "training_source": "synthetic_only",
+      "domain": "simulation",
+      "physics_acceptance": false,
+      "physical_success_evaluated": false,
+      "physical_success_verified": false,
+      "automatic_execution_allowed": false
+    },
+    "training_profile": "fourier_timed_visual_act_v6"
+  },
+  "learned_closed_loop_smoke": {
+    "success": false,
+    "error": null,
+    "frames": 1600,
+    "outcome": {
+      "id": "sock_basket",
+      "phase": "policy",
+      "grasp_contact": false,
+      "finger_contacts": [
+        false,
+        false
+      ],
+      "lifted": false,
+      "placed": false,
+      "success": false,
+      "lift_hold_s": 0.0
+    },
+    "domain_variation": {
+      "profile": "sock_variants_v1",
+      "seed": 10004,
+      "parameters": {
+        "sock": {
+          "length_m": 0.18715221189710537,
+          "width_m": 0.04755041383792516,
+          "mass_kg": 0.02419149456608123,
+          "friction": 1.0089561996830452,
+          "young_pa": 9819.622130575133,
+          "yaw_rad": -0.1823084732107218,
+          "initial_thickness_m": 0.008180063724676535
+        },
+        "bin": {
+          "height_m": 0.3,
+          "shape": "round",
+          "inner_half_size_m": [
+            0.125,
+            0.125
+          ]
+        }
+      },
+      "sock_position": [
+        0.343475817320067,
+        -0.01545384520689709,
+        0.015
+      ],
+      "bin_position": [
+        0.45630585748395214,
+        0.33167371555625624,
+        0.0
+      ],
+      "sock_rgb": [
+        0.7197100736639378,
+        0.17850552594519328,
+        0.4067322637331817
+      ],
+      "basket_rgb": [
+        0.7196463398829013,
+        0.6785615774207513,
+        0.6048806428131596
+      ],
+      "lighting_scale": 0.7001158663639793,
+      "floor_rgb": [
+        0.24860894049225304,
+        0.23197445773384348,
+        0.18150590631792962
+      ],
+      "parameter_status": "estimated",
+      "unsupported": [
+        "arbitrary folds or knots",
+        "basket rim above 0.30 m",
+        "unseen room layout",
+        "measured real cloth dynamics"
+      ],
+      "enabled": true,
+      "kind": "bounded_geometry_material_appearance_placement"
+    },
+    "validation_kind": "closed_loop_policy_smoke",
+    "elapsed_s": 53.34507916698931,
+    "simulation_qualified": false
+  },
+  "diagnostic_artifacts": "/Volumes/ExplorerSim/ExplorerSim/runs/domain-final-preflight-20261012/learning-smoke"
+}

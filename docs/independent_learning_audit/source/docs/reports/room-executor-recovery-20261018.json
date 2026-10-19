@@ -1,0 +1,44 @@
+{
+  "scope": "automatic_room_search_and_approach_recovery",
+  "date": "2026-10-18",
+  "room_cycle": "0c946789dbd7",
+  "local_act_training_preserved": "1bd683a1d22b",
+  "local_act_frozen_source_preserved": "desktop-source-3ee1ae0d67d3",
+  "changes": [
+    "Stopped unavailable routes and target loss select another checked approach with new observations",
+    "Partial navigation and failed camera baselines invalidate old frames",
+    "Measured lidar rays clear stale occupancy only in currently observed free space; concurrent hits win",
+    "Search proposals account for observation and turning cost instead of preferring zero-gain rotations",
+    "Known exhausted-search and exhausted-approach causes produce bounded executor proposals",
+    "Each proposal is compared with the same ACT on ten identical physical scenes; any scene regression or collision rejects it",
+    "Promoted executor recipe is bound to the same profile for simulation, corrective demonstrations, final qualification and Jetson execution",
+    "Only an untouched waiting room owner can be upgraded; same cycle ID, old source/state backed up, current ACT untouched"
+  ],
+  "unchanged": [
+    "Physical geometry, materials and collision guards",
+    "Semantic confidence and temporal observation thresholds",
+    "Full-mission success and independent physical outcome scoring",
+    "Two disjoint final groups of ten scenes, separated from all training scenes",
+    "All prior attempts, failures, checkpoints and datasets"
+  ],
+  "recovery_operators": ["expanded_coverage", "expanded_approaches"],
+  "operator_promotion_is_neural_training": false,
+  "operator_promotion_is_full_mission_qualification": false,
+  "unknown_source_defects": "Agent follow-up must diagnose and test a concrete fix; the program cannot rewrite arbitrary unknown source defects",
+  "quiet_followup": {
+    "automation_id": "explorer",
+    "interval_hours": 3,
+    "authorized_by_user": true,
+    "routine_status_messages": false
+  },
+  "hardware_commands_sent": false,
+  "validation": {
+    "passed": 76,
+    "failed": 0,
+    "suites": ["test_executor_recovery", "test_room_cleanup", "test_room_learning", "test_room_physics", "test_room_transfer", "test_simulator_worker_views", "test_web_javascript"],
+    "environment": "PYTHONPATH=.:src; EXPLORER_SIM_MESH_DIR=/Volumes/ExplorerSim/assets/m3_reference/meshes; OMP_NUM_THREADS=1; OPENBLAS_NUM_THREADS=1"
+  },
+  "full_room_simulation_qualified": false,
+  "physical_ready": false,
+  "tests_are_runtime_and_control_regressions_not_neural_qualification": true
+}

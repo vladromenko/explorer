@@ -1,0 +1,202 @@
+{
+  "at": 1792432570.1051111,
+  "kind": "component_benchmark_not_policy_acceptance",
+  "hardware_actuation": false,
+  "simulation_qualified": false,
+  "robot_verified": false,
+  "parallel_learner_may_affect_timings": true,
+  "initialization_s": 1.3333094999543391,
+  "physics": {
+    "steps": 2000,
+    "wall_s": 1.4123914170195349,
+    "simulated_s": 4.0,
+    "substeps_per_second": 1416.0380585011285,
+    "finite": true,
+    "warning_counts": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "flex_count": 1,
+    "backend": "MuJoCo CPU"
+  },
+  "render": {
+    "shape": [
+      240,
+      320,
+      3
+    ],
+    "cold_s": 0.2689449999597855,
+    "warm_p50_s": 0.010815999994520098,
+    "warm_p95_s": 0.017800104018533602,
+    "backend": "MuJoCo offscreen OpenGL",
+    "includes_image_transfer": true
+  },
+  "compiled_inertias": {
+    "dynamic_bodies": 126,
+    "positive": true
+  },
+  "mecanum": [
+    {
+      "axis": 0,
+      "sign": -1,
+      "body_velocity": [
+        -0.12,
+        0.0,
+        0.0
+      ],
+      "duration_s": 1.2,
+      "measured_pose_delta": [
+        -0.1368159803961809,
+        -2.147431503722443e-05,
+        0.00032712555844092664
+      ],
+      "correct_sign": true,
+      "finite": true,
+      "warnings": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "axis": 0,
+      "sign": 1,
+      "body_velocity": [
+        0.12,
+        0.0,
+        0.0
+      ],
+      "duration_s": 1.2,
+      "measured_pose_delta": [
+        0.13658865275583407,
+        4.159039581677069e-06,
+        -0.000112046715401302
+      ],
+      "correct_sign": true,
+      "finite": true,
+      "warnings": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "axis": 1,
+      "sign": -1,
+      "body_velocity": [
+        0.0,
+        -0.12,
+        0.0
+      ],
+      "duration_s": 1.2,
+      "measured_pose_delta": [
+        -0.0003692840529748565,
+        -0.13451948037556724,
+        -0.0050000082705200745
+      ],
+      "correct_sign": true,
+      "finite": true,
+      "warnings": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "axis": 1,
+      "sign": 1,
+      "body_velocity": [
+        0.0,
+        0.12,
+        0.0
+      ],
+      "duration_s": 1.2,
+      "measured_pose_delta": [
+        -0.00036161149480165046,
+        0.1345149473651416,
+        0.00499936662674246
+      ],
+      "correct_sign": true,
+      "finite": true,
+      "warnings": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "axis": 2,
+      "sign": -1,
+      "body_velocity": [
+        0.0,
+        0.0,
+        -0.2
+      ],
+      "duration_s": 1.2,
+      "measured_pose_delta": [
+        -9.098997931543767e-05,
+        -0.00143408901552299,
+        -0.1960080639496117
+      ],
+      "correct_sign": true,
+      "finite": true,
+      "warnings": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "axis": 2,
+      "sign": 1,
+      "body_velocity": [
+        0.0,
+        0.0,
+        0.2
+      ],
+      "duration_s": 1.2,
+      "measured_pose_delta": [
+        -0.00014584522704079502,
+        0.0014198318837007067,
+        0.1960805036053562
+      ],
+      "correct_sign": true,
+      "finite": true,
+      "warnings": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  ],
+  "source_inertia_violations": []
+}

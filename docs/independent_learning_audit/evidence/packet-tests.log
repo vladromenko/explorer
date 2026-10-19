@@ -1,0 +1,10 @@
+test_dataset_count_reconciles_recordings (test_evidence_contract.EvidenceContract.test_dataset_count_reconciles_recordings) ... ok
+test_pause_and_no_audit_actuation (test_evidence_contract.EvidenceContract.test_pause_and_no_audit_actuation) ... ok
+test_pinned_source_bytes (test_evidence_contract.EvidenceContract.test_pinned_source_bytes) ... ok
+test_refusal_matches_original_result_and_trace (test_evidence_contract.EvidenceContract.test_refusal_matches_original_result_and_trace) ... ok
+test_runtime_outside_measured_training_range (test_evidence_contract.EvidenceContract.test_runtime_outside_measured_training_range) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.007s
+
+OK

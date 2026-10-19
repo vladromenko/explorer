@@ -1,0 +1,71 @@
+{
+    "type": "act",
+    "n_obs_steps": 1,
+    "input_features": {
+        "observation.state": {
+            "type": "STATE",
+            "shape": [
+                9
+            ]
+        },
+        "observation.images.wrist": {
+            "type": "VISUAL",
+            "shape": [
+                3,
+                240,
+                320
+            ]
+        },
+        "observation.environment_state": {
+            "type": "ENV",
+            "shape": [
+                14
+            ]
+        }
+    },
+    "output_features": {
+        "action": {
+            "type": "ACTION",
+            "shape": [
+                9
+            ]
+        }
+    },
+    "device": "mps",
+    "use_amp": false,
+    "use_peft": false,
+    "push_to_hub": false,
+    "repo_id": null,
+    "private": null,
+    "tags": null,
+    "license": null,
+    "pretrained_path": "/Volumes/ExplorerSim/ExplorerSim/runs/d4f59a63085b/model/checkpoints/006000/pretrained_model",
+    "pretrained_revision": null,
+    "chunk_size": 20,
+    "n_action_steps": 20,
+    "normalization_mapping": {
+        "VISUAL": "MEAN_STD",
+        "STATE": "MEAN_STD",
+        "ACTION": "MEAN_STD",
+        "ENV": "IDENTITY"
+    },
+    "vision_backbone": "resnet18",
+    "pretrained_backbone_weights": "ResNet18_Weights.IMAGENET1K_V1",
+    "replace_final_stride_with_dilation": 0,
+    "pre_norm": false,
+    "dim_model": 128,
+    "n_heads": 4,
+    "dim_feedforward": 512,
+    "feedforward_activation": "relu",
+    "n_encoder_layers": 2,
+    "n_decoder_layers": 1,
+    "use_vae": false,
+    "latent_dim": 32,
+    "n_vae_encoder_layers": 2,
+    "temporal_ensemble_coeff": null,
+    "dropout": 0.0,
+    "kl_weight": 10.0,
+    "optimizer_lr": 5e-05,
+    "optimizer_weight_decay": 0.0001,
+    "optimizer_lr_backbone": 1e-05
+}

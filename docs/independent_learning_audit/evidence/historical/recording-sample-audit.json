@@ -1,0 +1,553 @@
+{
+  "at": 1792429926.206303,
+  "sampled_recordings": 14,
+  "selection": "two earliest provenance recordings per basket height plus last four corrections; not an unbiased dataset estimate",
+  "results": [
+    {
+      "id": "trial-29ecb2e5d771-0000",
+      "frames": 837,
+      "phase_counts": {
+        "inspect_floor": 64,
+        "align_base": 56,
+        "approach": 52,
+        "lower": 52,
+        "close": 61,
+        "lift": 85,
+        "transport": 82,
+        "place": 173,
+        "release_retreat": 212
+      },
+      "idle_command_fraction": 0.4958183990442055,
+      "greater_than_room_2deg_step_counts": [
+        0,
+        65,
+        7,
+        36,
+        0,
+        76
+      ],
+      "max_recorded_servo_step_deg": [
+        0.14409785068502856,
+        2.400000000000091,
+        2.400000000000091,
+        3.0000000000001137,
+        0.4147642319040443,
+        3.6000000000001364
+      ],
+      "student_target_excluded_frames": 0,
+      "simulation_dt_min_max": [
+        0.04999999999997229,
+        0.05000000000006111
+      ],
+      "actor_vs_sim_clock_offset_min_max": null
+    },
+    {
+      "id": "trial-29ecb2e5d771-0004",
+      "frames": 852,
+      "phase_counts": {
+        "inspect_floor": 64,
+        "align_base": 50,
+        "approach": 52,
+        "lower": 52,
+        "close": 61,
+        "lift": 86,
+        "transport": 102,
+        "place": 173,
+        "release_retreat": 212
+      },
+      "idle_command_fraction": 0.4800469483568075,
+      "greater_than_room_2deg_step_counts": [
+        0,
+        65,
+        4,
+        34,
+        0,
+        76
+      ],
+      "max_recorded_servo_step_deg": [
+        0.17761825416639,
+        2.400000000000091,
+        2.400000000000091,
+        3.0000000000001137,
+        0.41476980668575436,
+        3.6000000000001364
+      ],
+      "student_target_excluded_frames": 0,
+      "simulation_dt_min_max": [
+        0.04999999999997229,
+        0.05000000000006111
+      ],
+      "actor_vs_sim_clock_offset_min_max": null
+    },
+    {
+      "id": "trial-29ecb2e5d771-0001",
+      "frames": 849,
+      "phase_counts": {
+        "inspect_floor": 64,
+        "align_base": 58,
+        "approach": 52,
+        "lower": 52,
+        "close": 61,
+        "lift": 86,
+        "transport": 91,
+        "place": 173,
+        "release_retreat": 212
+      },
+      "idle_command_fraction": 0.4840989399293286,
+      "greater_than_room_2deg_step_counts": [
+        0,
+        67,
+        8,
+        34,
+        0,
+        76
+      ],
+      "max_recorded_servo_step_deg": [
+        0.17241265362217462,
+        2.400000000000091,
+        2.400000000000091,
+        3.0000000000001137,
+        0.41473954244335687,
+        3.6000000000001364
+      ],
+      "student_target_excluded_frames": 0,
+      "simulation_dt_min_max": [
+        0.04999999999997229,
+        0.05000000000006111
+      ],
+      "actor_vs_sim_clock_offset_min_max": null
+    },
+    {
+      "id": "trial-29ecb2e5d771-0005",
+      "frames": 830,
+      "phase_counts": {
+        "inspect_floor": 64,
+        "align_base": 50,
+        "approach": 52,
+        "lower": 52,
+        "close": 61,
+        "lift": 85,
+        "transport": 81,
+        "place": 173,
+        "release_retreat": 212
+      },
+      "idle_command_fraction": 0.4975903614457831,
+      "greater_than_room_2deg_step_counts": [
+        0,
+        59,
+        5,
+        35,
+        0,
+        76
+      ],
+      "max_recorded_servo_step_deg": [
+        0.06316110922449525,
+        2.400000000000091,
+        2.400000000000091,
+        3.0000000000001137,
+        0.41472827812961555,
+        3.6000000000001364
+      ],
+      "student_target_excluded_frames": 0,
+      "simulation_dt_min_max": [
+        0.04999999999997229,
+        0.05000000000006111
+      ],
+      "actor_vs_sim_clock_offset_min_max": null
+    },
+    {
+      "id": "trial-29ecb2e5d771-0015",
+      "frames": 837,
+      "phase_counts": {
+        "inspect_floor": 64,
+        "align_base": 51,
+        "approach": 52,
+        "lower": 52,
+        "close": 61,
+        "lift": 86,
+        "transport": 86,
+        "place": 173,
+        "release_retreat": 212
+      },
+      "idle_command_fraction": 0.4886499402628435,
+      "greater_than_room_2deg_step_counts": [
+        0,
+        54,
+        11,
+        34,
+        0,
+        76
+      ],
+      "max_recorded_servo_step_deg": [
+        0.25050042494081026,
+        2.400000000000091,
+        2.400000000000091,
+        3.0000000000001137,
+        0.4147579376214878,
+        3.6000000000001364
+      ],
+      "student_target_excluded_frames": 0,
+      "simulation_dt_min_max": [
+        0.04999999999997229,
+        0.05000000000006111
+      ],
+      "actor_vs_sim_clock_offset_min_max": null
+    },
+    {
+      "id": "trial-29ecb2e5d771-0025",
+      "frames": 839,
+      "phase_counts": {
+        "inspect_floor": 64,
+        "align_base": 49,
+        "approach": 52,
+        "lower": 52,
+        "close": 61,
+        "lift": 86,
+        "transport": 90,
+        "place": 173,
+        "release_retreat": 212
+      },
+      "idle_command_fraction": 0.4922526817640048,
+      "greater_than_room_2deg_step_counts": [
+        0,
+        53,
+        11,
+        36,
+        0,
+        76
+      ],
+      "max_recorded_servo_step_deg": [
+        0.1434492237286804,
+        2.400000000000091,
+        2.400000000000091,
+        3.0000000000001137,
+        0.4147505944507941,
+        3.6000000000001364
+      ],
+      "student_target_excluded_frames": 0,
+      "simulation_dt_min_max": [
+        0.04999999999997229,
+        0.05000000000006111
+      ],
+      "actor_vs_sim_clock_offset_min_max": null
+    },
+    {
+      "id": "trial-29ecb2e5d771-0011",
+      "frames": 850,
+      "phase_counts": {
+        "inspect_floor": 64,
+        "align_base": 58,
+        "approach": 52,
+        "lower": 52,
+        "close": 61,
+        "lift": 86,
+        "transport": 92,
+        "place": 173,
+        "release_retreat": 212
+      },
+      "idle_command_fraction": 0.4858823529411765,
+      "greater_than_room_2deg_step_counts": [
+        0,
+        50,
+        11,
+        34,
+        0,
+        76
+      ],
+      "max_recorded_servo_step_deg": [
+        0.2140830035581871,
+        2.400000000000091,
+        2.400000000000091,
+        3.0000000000001137,
+        0.41472163321830635,
+        3.6000000000001364
+      ],
+      "student_target_excluded_frames": 0,
+      "simulation_dt_min_max": [
+        0.04999999999997229,
+        0.05000000000006111
+      ],
+      "actor_vs_sim_clock_offset_min_max": null
+    },
+    {
+      "id": "trial-29ecb2e5d771-0026",
+      "frames": 834,
+      "phase_counts": {
+        "inspect_floor": 64,
+        "align_base": 55,
+        "approach": 52,
+        "lower": 52,
+        "close": 61,
+        "lift": 86,
+        "transport": 79,
+        "place": 173,
+        "release_retreat": 212
+      },
+      "idle_command_fraction": 0.4952038369304556,
+      "greater_than_room_2deg_step_counts": [
+        0,
+        49,
+        11,
+        36,
+        0,
+        76
+      ],
+      "max_recorded_servo_step_deg": [
+        0.1931077231824787,
+        2.400000000000091,
+        2.400000000000091,
+        3.0000000000001137,
+        0.4147262956437885,
+        3.6000000000001364
+      ],
+      "student_target_excluded_frames": 0,
+      "simulation_dt_min_max": [
+        0.04999999999997229,
+        0.05000000000006111
+      ],
+      "actor_vs_sim_clock_offset_min_max": null
+    },
+    {
+      "id": "trial-29ecb2e5d771-0007",
+      "frames": 827,
+      "phase_counts": {
+        "inspect_floor": 64,
+        "align_base": 45,
+        "approach": 52,
+        "lower": 52,
+        "close": 61,
+        "lift": 85,
+        "transport": 83,
+        "place": 173,
+        "release_retreat": 212
+      },
+      "idle_command_fraction": 0.5114873035066505,
+      "greater_than_room_2deg_step_counts": [
+        0,
+        49,
+        1,
+        35,
+        0,
+        76
+      ],
+      "max_recorded_servo_step_deg": [
+        0.1956233691394118,
+        2.400000000000091,
+        2.101659670205663,
+        3.0000000000001137,
+        0.4147361469955655,
+        3.6000000000001364
+      ],
+      "student_target_excluded_frames": 0,
+      "simulation_dt_min_max": [
+        0.04999999999997229,
+        0.05000000000006111
+      ],
+      "actor_vs_sim_clock_offset_min_max": null
+    },
+    {
+      "id": "trial-29ecb2e5d771-0022",
+      "frames": 828,
+      "phase_counts": {
+        "inspect_floor": 64,
+        "align_base": 46,
+        "approach": 52,
+        "lower": 52,
+        "close": 61,
+        "lift": 85,
+        "transport": 83,
+        "place": 173,
+        "release_retreat": 212
+      },
+      "idle_command_fraction": 0.5108695652173914,
+      "greater_than_room_2deg_step_counts": [
+        0,
+        48,
+        1,
+        35,
+        0,
+        76
+      ],
+      "max_recorded_servo_step_deg": [
+        0.1331976833875217,
+        2.400000000000091,
+        2.098566741004362,
+        3.0000000000001137,
+        0.41475277721934845,
+        3.6000000000001364
+      ],
+      "student_target_excluded_frames": 0,
+      "simulation_dt_min_max": [
+        0.04999999999997229,
+        0.05000000000006111
+      ],
+      "actor_vs_sim_clock_offset_min_max": null
+    },
+    {
+      "id": "recovery-924d1ee5ab01-round-02-correction-17",
+      "frames": 921,
+      "phase_counts": {
+        "inspect_floor": 64,
+        "align_base": 55,
+        "approach": 52,
+        "lower": 52,
+        "close": 61,
+        "lift": 85,
+        "transport": 90,
+        "place": 262,
+        "release_retreat": 200
+      },
+      "idle_command_fraction": 0.48534201954397393,
+      "greater_than_room_2deg_step_counts": [
+        0,
+        48,
+        1,
+        35,
+        0,
+        76
+      ],
+      "max_recorded_servo_step_deg": [
+        0.1417694091796875,
+        2.400000000000091,
+        2.0943933241672994,
+        3.0000000000001137,
+        0.41473497624328104,
+        3.6000000000001364
+      ],
+      "student_target_excluded_frames": 20,
+      "simulation_dt_min_max": [
+        0.04999999999997229,
+        0.05000000000006111
+      ],
+      "actor_vs_sim_clock_offset_min_max": [
+        -0.20000000001049756,
+        -0.19999999999314255
+      ]
+    },
+    {
+      "id": "recovery-924d1ee5ab01-round-02-correction-19",
+      "frames": 837,
+      "phase_counts": {
+        "inspect_floor": 64,
+        "align_base": 49,
+        "approach": 52,
+        "lower": 52,
+        "close": 61,
+        "lift": 85,
+        "transport": 70,
+        "place": 204,
+        "release_retreat": 200
+      },
+      "idle_command_fraction": 0.5041816009557945,
+      "greater_than_room_2deg_step_counts": [
+        0,
+        61,
+        5,
+        35,
+        0,
+        77
+      ],
+      "max_recorded_servo_step_deg": [
+        0.16372775615673163,
+        2.400000000000091,
+        2.400000000000091,
+        3.0000000000001137,
+        0.41474116460607036,
+        3.6000000000001364
+      ],
+      "student_target_excluded_frames": 40,
+      "simulation_dt_min_max": [
+        0.04999999999997229,
+        0.05000000000006111
+      ],
+      "actor_vs_sim_clock_offset_min_max": [
+        -0.20000000000536033,
+        -0.19999999999314255
+      ]
+    },
+    {
+      "id": "recovery-924d1ee5ab01-round-02-correction-22",
+      "frames": 1053,
+      "phase_counts": {
+        "inspect_floor": 64,
+        "align_base": 196,
+        "approach": 52,
+        "lower": 52,
+        "close": 61,
+        "lift": 85,
+        "transport": 170,
+        "place": 173,
+        "release_retreat": 200
+      },
+      "idle_command_fraction": 0.4406457739791073,
+      "greater_than_room_2deg_step_counts": [
+        0,
+        47,
+        11,
+        35,
+        0,
+        76
+      ],
+      "max_recorded_servo_step_deg": [
+        0.2038743562931984,
+        2.400000000000091,
+        2.400000000000091,
+        3.0000000000001137,
+        0.41477636084522373,
+        3.6000000000001364
+      ],
+      "student_target_excluded_frames": 20,
+      "simulation_dt_min_max": [
+        0.04999999999997229,
+        0.05000000000006111
+      ],
+      "actor_vs_sim_clock_offset_min_max": [
+        -0.20000000001856222,
+        -0.19999999999314255
+      ]
+    },
+    {
+      "id": "recovery-924d1ee5ab01-round-02-correction-23",
+      "frames": 865,
+      "phase_counts": {
+        "inspect_floor": 64,
+        "align_base": 56,
+        "approach": 52,
+        "lower": 52,
+        "close": 61,
+        "lift": 86,
+        "transport": 90,
+        "place": 204,
+        "release_retreat": 200
+      },
+      "idle_command_fraction": 0.46705202312138727,
+      "greater_than_room_2deg_step_counts": [
+        0,
+        66,
+        6,
+        34,
+        0,
+        72
+      ],
+      "max_recorded_servo_step_deg": [
+        0.2186907949359096,
+        2.400000000000091,
+        2.3937192376504157,
+        3.0000000000001137,
+        0.414733722661353,
+        3.6000000000001364
+      ],
+      "student_target_excluded_frames": 40,
+      "simulation_dt_min_max": [
+        0.04999999999997229,
+        0.05000000000006111
+      ],
+      "actor_vs_sim_clock_offset_min_max": [
+        -0.20000000000707274,
+        -0.19999999999314255
+      ]
+    }
+  ],
+  "comparison": "Room issued servo endpoint limit remains 2 degrees; local demonstration commands can be larger. This is a measured execution-distribution difference, not proof of the old joint refusal cause.",
+  "actor_inputs_unchanged": true
+}

@@ -1,0 +1,176 @@
+"""Structured 17-field registry of implemented approaches, not invented trials."""
+import json
+from pathlib import Path
+
+OUT = Path(__file__).resolve().parents[1]
+
+ROWS = [
+('Contextual bandit / CandidateScorer', 'Ранжирование допустимых кандидатов по sigmoid вероятности исхода',
+ 'Дешёвый прозрачный локальный selector поверх безопасной геометрии; не визуальная моторная сеть',
+ 'Контекст/кандидат/фактический исход', 'src/learning_stack.py::CandidateScorer',
+ '18features; epochs300; lr.04; L2.002; epsilon exploration',
+ 'Код и компонентные проверки есть; полная физическая learning curve UNKNOWN',
+ 'Не обучает непрерывное управление по RGB и не доказал полный сценарий',
+ 'Версионирование и paired promotion', 'Не использовать как доказательство neural motor learning'),
+('OutcomeModel / ridge', 'Регрессия наблюдаемого изменения состояния по state/action',
+ 'Интерпретируемая оценка последствий для планирования/отбора',
+ 'Переходы state/action/nextstate, совместимые единицы', 'src/learning_stack.py::OutcomeModel',
+ '6state+6action по умолчанию; ridge least-squares',
+ 'Реализация подтверждена; полный физический прогон модели UNKNOWN',
+ 'Линейный переход не моделирует надёжно ткань/контакт/скрытое состояние',
+ 'Контракты переходов и диагностические residuals', 'Сравнить с простым baseline до использования в planning'),
+('InterventionActorLearner / actor-critic', 'Ограниченный линейный actor и critic с TD target',
+ 'Прозрачный ранний baseline с interventions, не реализация SAC/HIL-SERL',
+ 'Observation/action/reward/nextstate/terminated', 'src/learning_stack.py::InterventionActorLearner',
+ '12obs/3action; epochs80; rate.01; gamma.97',
+ 'Код и tests; серийный автономный успех полной уборки UNKNOWN',
+ 'Ограниченная модель и непроверенный MDP всей задачи',
+ 'Разделение proposed/executed и данные interventions', 'Не выдавать за современный проверенный visual RL'),
+('Behaviour Cloning / ACT', 'L1 imitation будущих абсолютных action chunks',
+ 'Уже интегрированный LeRobot и компактный MPS/Jetson кандидат; выбора по конкурсу не было',
+ 'RGB320×240;9Dcommand state;14Dclock; экспертные targets', 'simulator/learning.py;simulator/train_entry.py',
+ '11.905M;ResNet18;dim128;heads4;enc2/dec1;chunk20;batch32;lr5e-5;VAEoff',
+ '119047updates3/10vs3/10;133577updates selected local5/10vs2/10;d4 run29078 paused',
+ 'Full-room failure695; state/phase shift; teacher/runtime limits differ',
+ 'Checkpoint/resume/processors and validated records', 'Architecture choice only after tiny overfit/recovery/paired BC-DP tests'),
+('LeRobot', 'Dataset/processors/policies/trainer framework, не отдельный алгоритм',
+ 'Повторное использование готовых training и checkpoint механизмов',
+ 'Структурированные frames, normalizers и точный action schema', 'src/lerobot_bridge.py;simulator/learning.py',
+ 'Installed0.6.1; точные зависимости вevidence/dependencies.json',
+ 'Реальные MPS updates и optimizer resume подтверждены',
+ 'Framework не обеспечивает корректность собственного teacher/MDP/runtime; horizon reader лишне декодировал RGB',
+ 'Provenance, saved processors, optimizer/RNG', 'Собственный adapter проверять отдельно от framework smoke'),
+('Phase regression', 'Отдельные ridge residuals по фазам и уменьшенному RGB',
+ 'Дешёвый эксперимент во время перехода к навыкам',
+ 'Размеченные фазы/state/RGB/target residual', 'simulator/phase_learning.py::fit_phase_residuals',
+ 'regularization1 по умолчанию; фазовая группировка',
+ 'Подготовка/fit реализованы; в действующем управлении НЕ используются',
+ 'Нет физической acceptance; подготовка данных не является освоенным навыком',
+ 'Схема фазового анализа и диагностика', 'Не включать без отдельной проверки closed-loop'),
+('Cross-entropy search', 'Поиск численных параметров готового исполнителя',
+ 'Короткая адаптация геометрии вместо новых долгих нейросетевых запусков',
+ 'Парные физические результаты одинаковых сцен', 'simulator/skill_training.py::propose/update_search',
+ '4кандидата;2pairedсцены; elite update; ограниченные диапазоны',
+ 'Историческая39-attempt серия:0 полных успехов; ограничения поиска сохранялись',
+ 'Небольшое покрытие сцен и operator design; ACT weights не обновлялись',
+ 'Парное сравнение кандидатов и защиту старых успехов', 'Не использовать вместо требуемого dataset-to-policy pipeline'),
+('Bounded program repair', 'Диагноз выбирает набор разрешённых операторов исполнения',
+ 'Автоматизировать известные виды восстановления с проверкой регрессий',
+ 'Завершённая попытка, наблюдаемые и отдельные физические outcomes', 'simulator/executor_recovery.py::propose/comparison',
+ 'Конечный operator bank; численные параметры фиксируются при сравнении',
+ 'Реализация подтверждена; ранние3 repair checks/0 accepted improvements вUI',
+ 'Не умеет произвольно исправлять новый код или фундаментально менять модель',
+ 'Typed reasons, paired compare, rollback', 'Снять обещание универсального самоисправления; добавить явные UNKNOWN причины'),
+('Dataset aggregation / DAgger-like corrections', 'Эксперт продолжает из посещённого студентом состояния; префикс не expert target',
+ 'Устранить covariate shift чистых успешных показов',
+ 'Student rollout prefix, допустимое экспертное исправление, success evaluation', 'simulator/neural_recovery.py;simulator/room_intervention.py',
+ 'Локальная correction weight4; общий минимум8passes; полный collector имеет собственные квоты',
+ '19/24 локальных исправлений успешны; последующий selection5/10vs2/10',
+ 'Локальная серия не доказывает coverage full-room handoff; full corrections квота не принята',
+ 'Маски targets и запись provenance', 'Проверить действительные expert targets из трудных student states'),
+('Geometric teacher', 'IK/геометрические фазы создают физически исполняемые показы',
+ 'Заменить ручные показы синтетическими с автоматическим outcome',
+ 'Сцена, модель, привилегированная геометрия только генератору', 'simulator/environment.py::make_episode_trial;simulator/room_learning.py::demonstrate',
+ 'Локальные фазы;20Hz; диапазоны материалов/поз вdataset_statistics.json',
+ 'Исторически426/700local successes; pairedteacher7/10vs5/10 не ACTscore',
+ 'Узкие позы, временной шаблон, отличия issued limits и наблюдений runtime',
+ 'Генератор, физическую оценку и все исходные данные', 'Teacher/runtime parity до нового большого dataset'),
+('IK / CAD sweep', 'Конечная нелинейная кинематическая оптимизация и проверка пути',
+ 'Проверять достижимость и геометрические ограничения до движения',
+ 'Наблюдаемая геометрия, FK модели, bounds', 'simulator/skill_port.py;simulator/explorer_model.py',
+ 'Bounds/accuracy/clearance не ослаблены; см. pinned source',
+ 'a5d9ea7 устранил воспроизведённый false AABB overlap; raised obstacle control остаётся запрещён',
+ 'FK на commanded state и оценочная геометрия не доказывают реальные контакты',
+ 'Геометрические guards и regression fixtures', 'Калибровать модель, не снимать guard из-за failed run'),
+('MoveIt', 'Бортовое планирование руки по URDF/SRDF и ограничениям',
+ 'Повторное использование стандартного motion planning',
+ 'Robot model, planning scene, pose goals; текущий state только estimate', 'src/arm_planner.py;src/arm_planner_worker.py',
+ 'Исторические конфигурацииURDF/SRDF; текущий live setup UNKNOWN',
+ 'Сентябрьские ручные MoveIt/cancel/return проверки описаны; автономная уборка не принята',
+ 'Planner не учит motor policy и не добавляет отсутствующий encoder',
+ 'Сцену ограничений и клиентский интерфейс', 'Live latency/state validity перед real deployment'),
+('Ruckig / trajectory smoothing', 'Ограничение скорости/ускорения/рывка команд',
+ 'Согласованная плавная рука вместо резких endpoint скачков',
+ 'Командные положения и границы', 'src/factory_trajectory.py;config/arm-motion.json',
+ 'Точные лимиты вconfig; исторический host period40ms',
+ 'Наблюдаемые плавные движения/захват были; не neural learning',
+ 'Плавная команда не гарантирует tracking, удержание или освоение задачи',
+ 'Bounded streaming/cancel', 'Проверить исполнение показов тем же runtime'),
+('Symbolic planning', 'Поиск по предусловиям/эффектам доступных навыков',
+ 'Составлять исполнимые последовательности и восстанавливаться по типу отказа',
+ 'Каталог навыков, world facts, permissions', 'src/skill_planner.py;src/room_cleanup.py',
+ 'Конечный каталог и стоимости; произвольный новый motor primitive не создаётся',
+ 'Координация реализована; универсальное обучение из текста NOT_IMPLEMENTED',
+ 'План не компенсирует неработающий pick или недостоверное восприятие',
+ 'Typed contracts и разрешения', 'Разделить language grounding и физически принятые skills'),
+('Navigation / frontier / A*', 'Исследование наблюдаемых фронтиров и безопасный путь',
+ 'Находить объекты за пределами локального handoff',
+ 'Свежие scans, observed map/pose, footprint', 'simulator/room_cleanup_port.py;src/visual_navigation.py',
+ 'Information/cost ranking; clearance и проверка пути; full source содержит реальные лимиты',
+ 'После934c479/c746696 найдены оба объекта на20-м обзоре scene1703000014;0collisions',
+ 'Один повторно используемый seed не независимая room qualification; не learned ACT navigation',
+ 'Observed map и collision guards', 'Широкий независимый mission protocol и реальные odom errors'),
+('Object detection / RGB-D', 'GroundingDINO text detection + depth geometry',
+ 'Семантический поиск носка/корзины без скрытых labels',
+ 'Свежие RGB-D/cameraInfo и текстовый query', 'simulator/semantic_vision.py;src/room_cleanup.py',
+ 'Pretrained detector; модели и thresholds изconfig/grounding-model.json',
+ 'В диагностике оба объекта подтверждены; отдельные false/unreachable surveys чинились',
+ 'Детектор не дообучается автоматически каждой попыткой; current real sensor domain UNKNOWN',
+ 'Private diagnostic service и freshness gates', 'Проверить real images без приводов и input ablations'),
+('Observed hold/place multi-view verification', 'Независимые ракурсы и наблюдаемая геометрия подтверждают удержание/размещение',
+ 'Избежать actor truth leakage и ложного success',
+ 'Два свежих вида, края корзины, движение предмета', 'simulator/skill_port.py;simulator/surface_destination.py',
+ 'Высота/FoV/freshness/accuracy thresholds сохранены вsource',
+ 'Rim aiming/range repairs прошли компоненты; последний full student не дошёл до размещения',
+ 'Verification может блокироваться обзором; true physical success оценивается отдельно',
+ 'Мультирегиональные проверки и saved images', 'Оценить false positives/negatives на отдельной размеченной выборке'),
+('Domain randomization', 'Варьирование поз, света, цветов, материалов в заданных границах',
+ 'Добавить разнообразие синтетических сцен',
+ 'Сценовые параметры/seeds и физически валидные модели', 'simulator/domain_randomization.py;simulator/environment.py',
+ 'Полные измеренные диапазоны06; basket heights.08–.30m',
+ '735seeds/739records; разные цвета/массы/Young; raw ranges проверены',
+ 'Разные seeds не доказывают разные наблюдаемые траектории; real parameters не идентифицированы',
+ 'Детерминированные seeds, manifest и диапазоны', 'Обосновать диапазоны измерениями и student-state coverage'),
+('Checkpoint selection', 'Физическое сравнение saved candidates и reference на одинаковых сценах',
+ 'Не полагаться на offline MAE и не терять лучший baseline',
+ 'Замороженные веса, отдельные development seeds, полный runtime', 'simulator/neural_recovery.py;simulator/room_learning.py',
+ 'Local10paired; full development10; final protocol2×50 отдельно',
+ 'Local candidate5/10vsreference2/10; другая серия3/10vs3/10 не improvement',
+ 'Selection сцены нельзя выдавать за независимую final qualification; room приемки нет',
+ 'Reference-on-tie и protocol separation', 'Сравнивать по полным миссиям; не переиспользовать final seeds'),
+]
+
+
+def main():
+    records = []
+    for name, idea, why, data, files, params, result, problem, keep, replace in ROWS:
+        records.append(dict(name=name, idea=idea, selection_reason=why,
+            intended_target=idea, required_data=data, implementation=files,
+            source_files=files, parameters=params,
+            compute='ACT: steps per run in experiments.csv; other families: exact total compute UNKNOWN, not inferred from tests',
+            experiments=result, results=result, problems=problem, why_not_complete=problem,
+            preserve=keep, replace_or_test=replace,
+            proven='Code/parameters and only explicitly reported outcomes; source function lines in SOURCE_FUNCTION_INDEX.md',
+            hypotheses='Unique causal contribution and superiority over alternatives UNKNOWN unless isolated by paired experiment'))
+    (OUT / 'evidence/algorithm_registry.json').write_text(json.dumps(records, ensure_ascii=False, indent=2)+'\n')
+    f = OUT / '04_ALGORITHM_REGISTRY.md'
+    s = f.read_text(); i=s.find('## Обязательные поля')
+    if i >= 0:
+        s=s[:i]
+    s += '''\n## Подробные карточки:17 полей каждого подхода
+
+Машиночитаемый реестр — `evidence/algorithm_registry.json`. Ниже поля1–17 раскрываются для каждого семейства. Файлы закреплены ревизией1da8ecb; точные функции/строки — в `evidence/SOURCE_FUNCTION_INDEX.md`. Обоснование выбора — восстановление по коду и сообщениям19, а не утверждение о скрытом процессе рассуждения. UNKNOWN не заменяется фиктивным числом GPU-часов. Наличие кода не доказывает физическое освоение навыка.
+'''
+    labels = ['Название','Идея','Причина выбора','Предполагавшаяся цель','Данные','Реализация',
+              'Исходники','Параметры','Вычисления','Эксперименты','Результат','Проблемы',
+              'Почему нет полного решения','Что сохранить','Что заменить/проверить','Доказанное','Гипотезы/пробелы']
+    for record in records:
+        s += '\n### ' + record['name'] + '\n\n'
+        for n, (label,value) in enumerate(zip(labels,record.values()),1):
+            s += f'{n}. **{label}:** {value}\n'
+    f.write_text(s)
+    print('Algorithm cards',len(records))
+
+
+if __name__ == '__main__':
+    main()

@@ -1,0 +1,6 @@
+{
+  "distribution": "0.6.1",
+  "original_file": "/Volumes/ExplorerSim/env/lib/python3.12/site-packages/lerobot/policies/act/modeling_act.py",
+  "original_sha256": "a6c1a49c5daafa513b9abee9b986205d327e25c70ed13623ab2e6c0ab6b1f577",
+  "purpose": "Library queue behaviour; excerpts only, not a standalone importable replacement"
+}

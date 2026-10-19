@@ -1,0 +1,117 @@
+{
+  "assets": {
+    "vendor/m3_reference/meshes/base_link.STL": {
+      "expected": "82897ec12100b78d8f33800edd7be19f86de3ffbc3574ed446f1d2bf04079f4a",
+      "actual": "82897ec12100b78d8f33800edd7be19f86de3ffbc3574ed446f1d2bf04079f4a",
+      "bytes": 8631184
+    },
+    "vendor/m3_reference/meshes/arm1.STL": {
+      "expected": "d12f701abb74171df8ed3179b3885d10c6af2863f29d13e52bcce2d0d8933643",
+      "actual": "d12f701abb74171df8ed3179b3885d10c6af2863f29d13e52bcce2d0d8933643",
+      "bytes": 7159784
+    },
+    "vendor/m3_reference/meshes/arm2.STL": {
+      "expected": "6ec3d8c7b02106560f61035e03a034637b988d153319d87bb50994e96728271e",
+      "actual": "6ec3d8c7b02106560f61035e03a034637b988d153319d87bb50994e96728271e",
+      "bytes": 4221284
+    },
+    "vendor/m3_reference/meshes/arm3.STL": {
+      "expected": "74e309203df8ed80e57962a5ccc871909163cb07c1b1f6db0628233684360a98",
+      "actual": "74e309203df8ed80e57962a5ccc871909163cb07c1b1f6db0628233684360a98",
+      "bytes": 4221284
+    },
+    "vendor/m3_reference/meshes/arm4.STL": {
+      "expected": "8f74b107bdaba930ea482c95e6685d5cf5dccb3923a1e6d8b9280b7986811cda",
+      "actual": "8f74b107bdaba930ea482c95e6685d5cf5dccb3923a1e6d8b9280b7986811cda",
+      "bytes": 1626584
+    },
+    "vendor/m3_reference/meshes/arm5.STL": {
+      "expected": "1a52a732e4664ac3b703968416446b76d67067a78632b520d33858a80a26a281",
+      "actual": "1a52a732e4664ac3b703968416446b76d67067a78632b520d33858a80a26a281",
+      "bytes": 3750884
+    },
+    "vendor/m3_reference/meshes/rlink1.STL": {
+      "expected": "9e3bb9c0d08d3d177e01a532d275f108f514eb4be13e857c0a596c61c32891a6",
+      "actual": "9e3bb9c0d08d3d177e01a532d275f108f514eb4be13e857c0a596c61c32891a6",
+      "bytes": 1285184
+    },
+    "vendor/m3_reference/meshes/rlink2.STL": {
+      "expected": "ff22b15d51ff0d96cddcaa74b6056c9e5f88e1abe6886023a2a90ca80ec3230d",
+      "actual": "ff22b15d51ff0d96cddcaa74b6056c9e5f88e1abe6886023a2a90ca80ec3230d",
+      "bytes": 51284
+    },
+    "vendor/m3_reference/meshes/llink1.STL": {
+      "expected": "0acf2b0ea73e9eb63e3ef9fec5637f0a151dae108ac3eed58ffd98f0062a6c9d",
+      "actual": "0acf2b0ea73e9eb63e3ef9fec5637f0a151dae108ac3eed58ffd98f0062a6c9d",
+      "bytes": 1018084
+    },
+    "vendor/m3_reference/meshes/llink2.STL": {
+      "expected": "e356dfad82f1468a6c80e20fe127df4b7b40c395398cf5cb85a1522d9691b31c",
+      "actual": "e356dfad82f1468a6c80e20fe127df4b7b40c395398cf5cb85a1522d9691b31c",
+      "bytes": 51284
+    },
+    "vendor/m3_reference/meshes/rlink3.STL": {
+      "expected": "bcf76ccbadf426c3e7ec6135f0fd09c0669b54735e7de91bbee92276b5404b25",
+      "actual": "bcf76ccbadf426c3e7ec6135f0fd09c0669b54735e7de91bbee92276b5404b25",
+      "bytes": 888484
+    },
+    "vendor/m3_reference/meshes/llink3.STL": {
+      "expected": "81f1c9f5ab75d86362d7e227fda6018c87488db713bd9621f6eb761bbec3109d",
+      "actual": "81f1c9f5ab75d86362d7e227fda6018c87488db713bd9621f6eb761bbec3109d",
+      "bytes": 888484
+    },
+    "vendor/m3_reference/meshes/Gripping.STL": {
+      "expected": "e35ed860419dad49687084f9c8493f43c81cfece5b421d7e63944d27d22d63f7",
+      "actual": "e35ed860419dad49687084f9c8493f43c81cfece5b421d7e63944d27d22d63f7",
+      "bytes": 51284
+    },
+    "vendor/m3_reference/meshes/DCW2.STL": {
+      "expected": "085efb1ffed33d9440071886bf1c2ce769facda5e45fd7e1ab24d4d55298d1a1",
+      "actual": "085efb1ffed33d9440071886bf1c2ce769facda5e45fd7e1ab24d4d55298d1a1",
+      "bytes": 494284
+    },
+    "vendor/m3_reference/meshes/Camera.STL": {
+      "expected": "12d7158cdf2fab1072f2bd3989726e854a20d1fe717206cb7edc114afe59fdbe",
+      "actual": "12d7158cdf2fab1072f2bd3989726e854a20d1fe717206cb7edc114afe59fdbe",
+      "bytes": 153484
+    },
+    "vendor/m3_reference/meshes/lwheel1.STL": {
+      "expected": "e629352d69aaef698c948505f046fb241b1d9a7e734f0417a06dfe2d383eacfd",
+      "actual": "e629352d69aaef698c948505f046fb241b1d9a7e734f0417a06dfe2d383eacfd",
+      "bytes": 2035684
+    },
+    "vendor/m3_reference/meshes/lwheel2.STL": {
+      "expected": "f07f85985d6c189b71d839a0d44bf3e893eacfd76dccc4f954b63d247a78ae1b",
+      "actual": "f07f85985d6c189b71d839a0d44bf3e893eacfd76dccc4f954b63d247a78ae1b",
+      "bytes": 2039484
+    },
+    "vendor/m3_reference/meshes/rwheel1.STL": {
+      "expected": "7218e9bea1d0862cacd44b0a8a72e207085d367a022843bfd4e6be23f6786fff",
+      "actual": "7218e9bea1d0862cacd44b0a8a72e207085d367a022843bfd4e6be23f6786fff",
+      "bytes": 2039484
+    },
+    "vendor/m3_reference/meshes/rwheel2.STL": {
+      "expected": "f8daf44a79b1b3d5bdec95ef3885e8151f3a39f21f93c2bf2e8fcbf09d57c323",
+      "actual": "f8daf44a79b1b3d5bdec95ef3885e8151f3a39f21f93c2bf2e8fcbf09d57c323",
+      "bytes": 2035684
+    },
+    "vendor/m3_reference/meshes/arm_base_Link.STL": {
+      "expected": "bbd67c0a59cdbb8fd02c567e8ddff62bde72d3cae753ee63da7681f98f29871c",
+      "actual": "bbd67c0a59cdbb8fd02c567e8ddff62bde72d3cae753ee63da7681f98f29871c",
+      "bytes": 46884
+    },
+    "config/explorer.urdf": {
+      "expected": "9ee94f15a2473ba04c84c552bae47f7dd2bd734b8b3700f3fe25d752c3eace4b",
+      "actual": "9ee94f15a2473ba04c84c552bae47f7dd2bd734b8b3700f3fe25d752c3eace4b",
+      "bytes": 24827
+    },
+    "config/explorer.srdf": {
+      "expected": "dba83e73a95a6a85e936f0900d2aefadbb434b89302da92d680b56f983b023a7",
+      "actual": "dba83e73a95a6a85e936f0900d2aefadbb434b89302da92d680b56f983b023a7",
+      "bytes": 9185
+    }
+  },
+  "all_hashes_match": true,
+  "source_inertia_violations": [],
+  "real_dynamics_verified": false
+}

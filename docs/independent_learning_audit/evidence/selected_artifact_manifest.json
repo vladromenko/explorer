@@ -1,0 +1,74 @@
+[
+  {
+    "source": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/live-room-395c6a0365d9/request.json",
+    "packet": "evidence/refusal-original/request.json",
+    "bytes": 459,
+    "sha256": "e29b7cd37b9becde4e812c08e51d383def58b47a3049ca39f9bd87c497e7f992"
+  },
+  {
+    "source": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/live-room-395c6a0365d9/handoff.json",
+    "packet": "evidence/refusal-original/handoff.json",
+    "bytes": 339096,
+    "sha256": "9dbb8beedf5151801baf625ee2ff2b2c32a9466778adf1ed0c0fa5c2e72c5ef6"
+  },
+  {
+    "source": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/live-room-395c6a0365d9/state.json",
+    "packet": "evidence/refusal-original/state.json",
+    "bytes": 820,
+    "sha256": "cb8d31efb87bd7024020c3996df33cb5c6f1fd3c8bd358798aa046d0abad4530"
+  },
+  {
+    "source": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/live-room-395c6a0365d9/trial/result.json",
+    "packet": "evidence/refusal-original/trial/result.json",
+    "bytes": 25658,
+    "sha256": "31cfa3238c0087e00ae16e55b3b484374ee3ccb59a0f7c0b63e68037b13b7a17"
+  },
+  {
+    "source": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/live-room-395c6a0365d9/trial/observed/policy-command-refusal.json",
+    "packet": "evidence/refusal-original/trial/observed/policy-command-refusal.json",
+    "bytes": 847,
+    "sha256": "ff2a829de7a33cefe9f84a0b7c87eadb54e90b71a147817d375ca2723a1998a1"
+  },
+  {
+    "source": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/live-room-395c6a0365d9/model/bundle.json",
+    "packet": "evidence/refusal-original/model/bundle.json",
+    "bytes": 29451,
+    "sha256": "e3c8800d1aafc2403bc4ff5614bc821a5454c1e1b3c4eb912f99c4efc3a756dc"
+  },
+  {
+    "source": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/live-room-395c6a0365d9/model/model/checkpoints/last/pretrained_model/policy_preprocessor_step_3_normalizer_processor.safetensors",
+    "packet": "evidence/refusal-original/model/model/checkpoints/last/pretrained_model/policy_preprocessor_step_3_normalizer_processor.safetensors",
+    "bytes": 8204,
+    "sha256": "055d93339c6040d9cecf68ae3c513cd2d699b05145d4ed4285f3a0160e87c86e"
+  },
+  {
+    "source": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/live-room-395c6a0365d9/model/model/checkpoints/last/pretrained_model/config.json",
+    "packet": "evidence/refusal-original/model/model/checkpoints/last/pretrained_model/config.json",
+    "bytes": 1773,
+    "sha256": "dec602eb31532abd238e5eac43c9c3f0c4f341cbc61d7863be1d339d7b32c707"
+  },
+  {
+    "source": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/live-room-395c6a0365d9/model/model/checkpoints/last/pretrained_model/policy_postprocessor.json",
+    "packet": "evidence/refusal-original/model/model/checkpoints/last/pretrained_model/policy_postprocessor.json",
+    "bytes": 689,
+    "sha256": "dca3fb7ce4bbbd9e23c3b2eacc42e53e574b3893fda49a5efec0f47182a64df9"
+  },
+  {
+    "source": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/live-room-395c6a0365d9/model/model/checkpoints/last/pretrained_model/policy_preprocessor.json",
+    "packet": "evidence/refusal-original/model/model/checkpoints/last/pretrained_model/policy_preprocessor.json",
+    "bytes": 1321,
+    "sha256": "c52e93d66391495a0e77c6db5a8b41cf5c21e7d5e2b505c55e129844ce64dce0"
+  },
+  {
+    "source": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/live-room-395c6a0365d9/model/model/checkpoints/last/pretrained_model/policy_postprocessor_step_0_unnormalizer_processor.safetensors",
+    "packet": "evidence/refusal-original/model/model/checkpoints/last/pretrained_model/policy_postprocessor_step_0_unnormalizer_processor.safetensors",
+    "bytes": 8260,
+    "sha256": "0f08aa34ffeeaee82c7ca0fffde532e03130b623944147827a00137facd9665b"
+  },
+  {
+    "source": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/live-room-395c6a0365d9/model/model/checkpoints/last/pretrained_model/train_config.json",
+    "packet": "evidence/refusal-original/model/model/checkpoints/last/pretrained_model/train_config.json",
+    "bytes": 6323,
+    "sha256": "30f2892b79118c0630ec63f9e42d1a86919faec4e1649e7d771790a95da669da"
+  }
+]

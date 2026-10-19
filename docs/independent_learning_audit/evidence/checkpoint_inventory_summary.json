@@ -1,0 +1,8 @@
+{
+  "entries": 667,
+  "distinct_resolved_files": 649,
+  "distinct_hashes": 644,
+  "physical_bytes": 30969314812,
+  "completed_at": "2026-10-19T20:29:41.936672+00:00",
+  "integrity_scope": "model bytes SHA256; state file presence, not tensor semantic checks of all optimizers"
+}

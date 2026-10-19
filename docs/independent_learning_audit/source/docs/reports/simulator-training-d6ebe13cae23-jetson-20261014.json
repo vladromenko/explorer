@@ -1,0 +1,135 @@
+{
+  "date": "2026-10-14",
+  "queue_id": "b37b2dc493c9",
+  "model_id": "d6ebe13cae23",
+  "total_demonstration_attempts": 700,
+  "successful_demonstrations": 426,
+  "training_budget": {
+    "requested_steps": 30000,
+    "effective_steps": 145741,
+    "training_frames": 291481,
+    "batch_size": 16,
+    "minimum_epochs": 8,
+    "expected_dataset_passes": 8.000027446042795,
+    "step_cap_reached": false
+  },
+  "steps_completed": 145741,
+  "selected_checkpoint": "model/checkpoints/087444/pretrained_model",
+  "checkpoint_selection_used_task_test": false,
+  "independent_closed_loop_successes": 6,
+  "independent_closed_loop_episodes": 10,
+  "failures": {
+    "execution_error": 0,
+    "no_two_finger_contact": 0,
+    "contact_without_verified_lift": 1,
+    "lift_without_verified_delivery": 3
+  },
+  "results": [
+    {
+      "id": "heldout-0000",
+      "success": false,
+      "lifted": true,
+      "placed": false,
+      "basket_height_m": 0.08
+    },
+    {
+      "id": "heldout-0001",
+      "success": false,
+      "lifted": true,
+      "placed": false,
+      "basket_height_m": 0.12
+    },
+    {
+      "id": "heldout-0002",
+      "success": true,
+      "lifted": true,
+      "placed": true,
+      "basket_height_m": 0.16
+    },
+    {
+      "id": "heldout-0003",
+      "success": true,
+      "lifted": true,
+      "placed": true,
+      "basket_height_m": 0.2
+    },
+    {
+      "id": "heldout-0004",
+      "success": false,
+      "lifted": true,
+      "placed": false,
+      "basket_height_m": 0.3
+    },
+    {
+      "id": "heldout-0005",
+      "success": false,
+      "lifted": false,
+      "placed": false,
+      "basket_height_m": 0.08
+    },
+    {
+      "id": "heldout-0006",
+      "success": true,
+      "lifted": true,
+      "placed": true,
+      "basket_height_m": 0.12
+    },
+    {
+      "id": "heldout-0007",
+      "success": true,
+      "lifted": true,
+      "placed": true,
+      "basket_height_m": 0.16
+    },
+    {
+      "id": "heldout-0008",
+      "success": true,
+      "lifted": true,
+      "placed": true,
+      "basket_height_m": 0.2
+    },
+    {
+      "id": "heldout-0009",
+      "success": true,
+      "lifted": true,
+      "placed": true,
+      "basket_height_m": 0.3
+    }
+  ],
+  "user_basket_30cm_successes": 1,
+  "user_basket_30cm_episodes": 2,
+  "transfer_archive_sha256": "fba4fe8565ea2dde90a60a68b71467324e185319af35a6c9e8f5830e7c1844e7",
+  "jetson_import_path": "/home/vlad/Explorer/data/learning-jobs/fba4fe8565ea2dde90a60a68b7146732",
+  "jetson_web_model_visible": true,
+  "jetson_inference": {
+    "model_id": "fba4fe8565ea2dde90a60a68b7146732",
+    "device": "cuda:0",
+    "torch": "2.11.0+cu130",
+    "model_load_s": 0.8093733239999779,
+    "inference_s": 0.9673413419999974,
+    "action_shape": [
+      9
+    ],
+    "finite": true,
+    "input_joint_source": "command_estimate",
+    "camera": "onboard_wrist_raw",
+    "commands_sent": false,
+    "physical_success_verified": false,
+    "simulation_successes": 6,
+    "simulation_episodes": 10,
+    "at": 1791967028.9544642
+  },
+  "observed_trial_ready": false,
+  "blocked_by": [
+    "simulation_success_6_of_10_requires_10_of_10",
+    "localization_verified_false",
+    "gripper_calibrated_false"
+  ],
+  "physical_motion_commands_sent": false,
+  "physical_success_verified": false,
+  "next_work": [
+    "Review lift failure and three failed deliveries using recorded camera and contact traces",
+    "Improve and independently validate closed-loop behavior without changing acceptance criteria",
+    "Complete real localization and gripper calibration before observed transfer trial"
+  ]
+}

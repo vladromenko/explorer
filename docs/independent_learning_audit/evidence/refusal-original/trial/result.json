@@ -1,0 +1,1190 @@
+{
+  "state": "failed",
+  "placed_verified": false,
+  "physical_ready": false,
+  "reason": "Недопустимый шаг сустава 6",
+  "cancelled": false,
+  "events": [
+    {
+      "stage": "search_view",
+      "at": 285478.954049875,
+      "result": {
+        "stop": 1
+      }
+    },
+    {
+      "stage": "search",
+      "at": 285553.678377375,
+      "result": {
+        "stop": 1,
+        "found": []
+      }
+    },
+    {
+      "stage": "search_move_moving",
+      "at": 285556.815344083,
+      "result": {
+        "goal": {
+          "x": -1.4711339552946665e-05,
+          "y": 2.4620489321282e-07,
+          "yaw": -1.5707963267948966,
+          "information_gain": 56
+        },
+        "held": false
+      }
+    },
+    {
+      "stage": "search_move",
+      "at": 285569.645578791,
+      "result": {
+        "completed": true,
+        "pose": [
+          0.003106207251132776,
+          0.0006026490326376375,
+          -1.54938805366099
+        ]
+      }
+    },
+    {
+      "stage": "search_view",
+      "at": 285569.645901375,
+      "result": {
+        "stop": 2
+      }
+    },
+    {
+      "stage": "observation_reposition",
+      "at": 285571.491486541,
+      "result": {
+        "operation": "search_view"
+      }
+    },
+    {
+      "stage": "search",
+      "at": 285583.911525916,
+      "result": {
+        "stop": 2,
+        "found": []
+      }
+    },
+    {
+      "stage": "search_move_moving",
+      "at": 285586.929785458,
+      "result": {
+        "goal": {
+          "x": 0.007398890181019301,
+          "y": 0.0009032635448711485,
+          "yaw": -3.141592653589793,
+          "information_gain": 48
+        },
+        "held": false
+      }
+    },
+    {
+      "stage": "search_move",
+      "at": 285600.623554958,
+      "result": {
+        "completed": true,
+        "pose": [
+          0.008007440273915277,
+          -0.001628258180597546,
+          -3.1206688635896143
+        ]
+      }
+    },
+    {
+      "stage": "search_view",
+      "at": 285600.6240425,
+      "result": {
+        "stop": 3
+      }
+    },
+    {
+      "stage": "observation_reposition",
+      "at": 285634.53626025,
+      "result": {
+        "operation": "search_view"
+      }
+    },
+    {
+      "stage": "search",
+      "at": 285643.941988958,
+      "result": {
+        "stop": 3,
+        "found": [
+          "sock"
+        ]
+      }
+    },
+    {
+      "stage": "search_move_moving",
+      "at": 285646.870109541,
+      "result": {
+        "goal": {
+          "x": 0.008318375432189723,
+          "y": -0.00647953705558579,
+          "yaw": 1.5707963267948966,
+          "information_gain": 49
+        },
+        "held": false
+      }
+    },
+    {
+      "stage": "search_move",
+      "at": 285660.059518333,
+      "result": {
+        "completed": true,
+        "pose": [
+          0.0063216070180511,
+          -0.007160584938635341,
+          1.591230443181165
+        ]
+      }
+    },
+    {
+      "stage": "search_view",
+      "at": 285660.059925666,
+      "result": {
+        "stop": 4
+      }
+    },
+    {
+      "stage": "observation_reposition",
+      "at": 285669.301232333,
+      "result": {
+        "operation": "search_view"
+      }
+    },
+    {
+      "stage": "search",
+      "at": 285674.867696333,
+      "result": {
+        "stop": 4,
+        "found": [
+          "sock"
+        ]
+      }
+    },
+    {
+      "stage": "search_move_moving",
+      "at": 285678.242972125,
+      "result": {
+        "goal": {
+          "x": 0.3200000000000003,
+          "y": 0.08000000000000007,
+          "yaw": 0.9584594592142436,
+          "path_distance_m": 0.39999999999999997,
+          "frontier_cells": 38,
+          "information_gain_cells": 38,
+          "clearance_m": 0.39395431207184417,
+          "risk_cost": 15.636162247772017,
+          "score": 0.37527885738181627,
+          "policy": "risk_adjusted_information_gain",
+          "information_gain": 38,
+          "information_source": "observed_scan_frontier"
+        },
+        "held": false
+      }
+    },
+    {
+      "stage": "search_move",
+      "at": 285688.418040791,
+      "result": {
+        "completed": true,
+        "pose": [
+          0.3066362504424135,
+          0.07383928180869415,
+          0.9600419823531096
+        ]
+      }
+    },
+    {
+      "stage": "search_view",
+      "at": 285688.418499708,
+      "result": {
+        "stop": 5
+      }
+    },
+    {
+      "stage": "observation_reposition",
+      "at": 285690.31284075,
+      "result": {
+        "operation": "search_view"
+      }
+    },
+    {
+      "stage": "search",
+      "at": 285703.145434,
+      "result": {
+        "stop": 5,
+        "found": [
+          "sock"
+        ]
+      }
+    },
+    {
+      "stage": "search_move_moving",
+      "at": 285706.160636291,
+      "result": {
+        "goal": {
+          "x": 0.30919574432048247,
+          "y": 0.0712437743766994,
+          "yaw": -3.141592653589793,
+          "information_gain": 31
+        },
+        "held": false
+      }
+    },
+    {
+      "stage": "search_move",
+      "at": 285725.754451125,
+      "result": {
+        "completed": true,
+        "pose": [
+          0.30957956672210046,
+          0.07452880585045515,
+          3.126019395353243
+        ]
+      }
+    },
+    {
+      "stage": "search_view",
+      "at": 285725.764340291,
+      "result": {
+        "stop": 6
+      }
+    },
+    {
+      "stage": "observation_reposition",
+      "at": 285729.214130791,
+      "result": {
+        "operation": "search_view"
+      }
+    },
+    {
+      "stage": "search",
+      "at": 285742.569217458,
+      "result": {
+        "stop": 6,
+        "found": [
+          "sock"
+        ]
+      }
+    },
+    {
+      "stage": "search_move_moving",
+      "at": 285745.533025333,
+      "result": {
+        "goal": {
+          "x": 0.3103041658525279,
+          "y": 0.07727393812883028,
+          "yaw": -3.141592653589793,
+          "information_gain": 10
+        },
+        "held": false
+      }
+    },
+    {
+      "stage": "search_move",
+      "at": 285745.917309916,
+      "result": {
+        "completed": true,
+        "pose": [
+          0.31030418664191856,
+          0.07727394409326248,
+          -3.1408069162554058
+        ]
+      }
+    },
+    {
+      "stage": "search_view",
+      "at": 285745.9610235,
+      "result": {
+        "stop": 7
+      }
+    },
+    {
+      "stage": "search",
+      "at": 285760.934765416,
+      "result": {
+        "stop": 7,
+        "found": [
+          "sock"
+        ]
+      }
+    },
+    {
+      "stage": "search_move_moving",
+      "at": 285763.93538275,
+      "result": {
+        "goal": {
+          "x": 0.31030412865471774,
+          "y": 0.07727399120111644,
+          "yaw": -1.5707963267948966,
+          "information_gain": 17
+        },
+        "held": false
+      }
+    },
+    {
+      "stage": "search_move",
+      "at": 285777.731533458,
+      "result": {
+        "completed": true,
+        "pose": [
+          0.30720616152234165,
+          0.07802198675540213,
+          -1.5916123904594557
+        ]
+      }
+    },
+    {
+      "stage": "search_view",
+      "at": 285777.732076208,
+      "result": {
+        "stop": 8
+      }
+    },
+    {
+      "stage": "observation_reposition",
+      "at": 285779.669503958,
+      "result": {
+        "operation": "search_view"
+      }
+    },
+    {
+      "stage": "search",
+      "at": 285792.64849875,
+      "result": {
+        "stop": 8,
+        "found": [
+          "sock"
+        ]
+      }
+    },
+    {
+      "stage": "search_move_moving",
+      "at": 285795.6652455,
+      "result": {
+        "goal": {
+          "x": 0.6000000000000005,
+          "y": -0.03999999999999959,
+          "yaw": -1.5363272257953886,
+          "path_distance_m": 0.39999999999999997,
+          "frontier_cells": 37,
+          "information_gain_cells": 37,
+          "clearance_m": 0.4079215610874228,
+          "risk_cost": 12.83341845369431,
+          "score": 0.39274855990967783,
+          "policy": "risk_adjusted_information_gain",
+          "information_gain": 37,
+          "information_source": "observed_scan_frontier"
+        },
+        "held": false
+      }
+    },
+    {
+      "stage": "search_move",
+      "at": 285805.381708541,
+      "result": {
+        "completed": true,
+        "pose": [
+          0.5861531189981901,
+          -0.040095971456396005,
+          -1.5234313989415564
+        ]
+      }
+    },
+    {
+      "stage": "search_view",
+      "at": 285805.382269625,
+      "result": {
+        "stop": 9
+      }
+    },
+    {
+      "stage": "observation_reposition",
+      "at": 285807.336184333,
+      "result": {
+        "operation": "search_view"
+      }
+    },
+    {
+      "stage": "search",
+      "at": 285820.90929825,
+      "result": {
+        "stop": 9,
+        "found": [
+          "sock"
+        ]
+      }
+    },
+    {
+      "stage": "search_move_moving",
+      "at": 285823.948815375,
+      "result": {
+        "goal": {
+          "x": 0.5891996797378636,
+          "y": -0.03956756736761265,
+          "yaw": -3.141592653589793,
+          "information_gain": 13
+        },
+        "held": false
+      }
+    },
+    {
+      "stage": "search_move",
+      "at": 285838.037584416,
+      "result": {
+        "completed": true,
+        "pose": [
+          0.5900200425488236,
+          -0.03665504900358486,
+          3.140972613160639
+        ]
+      }
+    },
+    {
+      "stage": "search_view",
+      "at": 285838.038146583,
+      "result": {
+        "stop": 10
+      }
+    },
+    {
+      "stage": "search",
+      "at": 285853.143543916,
+      "result": {
+        "stop": 10,
+        "found": [
+          "sock"
+        ]
+      }
+    },
+    {
+      "stage": "search_move_moving",
+      "at": 285856.106281416,
+      "result": {
+        "goal": {
+          "x": 1.0400093677617734,
+          "y": -0.036468923754014705,
+          "yaw": 0.0,
+          "information_gain": 30
+        },
+        "held": false
+      }
+    },
+    {
+      "stage": "search_move",
+      "at": 285879.527401208,
+      "result": {
+        "completed": true,
+        "pose": [
+          1.0390189460388617,
+          -0.03813317436636988,
+          -0.0019929353705029464
+        ]
+      }
+    },
+    {
+      "stage": "search_view",
+      "at": 285879.528043708,
+      "result": {
+        "stop": 11
+      }
+    },
+    {
+      "stage": "search",
+      "at": 285894.82965175,
+      "result": {
+        "stop": 11,
+        "found": [
+          "sock"
+        ]
+      }
+    },
+    {
+      "stage": "search_move_moving",
+      "at": 285897.8752355,
+      "result": {
+        "goal": {
+          "x": 1.4389878065593258,
+          "y": -0.7309877491543577,
+          "yaw": -1.0471975511965979,
+          "information_gain": 45
+        },
+        "held": false
+      }
+    },
+    {
+      "stage": "search_move",
+      "at": 285920.618289708,
+      "result": {
+        "completed": true,
+        "pose": [
+          1.4292982646246477,
+          -0.719857196884169,
+          -1.0411163502752683
+        ]
+      }
+    },
+    {
+      "stage": "search_view",
+      "at": 285920.619062291,
+      "result": {
+        "stop": 12
+      }
+    },
+    {
+      "stage": "observation_reposition",
+      "at": 285922.563078208,
+      "result": {
+        "operation": "search_view"
+      }
+    },
+    {
+      "stage": "search",
+      "at": 285936.901502583,
+      "result": {
+        "stop": 12,
+        "found": [
+          "sock"
+        ]
+      }
+    },
+    {
+      "stage": "search_move_moving",
+      "at": 285939.796925875,
+      "result": {
+        "goal": {
+          "x": 1.4317230865573005,
+          "y": -0.7174026594606479,
+          "yaw": -1.5707963267948966,
+          "information_gain": 13
+        },
+        "held": false
+      }
+    },
+    {
+      "stage": "search_move",
+      "at": 285944.158009083,
+      "result": {
+        "completed": true,
+        "pose": [
+          1.4308612786830337,
+          -0.7170972044959177,
+          -1.5648566126985481
+        ]
+      }
+    },
+    {
+      "stage": "search_view",
+      "at": 285944.158702583,
+      "result": {
+        "stop": 13
+      }
+    },
+    {
+      "stage": "search",
+      "at": 285959.212942583,
+      "result": {
+        "stop": 13,
+        "found": [
+          "sock"
+        ]
+      }
+    },
+    {
+      "stage": "search_move_moving",
+      "at": 285961.896241375,
+      "result": {
+        "goal": {
+          "x": 1.041146677990328,
+          "y": -0.9420960575257761,
+          "yaw": -2.6179938779914944,
+          "information_gain": 21
+        },
+        "held": false
+      }
+    },
+    {
+      "stage": "search_move",
+      "at": 285974.718253916,
+      "result": {
+        "completed": true,
+        "pose": [
+          1.0501145810486616,
+          -0.9334875858557977,
+          -2.6072261036173736
+        ]
+      }
+    },
+    {
+      "stage": "search_view",
+      "at": 285974.719001416,
+      "result": {
+        "stop": 14
+      }
+    },
+    {
+      "stage": "observation_reposition",
+      "at": 285976.66512325,
+      "result": {
+        "operation": "search_view"
+      }
+    },
+    {
+      "stage": "search",
+      "at": 285990.173768333,
+      "result": {
+        "stop": 14,
+        "found": [
+          "sock"
+        ]
+      }
+    },
+    {
+      "stage": "search_move_moving",
+      "at": 285993.123972375,
+      "result": {
+        "goal": {
+          "x": 1.0452056953633246,
+          "y": -0.9309092360646418,
+          "yaw": -1.5707963267948966,
+          "information_gain": 5
+        },
+        "held": false
+      }
+    },
+    {
+      "stage": "search_move",
+      "at": 286001.730485541,
+      "result": {
+        "completed": true,
+        "pose": [
+          1.0430945535192127,
+          -0.9302131142563992,
+          -1.59332206234022
+        ]
+      }
+    },
+    {
+      "stage": "search_view",
+      "at": 286001.731279625,
+      "result": {
+        "stop": 15
+      }
+    },
+    {
+      "stage": "observation_reposition",
+      "at": 286003.682315458,
+      "result": {
+        "operation": "search_view"
+      }
+    },
+    {
+      "stage": "search",
+      "at": 286018.794336625,
+      "result": {
+        "stop": 15,
+        "found": [
+          "sock"
+        ]
+      }
+    },
+    {
+      "stage": "search_move_moving",
+      "at": 286021.727075625,
+      "result": {
+        "goal": {
+          "x": 1.0470552455554256,
+          "y": 0.8696300904009993,
+          "yaw": 1.5707963267948966,
+          "information_gain": 37
+        },
+        "held": false
+      }
+    },
+    {
+      "stage": "search_move",
+      "at": 286070.823403916,
+      "result": {
+        "completed": true,
+        "pose": [
+          1.0463154865561068,
+          0.8562753392225221,
+          1.5579032026849904
+        ]
+      }
+    },
+    {
+      "stage": "search_view",
+      "at": 286070.82407125,
+      "result": {
+        "stop": 16
+      }
+    },
+    {
+      "stage": "search",
+      "at": 286086.442623125,
+      "result": {
+        "stop": 16,
+        "found": [
+          "sock"
+        ]
+      }
+    },
+    {
+      "stage": "search_move_moving",
+      "at": 286089.294069333,
+      "result": {
+        "goal": {
+          "x": 1.0415292747740759,
+          "y": 0.8566489053948524,
+          "yaw": -3.141592653589793,
+          "information_gain": 20
+        },
+        "held": false
+      }
+    },
+    {
+      "stage": "search_move",
+      "at": 286102.288010083,
+      "result": {
+        "completed": true,
+        "pose": [
+          1.0422607765124572,
+          0.8580058621513381,
+          3.1404867655110666
+        ]
+      }
+    },
+    {
+      "stage": "search_view",
+      "at": 286102.288932458,
+      "result": {
+        "stop": 17
+      }
+    },
+    {
+      "stage": "observation_reposition",
+      "at": 286104.2338155,
+      "result": {
+        "operation": "search_view"
+      }
+    },
+    {
+      "stage": "search",
+      "at": 286118.694462583,
+      "result": {
+        "stop": 17,
+        "found": [
+          "sock"
+        ]
+      }
+    },
+    {
+      "stage": "search_move_moving",
+      "at": 286121.790270083,
+      "result": {
+        "goal": {
+          "x": 1.2674228924459485,
+          "y": 1.2432570255787485,
+          "yaw": 1.0471975511965974,
+          "information_gain": 12
+        },
+        "held": false
+      }
+    },
+    {
+      "stage": "search_move",
+      "at": 286137.144043,
+      "result": {
+        "completed": true,
+        "pose": [
+          1.268902220581801,
+          1.2441722430216067,
+          1.0694852452627588
+        ]
+      }
+    },
+    {
+      "stage": "search_view",
+      "at": 286137.144788416,
+      "result": {
+        "stop": 18
+      }
+    },
+    {
+      "stage": "observation_reposition",
+      "at": 286139.298243083,
+      "result": {
+        "operation": "search_view"
+      }
+    },
+    {
+      "stage": "search",
+      "at": 286153.198989125,
+      "result": {
+        "stop": 18,
+        "found": [
+          "sock"
+        ]
+      }
+    },
+    {
+      "stage": "search_move_moving",
+      "at": 286156.0971055,
+      "result": {
+        "goal": {
+          "x": -0.07999999999999963,
+          "y": 0.7600000000000007,
+          "yaw": 1.7438723579647497,
+          "path_distance_m": 3.280000000000002,
+          "frontier_cells": 29,
+          "information_gain_cells": 29,
+          "clearance_m": 0.4,
+          "risk_cost": 14.285714285714281,
+          "score": 0.16712890247446663,
+          "policy": "risk_adjusted_information_gain",
+          "information_gain": 29,
+          "information_source": "observed_scan_frontier"
+        },
+        "held": false
+      }
+    },
+    {
+      "stage": "search_move",
+      "at": 286231.190415791,
+      "result": {
+        "completed": true,
+        "pose": [
+          -0.07797087991207363,
+          0.7471744175791639,
+          1.7146126796914603
+        ]
+      }
+    },
+    {
+      "stage": "search_view",
+      "at": 286231.19135425,
+      "result": {
+        "stop": 19
+      }
+    },
+    {
+      "stage": "search_hint_unconfirmed",
+      "at": 286241.890679833,
+      "result": {
+        "reason": "За ограниченный обзор не получены два полных согласованных изображения отверстия корзины"
+      }
+    },
+    {
+      "stage": "search",
+      "at": 286250.051329791,
+      "result": {
+        "stop": 19,
+        "found": [
+          "sock"
+        ]
+      }
+    },
+    {
+      "stage": "search_move_moving",
+      "at": 286253.181187958,
+      "result": {
+        "goal": {
+          "x": -0.39999999999999947,
+          "y": 0.8000000000000007,
+          "yaw": 1.334682679658221,
+          "path_distance_m": 0.36,
+          "frontier_cells": 28,
+          "information_gain_cells": 28,
+          "clearance_m": 0.41182520563948005,
+          "risk_cost": 12.221173074785497,
+          "score": 0.2930393828543577,
+          "policy": "risk_adjusted_information_gain",
+          "information_gain": 28,
+          "information_source": "observed_scan_frontier"
+        },
+        "held": false
+      }
+    },
+    {
+      "stage": "search_move",
+      "at": 286263.663408833,
+      "result": {
+        "completed": true,
+        "pose": [
+          -0.3902992393557731,
+          0.7927432006229147,
+          1.3289528564782662
+        ]
+      }
+    },
+    {
+      "stage": "search_view",
+      "at": 286263.67219675,
+      "result": {
+        "stop": 20
+      }
+    },
+    {
+      "stage": "observation_reposition",
+      "at": 286265.6326485,
+      "result": {
+        "operation": "search_view"
+      }
+    },
+    {
+      "stage": "search",
+      "at": 286284.53226,
+      "result": {
+        "stop": 20,
+        "found": [
+          "basket",
+          "sock"
+        ]
+      }
+    },
+    {
+      "stage": "approach_sock_moving",
+      "at": 286287.486569541,
+      "result": {
+        "goal": {
+          "x": -0.6481973640990386,
+          "y": 0.5135900133671139,
+          "yaw": -2.324915416451184
+        },
+        "held": false
+      }
+    },
+    {
+      "stage": "approach_sock",
+      "at": 286307.841427041,
+      "result": {
+        "completed": true,
+        "pose": [
+          -0.6462517274287629,
+          0.5115235429293948,
+          -2.339486082126361
+        ]
+      }
+    },
+    {
+      "stage": "approach_target_missing",
+      "at": 286315.657104041,
+      "result": {
+        "kind": "sock"
+      }
+    },
+    {
+      "stage": "approach_sock_moving",
+      "at": 286317.726577291,
+      "result": {
+        "goal": {
+          "x": -0.6441091112799973,
+          "y": 0.5097102144003725,
+          "yaw": -2.3351630816370914
+        },
+        "held": false
+      }
+    },
+    {
+      "stage": "approach_sock",
+      "at": 286318.137368375,
+      "result": {
+        "completed": true,
+        "pose": [
+          -0.6436641551807414,
+          0.5101742914420007,
+          -2.334175729550745
+        ]
+      }
+    },
+    {
+      "stage": "observation_reposition",
+      "at": 286338.157180958,
+      "result": {
+        "operation": "look_at"
+      }
+    },
+    {
+      "stage": "manipulation_observation_pending",
+      "at": 286352.324136333,
+      "result": {
+        "kind": "sock",
+        "attempt": 1,
+        "visible": 1,
+        "remembered_target_admitted": false
+      }
+    },
+    {
+      "stage": "manipulation_observation_pending",
+      "at": 286355.33523525,
+      "result": {
+        "kind": "sock",
+        "attempt": 2,
+        "visible": 0,
+        "remembered_target_admitted": false
+      }
+    },
+    {
+      "stage": "manipulation_observation_pending",
+      "at": 286358.386623875,
+      "result": {
+        "kind": "sock",
+        "attempt": 3,
+        "visible": 1,
+        "remembered_target_admitted": false
+      }
+    },
+    {
+      "stage": "policy_pick_running",
+      "at": 286361.443529166,
+      "result": null
+    }
+  ],
+  "held_verified": false,
+  "seed": 1703000014,
+  "physical_outcome": {
+    "id": "sock_basket",
+    "phase": "skill_find_destination",
+    "grasp_contact": false,
+    "finger_contacts": [
+      false,
+      false
+    ],
+    "lifted": false,
+    "placed": false,
+    "success": false,
+    "lift_hold_s": 0.0,
+    "ever_success": false,
+    "final_placement": {
+      "inside_fraction": 0.0,
+      "within_height": false,
+      "sock_speed_max_m_s": 0.0020083732697965414,
+      "sock_height_bounds_m": [
+        0.0009918590876285445,
+        0.007236207423834979
+      ]
+    },
+    "final_placement_hold_s": 0.0,
+    "checked_after_actions_stopped": true
+  },
+  "domain_variation": {
+    "profile": "sock_variants_v1",
+    "seed": 1703000014,
+    "parameters": {
+      "sock": {
+        "length_m": 0.15814149077196105,
+        "width_m": 0.059176888602176375,
+        "mass_kg": 0.022317008153120575,
+        "friction": 0.9193108146719023,
+        "young_pa": 13273.834103132744,
+        "yaw_rad": 0.19514814435463837,
+        "initial_thickness_m": 0.010268150679227718
+      },
+      "bin": {
+        "height_m": 0.3,
+        "shape": "round",
+        "inner_half_size_m": [
+          0.125,
+          0.125
+        ]
+      }
+    },
+    "sock_position": [
+      -1.035343140146561,
+      0.12177942376298635,
+      0.015
+    ],
+    "bin_position": [
+      -0.1280726052523984,
+      1.2801740132241646,
+      0.0
+    ],
+    "sock_rgb": [
+      0.29675071953532384,
+      0.7073824012483465,
+      0.10601102907267215
+    ],
+    "basket_rgb": [
+      0.3483977389904059,
+      0.46322972755079744,
+      0.6330696003134619
+    ],
+    "lighting_scale": 0.9430078746798994,
+    "floor_rgb": [
+      0.2895323219750593,
+      0.23872995116249546,
+      0.14695011600523114
+    ],
+    "parameter_status": "estimated",
+    "unsupported": [
+      "arbitrary folds or knots",
+      "basket rim above 0.30 m",
+      "unseen room layout",
+      "measured real cloth dynamics"
+    ]
+  },
+  "success": false,
+  "collision_free": true,
+  "collision_evidence": [],
+  "room_layout": true,
+  "collision_sampling": "each_physics_substep",
+  "immutable_source_verified": true,
+  "source_revision": "1da8ecb26efaa798d4293f126d7d123aff7985e5",
+  "actor_truth_inputs": false,
+  "teacher_fallback": false,
+  "simulation_only": true,
+  "mission_contract_sha256": "099d72941d0bd0cc3c6e45f991587b408f0a13d8b0d2091d15ab47d251c7f554",
+  "model_sha256": "eacea46e67a89b9e79dc35de5ef2dc958b03569b2ae727e54975b3df9e8e5c61",
+  "policy_command_refusal": {
+    "phase": "pick",
+    "step": 695,
+    "model_sha256": "eacea46e67a89b9e79dc35de5ef2dc958b03569b2ae727e54975b3df9e8e5c61",
+    "decision": {
+      "reference": [
+        90.0,
+        123.0,
+        37.0,
+        0.0,
+        80.0,
+        48.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "image_sha256": "c281b33d73a27b6e43b3672ad49d0991009025d17873986b6d0a98669810fc3b",
+      "replanned": false,
+      "execution_step": 695,
+      "resynchronized_after_passive_steps": false,
+      "prediction": [
+        89.59342193603516,
+        115.13232421875,
+        45.14231872558594,
+        0.7459526062011719,
+        80.5262451171875,
+        75.8205337524414,
+        8.273310959339142e-05,
+        -0.00011402182281017303,
+        -3.990106051787734e-06
+      ],
+      "elapsed_s": 40.74999999999984,
+      "queued": false,
+      "refusal": "Недопустимый шаг сустава 6"
+    }
+  },
+  "policy_videos": [
+    {
+      "path": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/live-room-395c6a0365d9/trial/observed/policy-pick-1792438118988625000/wrist.mp4",
+      "sha256": "2138696ca36161b15137bc93b43db6c2d86e84b3d7806efcb1b7794ed1330589",
+      "trace_sha256": "e8caba76a6b7eb02f7e59818b2386a063f7aa28f545236f86b7fa1a44e46cb91",
+      "frames": 696,
+      "source": "recorded_policy_RGB_exposures_with_last_frame_held_between_decisions",
+      "continuous_camera_video": false,
+      "teacher_fallback": false
+    }
+  ]
+}

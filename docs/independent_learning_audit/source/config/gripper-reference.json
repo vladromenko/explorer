@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-28",
+  "servo_id": 6,
+  "opening_command_direction": "decrease",
+  "closing_command_direction": "increase",
+  "observed_open_command_deg": 30,
+  "observed_gap_at_140": true,
+  "aperture_mm_calibrated": false,
+  "force_feedback_available": false,
+  "force_calibrated": false,
+  "source": "External Logitech visual inspection with wrist servo 5 at 150 degrees",
+  "reference_only": true,
+  "execution_authorized": false,
+  "note": "Empty jaw position only. Do not automatically squeeze an object to the empty-contact command. Vendor example 120/140 does not fully close this specimen.",
+  "observed_empty_visually_closed_command_deg": 170,
+  "observed_sock_hold_command_deg": 160,
+  "observed_sock_hold_scope": "One camera-observed pickup and short carry; no force measurement or learned skill"
+}

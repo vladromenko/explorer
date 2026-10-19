@@ -1,0 +1,656 @@
+{
+  "date": "2026-10-11",
+  "firmware_changed": false,
+  "completion_integration": {
+    "baseline_commit": "f34746d2af00c27cfeeb0dea052dcbc12adbf761",
+    "tested_commit": "55e5ea9",
+    "jetson_tests": {"passed": 811, "skipped": 2, "elapsed_s": 42.58, "real_human_model_forward_enabled": true},
+    "mac_javascript_and_affected_tests": {"passed": 39},
+    "camera_adapter_and_rgbd_tests_mac": {"passed": 7, "commit": "b1bea8f"},
+    "final_code_validation": {
+      "commit": "aafc74a",
+      "jetson_passed": 820,
+      "jetson_skipped": 2,
+      "elapsed_s": 44.15,
+      "javascript_and_camera_tests_mac_passed": 23,
+      "independent_scoped_review_tests_passed": 37,
+      "material_review_findings": 0
+    },
+    "camera_transport_validation": {
+      "journal": "data/onboard-validation/camera-startup-trial-20261011/shm-ros-delivery.json",
+      "sdk_aggregation": "disable",
+      "frame_sync": false,
+      "soft_filter_changed": false,
+      "shm_only_selected_for": ["camera", "perception"],
+      "control_udp_profile_unchanged": true,
+      "sdk_depth_delay_median_before_ms": 108,
+      "sdk_depth_delay_median_after_ms": 2.7,
+      "duration_s": 8.018,
+      "rgb_frames": 119,
+      "depth_frames": 120,
+      "cached_rgb_frames": 119,
+      "cache_frame_gap_max_ms": 70.375,
+      "cache_poll_age_max_ms": 107.835,
+      "udp_receive_buffer_errors_delta": 0,
+      "registration_intrinsics_unchanged": true,
+      "timestamps_modified": false,
+      "freshness_limits_relaxed": false,
+      "temporary_service_overrides_removed": true
+    },
+    "readonly_roi_continuity": {
+      "journal": "data/onboard-validation/1791728750787516239-readonly-roi-continuity/result.json",
+      "outcome": "passed",
+      "stationary_only": true,
+      "samples": 38,
+      "duration_s": 3.972,
+      "frame_gap_max_s": 0.137254,
+      "age_after_processing_max_s": 0.164990,
+      "fresh_semantic_search": false,
+      "hardware_motion_sent": false,
+      "contact_verified": false,
+      "held_verified": false
+    },
+    "agent_memory_live_task": "14c793a38ded41bb92f47a0d588cb225",
+    "instruction_retrieval_live": "succeeded",
+    "view_recovery_live": {
+      "task": "487db6885aec4113827c65cddcb51f52",
+      "state": "succeeded",
+      "found": true,
+      "retreat_count": 0,
+      "physical_contact_executed": false,
+      "gripper_closure_executed": false,
+      "lift_executed": false
+    },
+    "backup": {
+      "path_jetson": "/home/vlad/Explorer-backups/20261011-R1/working-install.tar.gz",
+      "sha256": "3beeda66af78100132566d6b9d0887f4e7fdf03be9d6d27f8518aaaeff8f496d",
+      "archive_fully_read": true,
+      "critical_files_restored_for_validation": true,
+      "sqlite_integrity_checks_passed": 9,
+      "independent_mac_copy_sha_verified": true,
+      "rollback_executed": false
+    },
+    "power_helper": {
+      "installed_by_operator": true,
+      "automatic_shutdown_available": true,
+      "shutdown_executed_for_test": false,
+      "charging_sensor_available": false
+    },
+    "user_demonstrations": 0,
+    "learned_user_policies": 0,
+    "full_autonomous_delivery_verified": false
+  },
+  "baseline_commit": "6c2160d",
+  "branch": "codex/explorer-onboard-20261010",
+  "tests": {
+    "jetson": {
+      "passed": 731,
+      "skipped": 3,
+      "elapsed_s": 39.3,
+      "log": "Explorer-backups/20261011-grasp-guard/full-test-diagnostic-20261011.log"
+    },
+    "javascript_and_regressions_mac": {
+      "passed": 11,
+      "agent_script_syntax": "passed"
+    },
+    "jetson_after_perception_and_precision_approach": {
+      "passed": 742,
+      "skipped": 3,
+      "elapsed_s": 40.14,
+      "log": "Explorer-backups/20261011-perception/explorer-final-approach-tests.log",
+      "code_commit": "a5ef829"
+    },
+    "javascript_and_regressions_after_perception_mac": {
+      "passed": 45
+    },
+    "foreground_grasp_regressions_mac": {
+      "passed": 74,
+      "includes_javascript": true,
+      "elapsed_s": 0.81,
+      "jetson_full_suite_after_this_fix": "passed"
+    },
+    "jetson_after_foreground_fix": {
+      "passed": 746,
+      "skipped": 3,
+      "elapsed_s": 39.61,
+      "code_commit": "ffaf3e3",
+      "log": "Explorer-backups/20261011-perception/explorer-resume-full-tests.log"
+    },
+    "jetson_after_automatic_view_recovery": {
+      "passed": 757,
+      "skipped": 3,
+      "elapsed_s": 39.68,
+      "code_commit": "c1ff552",
+      "log": "Explorer-backups/20261011-perception/explorer-inspection-integrated-tests.log"
+    },
+    "inspection_regressions_and_javascript_mac": {
+      "passed": 29,
+      "mapping_script_syntax": "passed"
+    }
+  },
+  "arm_observation": {
+    "operator_confirmed_visible_and_smooth": true,
+    "measured_joints": false,
+    "series": [
+      "data/arm-stream-validation/1791669204732114229",
+      "data/arm-stream-validation/1791669426854210585"
+    ],
+    "J1_deg": [
+      90,
+      95,
+      85,
+      90
+    ],
+    "J4_deg": [
+      15,
+      20,
+      10,
+      15
+    ]
+  },
+  "camera_down": {
+    "physically_commanded": true,
+    "pose_deg": [
+      90,
+      90,
+      30,
+      0,
+      90,
+      90
+    ],
+    "task": "a520484305e649ab8ab05f18b9579caa",
+    "journal": "data/onboard-validation/1791670051294445180-local-grasp"
+  },
+  "local_grasp": {
+    "physical_contact_executed": true,
+    "lift_verified": true,
+    "last_detection_journal": "data/onboard-validation/1791671603262072696-local-grasp-trial",
+    "preflight_journal": "data/onboard-validation/1791672118851753444-grasp-preflight-readonly",
+    "object_base_m": [
+      0.2263718751837877,
+      -0.042596181760007616,
+      0.0347537105622501
+    ],
+    "radial_ik_three_stages_solved": true,
+    "view_observable": false,
+    "contact_camera_xyz_m": [
+      0.007770061731626025,
+      0.048654550476509906,
+      0.08958013887007327
+    ],
+    "contact_projected_pixel": [
+      363.72464342042707,
+      505.4952093454541
+    ],
+    "image_size": [
+      640,
+      480
+    ],
+    "current_blocker": "view_unavailable",
+    "projection_is_nominal_not_hardware_measurement": true,
+    "sdk_minimum_depth_source": "https://orbbec.com.cn/index.php/index/Product/info.html?cate=38&id=55",
+    "contact_view_operator_check": {
+      "operator_report": "Метка у кончиков не видна",
+      "stationary_marker_test": true,
+      "physical_motion_commanded": false,
+      "camera_contact_visible": false,
+      "journal": "data/onboard-validation/1791673778449496198-contact-view-operator",
+      "near_depth_measured": false
+    },
+    "preflight_diagnostics_persist_after_restart": true,
+    "supervised_grasp_executed": true,
+    "supervised_above_object_checkpoint": {
+      "journal": "data/onboard-validation/1791675820592533976-observed-above-sock",
+      "operator_permission_scope": "open_then_10cm_above_object_only",
+      "commanded_goals_deg": [
+        [
+          90,
+          90,
+          30,
+          0,
+          90,
+          30
+        ],
+        [
+          102,
+          66,
+          14,
+          40,
+          90,
+          30
+        ]
+      ],
+      "command_completed": true,
+      "approach_full_moveit_path_retained": true,
+      "camera_frames_recorded": 32,
+      "base_velocity_and_odometry_zero": true,
+      "stop_latched_after_execution": true,
+      "operator_visual_alignment": {
+        "report": "Да, захват над носком, примерно 10 см",
+        "alignment_confirmed": true,
+        "approximately_10cm_above": true,
+        "measurement_source": "operator_visual_observation"
+      },
+      "measured_joints": false,
+      "physical_contact_executed": false,
+      "closure_executed": false,
+      "lift_executed": false,
+      "autonomous_success_claimed": false
+    },
+    "descent_preview": {
+      "journal": "data/onboard-validation/1791676098864600208-observed-descent-preparation",
+      "goal_deg": [
+        102,
+        36,
+        0,
+        84,
+        88,
+        30
+      ],
+      "height_above_object_m": 0.02,
+      "nominal_linkage_paths_checked": 3,
+      "full_moveit_path_retained": true,
+      "duration_s": 1.507143746,
+      "executed": true,
+      "separate_permission_pending": false,
+      "contact_closure_lift_allowed": false,
+      "execution_journal": "data/onboard-validation/1791676298161013822-observed-descent",
+      "operator_confirmed_alignment_and_floor_clearance": true
+    },
+    "lift_verification_source": "operator_visual_observation",
+    "autonomous_grasp_success_not_claimed": true,
+    "supervised_sock_cycle": {
+      "journal": "data/onboard-validation/1791677029536102099-observed-sock-cycle",
+      "scope": "one_stationary_operator_observed_pick_lift_return_cycle",
+      "outcome": "operator_verified_success",
+      "physical_contact_operator_verified": true,
+      "lift_operator_verified": true,
+      "stable_hold_operator_verified": true,
+      "release_operator_verified": true,
+      "smooth_motion_operator_verified": true,
+      "lift_nominal_m": 0.065,
+      "lift_height_measured": false,
+      "camera_frames_recorded": 160,
+      "command_intervals_completed": 9,
+      "transport_verified": false,
+      "automatic_contact_and_hold_verification": false,
+      "measured_joint_positions": false,
+      "force_measured": false,
+      "training_episode_created": false,
+      "learning_success_counter_incremented": false,
+      "autonomous_success_claimed": false,
+      "final_commanded_deg": [
+        102,
+        66,
+        14,
+        40,
+        90,
+        30
+      ],
+      "stop_latched": true,
+      "base_velocity_and_odometry_zero": true
+    }
+  },
+  "rgbd_cache_benchmark_ms": {
+    "compressed": [
+      84.16,
+      80.99,
+      82.41
+    ],
+    "uncompressed": [
+      5.79,
+      7.71,
+      8.42
+    ],
+    "compression_change_applies_to_latest_frame_only": true,
+    "freshness_and_sync_limits_preserved": true
+  },
+  "mobile_alignment": {
+    "code_implemented": true,
+    "physical_repositioning_executed": true,
+    "path": "DeliveryRobot.approach -> reachable_correction -> Nav2 -> search_pose -> find_aligned",
+    "current_local_trial_base_stationary": false,
+    "ordinary_room_controller_preserved": "DWB",
+    "precision_controller": "Nav2 Regulated Pure Pursuit",
+    "precision_goal_tolerance_m": 0.01,
+    "precision_goal_tolerance_rad": 0.1,
+    "maximum_approach_speed_m_s": 0.08,
+    "automatic_contact_verified": false,
+    "observed_precision_approach": {
+      "task": "b5530e1760cc47e998486319f635e632",
+      "journal": "data/onboard-validation/1791702911801161527-observed-sock-base-approach",
+      "goal_map": [
+        0.165996713744,
+        -0.028123853449,
+        0.071740882289
+      ],
+      "final_map": [
+        0.16647496453,
+        -0.029383797966,
+        0.148555811322
+      ],
+      "position_residual_m": 0.00135,
+      "localization_accuracy_measured": false,
+      "fresh_sock_point_base_m": [
+        0.262378937612158,
+        -0.008374472326978936,
+        0.028872760970104994
+      ],
+      "fresh_preparation": "data/onboard-validation/1791703426357436794-observed-grasp-preparation",
+      "base_stopped_by_odometry": true,
+      "operator_confirmed_above_sock": true,
+      "operator_observed_trial": true,
+      "autonomous_delivery_verified": false,
+      "operator_confirmed_final_contact_alignment": false
+    },
+    "foreground_point_fix": {
+      "old_coordinate_median_pixel": [
+        347.1342340987462,
+        357.1904020886509
+      ],
+      "old_pixel_rgb": [
+        0,
+        1,
+        0
+      ],
+      "old_pixel_depth_m": 0.0,
+      "median_inside_resolved_depth_component": false,
+      "median_was_in_rgb_cloth": true,
+      "new_measured_foreground_pixel": [
+        408,
+        366
+      ],
+      "new_pixel_depth_m": 0.266,
+      "selection": "observed_foreground_interior",
+      "physical_misalignment_root_cause_fully_verified": false,
+      "object_centroid_preserved_for_tracking": true,
+      "grasp_coordinate_separate_from_object_centroid": true
+    },
+    "additional_precision_approach": {
+      "task": "de4e4330ed634148b8d81bc3b99fe067",
+      "journal": "data/onboard-validation/1791704393936638605-observed-sock-base-approach",
+      "planned_translation_m": 0.02432111284488779,
+      "observed_map_translation_m": 0.013749507976144973,
+      "state": "succeeded",
+      "base_stopped_by_odometry": true,
+      "fresh_preparation": "data/onboard-validation/1791704540652860696-observed-grasp-preparation",
+      "fresh_grasp_point_base_m": [
+        0.24726525528196985,
+        -0.027210042313935773,
+        0.036845496047181736
+      ],
+      "contact_executed": false,
+      "lift_executed": false,
+      "physical_contact_alignment": "pending",
+      "autonomous_success_claimed": false
+    }
+  },
+  "calibration_files_changed": false,
+  "secrets_images_and_datasets_committed": false,
+  "current_trial": {
+    "state": "object_view_recovered_contact_not_executed",
+    "last_confirmed_stop_latched": true,
+    "last_confirmed_gripper_open_deg": null,
+    "sock_grasp_not_executed": true,
+    "above_object_retry_interrupted_on_noop_open": "data/onboard-validation/1791704583198053429-observed-above-sock",
+    "robot_code_commit_last_confirmed": "c1ff552",
+    "web_process_reload_required": false,
+    "new_photos_backed_up_to_mac": true,
+    "boot_id": "94dbfe3d-e2ef-4883-9da6-796a572c6cb6",
+    "last_confirmed_servo_deg": [
+      90,
+      90,
+      30,
+      0,
+      90,
+      90
+    ],
+    "last_confirmed_battery_v": 11.876890182495117,
+    "new_boot_invalidates_previous_target": true,
+    "physical_motion_sent_after_resume": true,
+    "prior_trial_private_archive": {
+      "path": "Explorer-backups/20261011-perception/precision-and-surface-trials.tar.gz",
+      "folders": 24,
+      "sha256": "d7620402df5569004ad95e3c89c567613aa344a4d60a9a1c75065055cb751a43",
+      "bytes": 66499996
+    }
+  },
+  "resumed_observed_trial": {
+    "at": 1791720444.379905,
+    "boot_id": "94dbfe3d-e2ef-4883-9da6-796a572c6cb6",
+    "code_commit": "d352d75",
+    "operator_permission": "Да, рядом, проверку разрешаю",
+    "camera_down": "data/onboard-validation/1791719659233250185-camera-down-perception",
+    "base_preparation": "data/onboard-validation/1791719714178050535-observed-grasp-preparation",
+    "base_approach": "data/onboard-validation/1791719774329036500-observed-sock-base-approach",
+    "base_task": "f436c964d9dc40f3a284721443f68146",
+    "planned_translation_m": 0.22705875284006186,
+    "planned_yaw_change_rad": -0.2775230282231559,
+    "nav_final_map_pose": [
+      0.20015938521158133,
+      -0.06905349911319007,
+      -0.3630832672912767
+    ],
+    "localization_accuracy_measured": false,
+    "forward_down_reacquisition": "no_object",
+    "camera_pans": [
+      "1791720070788486136-observed-floor-camera-pan",
+      "1791720123573968006-observed-floor-camera-pan",
+      "1791720172548950798-observed-floor-camera-pan",
+      "1791720364352725940-observed-floor-camera-pan"
+    ],
+    "left_visible_hypothesis": {
+      "object_base_m": [
+        0.1411204909639293,
+        0.16331225099843885,
+        0.037709159784327734
+      ],
+      "frame_truncated": true,
+      "model_label": "black sock",
+      "operator_identity_confirmation": "Это носок для теста",
+      "contact_allowed": false
+    },
+    "physical_base_misalignment_root_cause_verified": false,
+    "physical_contact_executed": false,
+    "gripper_closure_executed": false,
+    "lift_executed": false,
+    "autonomous_success_claimed": false,
+    "stop_latched": true,
+    "velocity": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "odom_velocity": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "battery_v": 12.055465698242188,
+    "arm_command_estimate": [
+      60,
+      90,
+      10,
+      0,
+      90,
+      90
+    ],
+    "camera_floor_plane": {
+      "before_height_m": 0.30007975031826156,
+      "after_height_m": 0.30086648656089665,
+      "nominal_down_plane_normal_cos_before": 0.9997887190131842,
+      "nominal_down_plane_normal_cos_after": 0.999722548473191,
+      "diagnostic_only": true
+    },
+    "private_archive": {
+      "path": "Explorer-backups/20261011-perception/resumed-observed-trial.tar.gz",
+      "sha256": "7a65f9993af2fb39fd2b0b932e3af8b57bb7621ac85a74bf7c18dd8136595109",
+      "folders": 11
+    }
+  },
+  "automatic_view_recovery": {
+    "code_implemented": true,
+    "code_commit": "c1ff552",
+    "shared_policy": "src/target_view_recovery.py",
+    "floor_views": 6,
+    "maximum_retreats_per_task": 2,
+    "retreat_step_m": 0.06,
+    "backing_controller": "Nav2 BackUp with costmap collision checks",
+    "raw_detections_retained": true,
+    "enclosing_box_containment_threshold": 0.97,
+    "physical_object_count_verified": false,
+    "physical_retreat_events": [
+      {
+        "trial": "17eb58a0460042e9bdda9ee3608e4213",
+        "event": {
+          "at": 1791721651.6044416,
+          "phase": "view_retreat",
+          "result": {
+            "retreat_count": 1,
+            "result": {
+              "id": "317722f6104b45519e5a8451128b84f5",
+              "state": "succeeded",
+              "details": {
+                "pose": {
+                  "x": 0.12858824458630747,
+                  "y": -0.041203422077746396,
+                  "yaw": -0.3525607159633088,
+                  "frame": "map",
+                  "source": "slam_toolbox_lidar_map_tf",
+                  "age_s": 0.054658983,
+                  "localization_verified": false,
+                  "provisional": true
+                },
+                "requested_distance_m": 0.06,
+                "map_residual_m": 0.016790742516234632,
+                "physical_accuracy_measured": false
+              },
+              "at": 1791721651.5889807
+            }
+          }
+        }
+      },
+      {
+        "trial": "17eb58a0460042e9bdda9ee3608e4213",
+        "event": {
+          "at": 1791721772.18067,
+          "phase": "view_retreat",
+          "result": {
+            "retreat_count": 2,
+            "result": {
+              "id": "d296885ac4f1498583eb3d3256fbb9ff",
+              "state": "succeeded",
+              "details": {
+                "pose": {
+                  "x": 0.061571440502287494,
+                  "y": -0.01699967233875903,
+                  "yaw": -0.34082128397475764,
+                  "frame": "map",
+                  "source": "slam_toolbox_lidar_map_tf",
+                  "age_s": 0.027300271,
+                  "localization_verified": false,
+                  "provisional": true
+                },
+                "requested_distance_m": 0.06,
+                "map_residual_m": 0.011297763562818789,
+                "physical_accuracy_measured": false
+              },
+              "at": 1791721772.0817995
+            }
+          }
+        }
+      },
+      {
+        "trial": "e07f93d7dac0484ba493b5229d4905bf",
+        "event": {
+          "at": 1791722129.1287823,
+          "phase": "view_retreat",
+          "result": {
+            "retreat_count": 1,
+            "result": {
+              "id": "56db571e23154f76993eae161cd7b7a4",
+              "state": "succeeded",
+              "details": {
+                "pose": {
+                  "x": -0.004821487656807788,
+                  "y": 0.004704952671440391,
+                  "yaw": -0.3470604314084796,
+                  "frame": "map",
+                  "source": "slam_toolbox_lidar_map_tf",
+                  "age_s": 0.038228395,
+                  "localization_verified": false,
+                  "provisional": true
+                },
+                "requested_distance_m": 0.06,
+                "map_residual_m": 0.00997105915695438,
+                "physical_accuracy_measured": false
+              },
+              "at": 1791722129.1025279
+            }
+          }
+        }
+      }
+    ],
+    "validation_trials": [
+      {
+        "task": "17eb58a0460042e9bdda9ee3608e4213",
+        "state": "failed",
+        "reason": "Camera movement failed: trajectory exceeds joint soft limits"
+      },
+      {
+        "task": "e07f93d7dac0484ba493b5229d4905bf",
+        "state": "cancelled",
+        "reason": "Room task cancelled"
+      },
+      {
+        "task": "163088c080b44c78a21cf7042de03604",
+        "state": "succeeded",
+        "found": true,
+        "view": "down",
+        "retreat_count": 0,
+        "search_id": "fa36ffa349af4603931ad906efbc4a1c"
+      }
+    ],
+    "final_trial_no_unnecessary_retreat": true,
+    "final_target_bbox": [
+      26.875,
+      188.671875,
+      488.125,
+      304.453125
+    ],
+    "new_contact_or_hold_test": false,
+    "full_autonomous_delivery_verified": false,
+    "private_archive": {
+      "path": "Explorer-backups/20261011-perception/automatic-view-recovery.tar.gz",
+      "sha256": "4f1e0ee4b7e3d7cd5901ae5c1eeb95e025cbedd429d6a11ac45c2ec4efb273d8",
+      "bytes": 143116534
+    },
+    "final_state": {
+      "boot_id": "94dbfe3d-e2ef-4883-9da6-796a572c6cb6",
+      "age_s": 0.2692101001739502,
+      "stop_latched": true,
+      "velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "odom_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "battery": 11.876890182495117,
+      "arm_command_estimate": [
+        90,
+        90,
+        30,
+        0,
+        90,
+        90
+      ],
+      "navigation_busy": false,
+      "last_task_id": "163088c080b44c78a21cf7042de03604",
+      "last_task_state": "succeeded"
+    }
+  }
+}

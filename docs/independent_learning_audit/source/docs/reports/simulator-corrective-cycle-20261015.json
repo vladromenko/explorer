@@ -1,0 +1,49 @@
+{
+  "date": "2026-10-15",
+  "scope": "Mac simulation only; no ROSMASTER motion",
+  "active_cycle": "fb56a108b63f",
+  "active_training_job_preserved": "40054de70f33",
+  "cause": [
+    "The cycle trained another fresh ACT after each failed validation without a paired gate against the previous model.",
+    "Several teacher demonstrations failed to retain cloth during lift or release it inside the basket."
+  ],
+  "changes": [
+    "Paired ten-scene diagnostic model comparison retains the reference on tie or loss.",
+    "One verified corrective teacher round is allowed after a loss; another loss requires diagnosis and stops repetition.",
+    "New ACT training can start from the reference weights while preserving its normalization and nonoverlapping train/validation scene split.",
+    "The teacher plans grasp and open-finger release in isolated MuJoCo state; actual episodes still decide success."
+  ],
+  "teacher_pairing": [
+    {
+      "profile": "planned_grasp_v3",
+      "episodes": 10,
+      "reference_successes": 8,
+      "candidate_successes": 10,
+      "regressions": 0,
+      "kind": "diagnostic_only"
+    },
+    {
+      "profile": "planned_release_v4",
+      "episodes": 10,
+      "reference_successes": 5,
+      "candidate_successes": 7,
+      "regressions": 0,
+      "kind": "diagnostic_only"
+    }
+  ],
+  "selected_teacher": "planned_release_v4",
+  "maintenance_transition_fix": {
+    "cause": "Installer used the operator cancel endpoint after training completed, then treated its own stop as an operator pause.",
+    "training_job": "40054de70f33",
+    "completed_training_steps": 92216,
+    "fix": "Authenticated maintenance stop returns an ownership token. The cycle records maintenance separately; the installer verifies that token before installing. Operator stops and active training block maintenance.",
+    "tests": "39 targeted tests passed on the final source correction.",
+    "deployment": "Source correction only. Existing operator-labelled pause is preserved; current cycle was not resumed. Legacy services without the maintenance endpoint are rejected before cancellation."
+  },
+  "limitations": [
+    "These paired teacher trials do not qualify the learned ACT policy.",
+    "Some high-basket releases still fail; a deeper unhook trial did not improve the targeted case and was not selected.",
+    "The current ACT job must finish before maintenance installs new cycle logic in the local simulator.",
+    "Physical robot execution still needs independent simulation qualification and hardware acceptance."
+  ]
+}

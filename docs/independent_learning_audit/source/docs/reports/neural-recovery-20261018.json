@@ -1,0 +1,349 @@
+{
+  "change": "cause_directed_neural_data_aggregation",
+  "physical_diagnostics": [
+    {
+      "path": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/recovery-pilot-20261018/0-fixed/result.json",
+      "sha256": "14ea36c6e7f5b1bc6029aadd8273cba585a0319eb9231c8c6f814e832e7848dc",
+      "seed": 1319870030,
+      "frames": 852,
+      "phase": "approach",
+      "success": true,
+      "domain_variation": {
+        "profile": "sock_variants_v1",
+        "seed": 1319870030,
+        "parameters": {
+          "sock": {
+            "length_m": 0.14103803448561192,
+            "width_m": 0.04849488945225476,
+            "mass_kg": 0.017680343500424796,
+            "friction": 1.1149949238504395,
+            "young_pa": 11813.034583608036,
+            "yaw_rad": 0.08680100391894714,
+            "initial_thickness_m": 0.007807112525041553
+          },
+          "bin": {
+            "height_m": 0.08,
+            "shape": "round",
+            "inner_half_size_m": [
+              0.1541379967457858,
+              0.1541379967457858
+            ]
+          }
+        },
+        "sock_position": [
+          0.34546285214965156,
+          0.00848626504166614,
+          0.015
+        ],
+        "bin_position": [
+          0.44961058249792685,
+          0.35113246203661685,
+          0.0
+        ],
+        "sock_rgb": [
+          0.5682084310908013,
+          0.17075591650380767,
+          0.6666863859983101
+        ],
+        "basket_rgb": [
+          0.20456027355994807,
+          0.6867084761528475,
+          0.45651232701358335
+        ],
+        "lighting_scale": 0.917319580551929,
+        "floor_rgb": [
+          0.16347333371097036,
+          0.35048640881765114,
+          0.1427064871778674
+        ],
+        "parameter_status": "estimated",
+        "unsupported": [
+          "arbitrary folds or knots",
+          "basket rim above 0.30 m",
+          "unseen room layout",
+          "measured real cloth dynamics"
+        ],
+        "enabled": true,
+        "kind": "bounded_geometry_material_appearance_placement"
+      }
+    },
+    {
+      "path": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/recovery-pilot-20261018/1/result.json",
+      "sha256": "5b495c30dd22a9807aab3079981cf018863ffd24c36b68cc79cc957a4b40f61c",
+      "seed": 1319870031,
+      "frames": 890,
+      "phase": "transport",
+      "success": true,
+      "domain_variation": {
+        "profile": "sock_variants_v1",
+        "seed": 1319870031,
+        "parameters": {
+          "sock": {
+            "length_m": 0.1623762168418141,
+            "width_m": 0.040960135012669076,
+            "mass_kg": 0.020864085085580807,
+            "friction": 0.9632544518256028,
+            "young_pa": 13136.008344222995,
+            "yaw_rad": 0.01381491290773384,
+            "initial_thickness_m": 0.010867825487362743
+          },
+          "bin": {
+            "height_m": 0.12,
+            "shape": "rectangular",
+            "inner_half_size_m": [
+              0.1226854786191833,
+              0.1354757778991735
+            ]
+          }
+        },
+        "sock_position": [
+          0.31737069250775796,
+          -0.017410037360638154,
+          0.015
+        ],
+        "bin_position": [
+          0.43200007463414525,
+          0.33431359592340826,
+          0.0
+        ],
+        "sock_rgb": [
+          0.39543270531646124,
+          0.5131465633676902,
+          0.33334669159579344
+        ],
+        "basket_rgb": [
+          0.7444218715127324,
+          0.5921350847105785,
+          0.7217365585874523
+        ],
+        "lighting_scale": 0.7799324499017314,
+        "floor_rgb": [
+          0.19237113663363825,
+          0.16551078027339985,
+          0.1624073879611561
+        ],
+        "parameter_status": "estimated",
+        "unsupported": [
+          "arbitrary folds or knots",
+          "basket rim above 0.30 m",
+          "unseen room layout",
+          "measured real cloth dynamics"
+        ],
+        "enabled": true,
+        "kind": "bounded_geometry_material_appearance_placement"
+      }
+    },
+    {
+      "path": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/recovery-pilot-20261018/2/result.json",
+      "sha256": "61f3e69e6c2ac6ea32c338b0a935915c0aa91e18fa79ac472ed6f5e5e53d065b",
+      "seed": 1319870032,
+      "frames": 905,
+      "phase": "place",
+      "success": true,
+      "domain_variation": {
+        "profile": "sock_variants_v1",
+        "seed": 1319870032,
+        "parameters": {
+          "sock": {
+            "length_m": 0.12758927591676195,
+            "width_m": 0.059043814141249575,
+            "mass_kg": 0.026701520179806176,
+            "friction": 1.0641179662937463,
+            "young_pa": 12253.817750738724,
+            "yaw_rad": 0.1226495653729167,
+            "initial_thickness_m": 0.010665275043607701
+          },
+          "bin": {
+            "height_m": 0.16,
+            "shape": "round",
+            "inner_half_size_m": [
+              0.1289425376480021,
+              0.1289425376480021
+            ]
+          }
+        },
+        "sock_position": [
+          0.28212566030870817,
+          0.014368325980308074,
+          0.015
+        ],
+        "bin_position": [
+          0.43827349027884005,
+          0.31157635010097895,
+          0.0
+        ],
+        "sock_rgb": [
+          0.23530098583738532,
+          0.594546041693203,
+          0.6649547247011005
+        ],
+        "basket_rgb": [
+          0.6380256132820656,
+          0.2845372164992797,
+          0.5911924849664922
+        ],
+        "lighting_scale": 0.909761154907068,
+        "floor_rgb": [
+          0.18027335223837807,
+          0.14186648035436644,
+          0.27659345530340407
+        ],
+        "parameter_status": "estimated",
+        "unsupported": [
+          "arbitrary folds or knots",
+          "basket rim above 0.30 m",
+          "unseen room layout",
+          "measured real cloth dynamics"
+        ],
+        "enabled": true,
+        "kind": "bounded_geometry_material_appearance_placement"
+      }
+    },
+    {
+      "path": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/recovery-pilot-20261018/release-before-open/result.json",
+      "sha256": "c539fc909726b04f795022157fbbcb4e4524652c9af46d90a819e6ae56e9ebb5",
+      "seed": 1319870033,
+      "frames": 876,
+      "phase": "release",
+      "success": true,
+      "domain_variation": {
+        "profile": "sock_variants_v1",
+        "seed": 1319870033,
+        "parameters": {
+          "sock": {
+            "length_m": 0.1388102847955961,
+            "width_m": 0.06450624491458318,
+            "mass_kg": 0.031869946626665244,
+            "friction": 1.0415806133313432,
+            "young_pa": 8884.228365794093,
+            "yaw_rad": 0.1382213846045564,
+            "initial_thickness_m": 0.007329113861092808
+          },
+          "bin": {
+            "height_m": 0.2,
+            "shape": "rectangular",
+            "inner_half_size_m": [
+              0.1500363563352199,
+              0.1965927475264186
+            ]
+          }
+        },
+        "sock_position": [
+          0.34118094005718963,
+          -0.02405023863267447,
+          0.015
+        ],
+        "bin_position": [
+          0.46153792799076526,
+          0.4117410075372872,
+          0.0
+        ],
+        "sock_rgb": [
+          0.7828561629038662,
+          0.5891551186089383,
+          0.7336284247852598
+        ],
+        "basket_rgb": [
+          0.3436877546938157,
+          0.301622788559303,
+          0.4605605250035438
+        ],
+        "lighting_scale": 0.8819181164839399,
+        "floor_rgb": [
+          0.24799017093761128,
+          0.2173214176991447,
+          0.22297009205765608
+        ],
+        "parameter_status": "estimated",
+        "unsupported": [
+          "arbitrary folds or knots",
+          "basket rim above 0.30 m",
+          "unseen room layout",
+          "measured real cloth dynamics"
+        ],
+        "enabled": true,
+        "kind": "bounded_geometry_material_appearance_placement"
+      }
+    },
+    {
+      "path": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/recovery-pilot-20261018/user-basket/result.json",
+      "sha256": "64e43fe544e73e38583900e739e6926c07404117f58c6e2da968af15c510dc1b",
+      "seed": 1319870034,
+      "frames": 918,
+      "phase": "place",
+      "success": true,
+      "domain_variation": {
+        "profile": "sock_variants_v1",
+        "seed": 1319870034,
+        "parameters": {
+          "sock": {
+            "length_m": 0.15403594154987693,
+            "width_m": 0.06498617458629044,
+            "mass_kg": 0.02841944755887082,
+            "friction": 1.0821737462775873,
+            "young_pa": 11825.131339579915,
+            "yaw_rad": -0.15324768699602956,
+            "initial_thickness_m": 0.0067942654156511705
+          },
+          "bin": {
+            "height_m": 0.3,
+            "shape": "round",
+            "inner_half_size_m": [
+              0.125,
+              0.125
+            ]
+          }
+        },
+        "sock_position": [
+          0.3126705900650123,
+          0.011366933608915195,
+          0.015
+        ],
+        "bin_position": [
+          0.4698362558936542,
+          0.3314865290843457,
+          0.0
+        ],
+        "sock_rgb": [
+          0.7095109640795213,
+          0.38709770383066494,
+          0.6848457915926922
+        ],
+        "basket_rgb": [
+          0.703636041881492,
+          0.3427752112734655,
+          0.2577015906980385
+        ],
+        "lighting_scale": 1.0855253547692065,
+        "floor_rgb": [
+          0.29344251079210754,
+          0.18039689070057593,
+          0.3710284609187032
+        ],
+        "parameter_status": "estimated",
+        "unsupported": [
+          "arbitrary folds or knots",
+          "basket rim above 0.30 m",
+          "unseen room layout",
+          "measured real cloth dynamics"
+        ],
+        "enabled": true,
+        "kind": "bounded_geometry_material_appearance_placement"
+      }
+    }
+  ],
+  "diagnostics_are_qualification": false,
+  "failed_pre_fix_evidence": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/recovery-pilot-20261018/0/result.json",
+  "teacher": "explicit_privileged_simulation_expert_not_deployed_actor",
+  "actor_inputs": [
+    "command_estimate9",
+    "wrist_rgb",
+    "internal_elapsed_time"
+  ],
+  "student_actions_are_training_targets": false,
+  "physics_and_geometry_changed": false,
+  "acceptance_relaxed": false,
+  "tests_passed": 82,
+  "independent_qualification": "two_disjoint_groups_of_ten_plus_inactive_archive_import",
+  "caveat": "Recovery rollouts passed; neural fine-tuning and its independent results are not yet completed"
+}

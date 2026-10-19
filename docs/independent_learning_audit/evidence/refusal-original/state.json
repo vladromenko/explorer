@@ -1,0 +1,24 @@
+{
+  "state": "complete",
+  "diagnostic_only": true,
+  "simulation_qualified": false,
+  "physical_ready": false,
+  "training": "/Volumes/ExplorerSim/ExplorerSim/runs/d4f59a63085b",
+  "pid": 6098,
+  "at": 1792438207.70722,
+  "checkpoint_step": 9000,
+  "seed": 1703000014,
+  "original_training_state": "training",
+  "memory": {
+    "free_percent": 41.99999999642993,
+    "available_gb": 10.079999999143183,
+    "psutil_available_gb": 6.10406494140625,
+    "source": "macos_memory_pressure"
+  },
+  "active_seconds": 0.0,
+  "trial": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/live-room-395c6a0365d9/trial",
+  "child_pid": 11866,
+  "result": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/live-room-395c6a0365d9/trial/result.json",
+  "mission_success": false,
+  "reason": "Недопустимый шаг сустава 6"
+}

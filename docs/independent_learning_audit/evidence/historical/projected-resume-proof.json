@@ -1,0 +1,59 @@
+{
+  "at": 1792433509.9933922,
+  "training_id": "d4f59a63085b",
+  "restored_step": 6000,
+  "steps_completed": 6623,
+  "evidence": {
+    "run_id": "d4f59a63085b",
+    "host": "MacBook-Pro-Vlad.local",
+    "stage": "updating_weights",
+    "job_state": "training",
+    "steps_completed": 6625,
+    "steps_total": 145799,
+    "sampled_at": 1792433509.993397,
+    "log_modified_at": 1792433509.895204,
+    "log_age_s": 0.09819293022155762,
+    "owner_heartbeat_at": 1792433509.684237,
+    "counter_change_observed": false,
+    "counter_last_observed_change_at": 1792433509.993397,
+    "updates_per_second": 2.4285714285714284,
+    "remaining_weight_updates_s": 57306.941176470595,
+    "eta_excludes": "evaluation, checkpoint saving and subsequent correction rounds",
+    "stable_checkpoint": "/Volumes/ExplorerSim/ExplorerSim/runs/d4f59a63085b/model/checkpoints/005000",
+    "newest_checkpoint": "/Volumes/ExplorerSim/ExplorerSim/runs/d4f59a63085b/model/checkpoints/006000",
+    "checkpoint_rule": "Second newest numeric directory only; snapshot hashes must still be verified.",
+    "simulation_qualified": false,
+    "robot_verified": false
+  },
+  "synchronized_update_window": {
+    "path": "/Volumes/ExplorerSim/ExplorerSim/runs/d4f59a63085b/update-measurement-1792432586870099000.json",
+    "parameter_devices": [
+      "mps:0"
+    ],
+    "batch_devices": [
+      "mps:0"
+    ],
+    "samples": 20,
+    "timings": {
+      "backward_s": {
+        "p50": 0.10475152099388652,
+        "p95": 0.10721985592681449
+      },
+      "optimizer_s": {
+        "p50": 0.02168060399708338,
+        "p95": 0.025522210402414206
+      },
+      "update_s": {
+        "p50": 0.19281145848799497,
+        "p95": 0.20344698959379456
+      }
+    },
+    "forward_measurement": "missing: native trainer invokes forward directly, bypassing module hooks; total includes it"
+  },
+  "old_recent_updates_per_second": 1.2395833333333333,
+  "new_recent_updates_per_second": 2.4285714285714284,
+  "comparison_not_controlled": "same machine/data/batch, different windows and concurrent diagnostics; provisional rate",
+  "learner_pid": 62138,
+  "source": "/Users/vladromenko/Library/Application Support/ExplorerSimulator/desktop-source-65c57387e988",
+  "simulation_qualified": false
+}

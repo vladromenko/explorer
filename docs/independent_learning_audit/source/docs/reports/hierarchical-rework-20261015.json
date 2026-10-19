@@ -1,0 +1,181 @@
+{
+  "date": "2026-10-15",
+  "scope": "Mac simulator architecture; no robot connection or motion",
+  "rollback_tag": "codex/pre-hierarchical-20261015",
+  "old_cycle": "fb56a108b63f",
+  "old_learner": {
+    "id": "5d878e34e663",
+    "state": "cancelled",
+    "preserved_checkpoint_steps": 3000
+  },
+  "new_architecture": {
+    "executor": "src/task_executor.py",
+    "simulator_port": "simulator/skill_port.py",
+    "robot_adapter": "src/delivery_skill_adapter.py; opt-in, existing DeliveryTask unchanged",
+    "observations": "rendered RGB-D, calibrated camera and robot FK, odometry and lidar",
+    "actor_scene_truth": false,
+    "learning": "separate experimental one-step residual regressors; preserved phase-labelled demonstrations; not automatically executed",
+    "automatic_whole_task_retraining": false,
+    "physics_or_acceptance_changes": false
+  },
+  "finite_preparation_smoke": {
+    "scenes": 3,
+    "frames": 2567,
+    "folder": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/phase-preparation-smoke-cf310e5978a3",
+    "test_groups_used_for_fitting": false,
+    "transfer_ready": false
+  },
+  "observed_execution_diagnostic": {
+    "id": "f580fc72af44",
+    "seed": 887401001,
+    "controller_verified_hold": true,
+    "independent_physics_lifted": true,
+    "independent_physics_contacts": [
+      true,
+      true
+    ],
+    "independent_physics_hold_s": 3.7,
+    "stopped_stage": "carry",
+    "reason": "Camera has not localized a container; no transport attempted",
+    "diagnostic_only": true,
+    "qualification": false
+  },
+  "validation": {
+    "targeted_tests_passed": 188,
+    "javascript_syntax": "passed",
+    "browser": "New panel loaded without console errors; its button launched one finite physics diagnostic. Holding confirmed; delivery correctly not accepted.",
+    "stop_regression": "STOP cancels active skill trial; focus loss does not. Reset, pause and recording are blocked during the trial. Cancellation persists a paused report.",
+    "goal_resume": "Multi-task workshop identifiers persist before preparation. Resume reuses them and archived ACT state cannot override the new result."
+  },
+  "remaining": [
+    "Select a reachable observation stance for the 30 cm basket using observed rim geometry, collision checks and fresh depth; no assumed cavity.",
+    "Qualify temporal placement evidence with actual release renders; full task execution is still not accepted.",
+    "Select an observed destination viewpoint without tipping the held material. A 1 s stationary comparison isolated delayed loss after the previous survey; the tilt guard preserves the grip but current fixed-base survey poses are unavailable.",
+    "Generalize the perception and grasp primitives across the unchanged scene distribution.",
+    "Validate two independent ten-scene groups and qualify exact software/artifact checksums before transfer.",
+    "Commission real semantic recognition, hand-eye calibration and dynamics separately on hardware."
+  ],
+  "simulation_ready": false,
+  "physical_ready": false,
+  "destination_survey": {
+    "implemented": "Bounded pregrasp and post-approach RGBD camera survey; gripper state preserved; cached geometry used only for aiming.",
+    "two_view_min_camera_baseline_m": 0.02,
+    "unchanged_uncertainty_limit_m": 0.02,
+    "observed_12cm_basket": "Two distinct complete views agreed within approximately 1 mm; uncertainty includes an explicit estimated 12 mm simulation floor.",
+    "observed_30cm_basket": "Six bounded views plus three diagnostic elevated views: rim visible, central cavity occluded. Result unknown before pickup.",
+    "highest_observed_camera_m": 0.4031,
+    "diagnostic_folder": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/destination-survey-887401001/",
+    "qualification": false
+  },
+  "placement_verification": {
+    "source": "One pre-release image of held material and release area, plus two post-release RGBD images.",
+    "requires": [
+      "Fresh distinct frames",
+      "Appearance association",
+      "Visible previously empty release area",
+      "Drop from gripper",
+      "Stable interior bounds",
+      "Separation from jaw",
+      "Visible supporting surface"
+    ],
+    "physics_truth_used_by_actor": false,
+    "full_physics_placement_demonstrated": false
+  },
+  "camera_feasibility_fix": {
+    "module": "simulator/inspection_planning.py",
+    "problem": "The previous camera optimiser checked only lateral aim error; requested height and range could be missed while the motion was accepted.",
+    "change": "Robot-only multistart IK recomputes pose constraints from FK; rejects missing height or range before motion, then checks physically reached height.",
+    "limits": {
+      "lateral_error_m": 0.04,
+      "range_error_m": 0.04,
+      "height_deficit_m": 0.008
+    },
+    "robot_gripper_state_preserved": true,
+    "scene_truth_used": false,
+    "finite_render_check": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/validated-camera-view-1792080448201309000",
+    "low_basket_result": "Two complete views, baseline 6.8 cm, bound disagreement 1.15 mm, visible opening 4469 pixels. Diagnostic only.",
+    "high_basket_result": "No complete opening in the bounded survey. Result unknown; no pickup or release.",
+    "inspection_stance_probes": "A measured-rim approach to 34 cm standoff did not obtain a feasible complete view; all raw observations and commands retained in diagnostics/inspection-stance-*.",
+    "scope": "This fixes pose acceptance, not complete high-basket inspection or delivery.",
+    "qualification": false
+  },
+  "distinct_survey_budget_fix": {
+    "problem": "Repeated camera hints consumed the view budget, skipping remaining unique directions.",
+    "change": "Only distinct attempted viewpoints count towards max_views. The existing pose, opening, uncertainty and physics gates are unchanged.",
+    "finite_render_check": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/validated-camera-view-1792082183013992000",
+    "low_basket_result": "Success from two complete registered views.",
+    "high_basket_result": "Seven distinct views attempted within a budget of eight. Opening remains unconfirmed; no pickup.",
+    "qualification": false
+  },
+  "high_basket_stance_diagnosis": {
+    "joint_fit": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/joint-inspection-fit-1792081206636737000",
+    "grid": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/inspection-grid-1792081354657867000",
+    "result": "No complete rim plus central-floor view found among examined pose/stance combinations. This bounded search is not proof of physical impossibility.",
+    "next": "Investigate active observations and clearance for alternative viewpoints; do not relax observation requirements or infer an unseen cavity."
+  },
+  "hold_probe_orientation_fix": {
+    "problem": "A nominal 2 cm vertical hold probe used unconstrained wrist pitch. A previous failed run commanded a pitch change of approximately 4.25 degrees during verification.",
+    "change": "Prefer a small pose-constrained translation; if upward translation is infeasible, plan a 2 cm bodyward probe while retaining the measured hand orientation and closed gripper.",
+    "constraints": {
+      "position_error_m": 0.008,
+      "predicted_rotation_error_deg": 2.0,
+      "measured_rotation_limit_deg": 3.0,
+      "minimum_measured_translation_m": 0.015,
+      "object_motion_error_m": 0.015
+    },
+    "finite_paired_check": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/hold-probe-comparison-1792083011509600000",
+    "seed": 887401001,
+    "same_preprobe_depth_frame": "wrist_depth:26.900000000:ccc969d0935713ac",
+    "baseline_result": "Hold confirmed, both pads in contact, camera rotated 4.382 degrees. This run did not reproduce the older loss of grip.",
+    "proposed_result": "Hold confirmed from two frames; both pads in contact; hold duration 3.85 s; camera rotated 1.657 degrees; hand rotated 1.654 degrees; bodyward displacement 2.479 cm.",
+    "performance_improvement_established": false,
+    "qualification": false,
+    "physics_changed": false
+  },
+  "high_basket_active_view_diagnosis": {
+    "scope": "Robot-only pose feasibility from a preserved measured rim; static sensor fixtures are not executed paths or task trials.",
+    "partial_view_fit": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/partial-inspection-fit-1792083746332611000",
+    "clearance_check": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/inspection-clearance-1792083868203472000",
+    "multistart_fit": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/multistart-close-inspection-fit-1792084311982408000",
+    "static_render": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/partial-view-static-render-1792084446351939000",
+    "result": "A floor-only idealized ray fit appeared feasible, but the actual rendered static viewpoint yielded only three central below-rim depth pixels and no complete container. The separate post-observation evaluator found 6.26 mm overlap between the gripper linkage and the basket. This candidate is rejected.",
+    "pose_optimizer_limits": "Thirty-two starts with corrected own gripper mimic FK did not find a pose satisfying the added central-jaw constraint. This is not a proof of impossibility.",
+    "model_limitation": "An outer bounding ellipse alone does not establish a clear sightline through a finite-thickness rim or free space for the fingers.",
+    "next": "Use actual observed rim/inner-wall geometry and swept robot CAD clearance before any closer inspection motion. Partial views remain nonactionable. Continue testing lower-basket delivery independently.",
+    "physics_or_acceptance_changed": false,
+    "qualification": false
+  },
+  "hand_frame_tracking_fix": {
+    "problem": "Tracking compared center-minus-jaw offsets in world axes after the hand rotated. A held patch could be refused despite unchanged position in the hand frame.",
+    "change": "Store the measured arm5 orientation with the verified hold. Compare each offset in its own hand frame; retain the 25 mm displacement limit and all existing appearance, visibility, lift and probe gates. Missing orientation or nonfinite displacement is unknown.",
+    "baseline_trial": "/Volumes/ExplorerSim/ExplorerSim/skill-workshops/cd9e06045a69",
+    "candidate_trial": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/hand-frame-tracking-1792084648866992000/skill-workshops/candidate",
+    "seed": 887401001,
+    "baseline_result": "Stopped immediately after the destination survey on world-relative offset mismatch; independent physics still confirmed both pads in contact.",
+    "candidate_result": "Passed the post-survey tracking check and reached the transport-posture motion. That later motion lost the material; visual tracking correctly refused further transport and independent physics confirmed both contacts lost.",
+    "tests": "115 passed and 3 subtests across executor, adapter, workshop/API, perception, planning and placement. Added rotating-hand rigid-offset, real 30 mm slip and missing-orientation cases.",
+    "next": "Avoid the unnecessary free-pitch transport-posture change or plan it with measured hold orientation and clearance; do not relax hold evidence.",
+    "qualification": false,
+    "whole_task_success": false,
+    "physics_or_acceptance_changed": false,
+    "causal_followup": "The later stationary comparison below supersedes attribution to the transport-posture motion: material was also lost without that motion or any base command."
+  },
+  "held_survey_tilt_guard": {
+    "baseline_stationary_check": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/postsurvey-stationary-hold-1792085236067545000",
+    "retained_transport_trial": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/retained-transport-pose-1792085107412221000",
+    "guarded_trial": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/held-survey-tilt-guard-1792085541794875000",
+    "guarded_stationary_check": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/guarded-postsurvey-stationary-hold-1792085609621816000",
+    "seed": 887401001,
+    "causal_result": "Without changing posture or moving the chassis, the old survey lost the material during the following stationary second. The survey tipped camera pitch from 68.3 to 34.3 degrees. Removing the redundant transport pose alone did not solve this delayed loss.",
+    "change": "Held-camera planning constrains gravity-relative hand tilt to 2 degrees against the original visually verified hold; yaw about gravity is allowed. The joint-space segment is sampled and measured tilt is checked on each movement tick with a 3 degree limit. All camera pose and complete-opening gates remain unchanged.",
+    "transport_change": "Retain an already raised compact own-robot pose. If a change is necessary, plan fixed-orientation translation with unchanged 8 mm IK and 2 degree endpoint limits plus intermediate orientation checks. Recheck measured height, reach, rotation and visible hold before any chassis command. This is not a collision-free path certificate.",
+    "stationary_gate": "Require four distinct fresh RGBD hold checks across one stationary second before driving. Lost, ambiguous or stale evidence refuses transport.",
+    "guarded_stationary_result": "Survey refused all tested viewpoints before tipping the material. One additional stationary second retained both visual association and independent two-pad contact; measured hand-relative material offset changed only 1.26 mm. Independent hold duration 4.85 s.",
+    "remaining": "Current fixed-base held-camera survey cannot confirm the opening with the new motion constraint. Need observed viewpoint/stance planning rather than permitting the former tilt. Full delivery and user 30 cm basket remain unqualified.",
+    "regression_tests": "124 passed and 3 subtests across executor, adapter, workshop/API, perception, planning and placement.",
+    "physics_or_geometry_changed": false,
+    "acceptance_weakened": false,
+    "qualification": false,
+    "whole_task_success": false
+  }
+}

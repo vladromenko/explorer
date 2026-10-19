@@ -1,0 +1,129 @@
+"""Portable mobile policy contract; no ROS, UART or actuator imports."""
+import hashlib
+import json
+import math
+from pathlib import Path
+
+ACTION_ORDER=["base","shoulder","elbow","wrist_pitch","wrist_roll","gripper","vx","vy","wz"]
+UNITS=["deg"]*6+["m/s","m/s","rad/s"]
+JOINT_LIMITS=[(0,180)]*4+[(0,270),(30,180)]
+BASE_LIMITS=[.8,.72,1.67]
+
+# This identifies semantics, not a firmware or checkpoint digest. Legacy v1
+# bundles keep their documented command-estimate interpretation.
+SAMPLE_CONTRACT={"schema":"explorer_mobile_sample_v3","action_order":ACTION_ORDER,
+    "units":UNITS,"arm_action":"applied_servo_endpoint",
+    "base_action":"applied_body_velocity","arm_observation":"command_estimate",
+    "clock":"unix_seconds","frame":"base_footprint","image":"wrist_rgb"}
+CONTRACT_SHA256=hashlib.sha256(json.dumps(SAMPLE_CONTRACT,sort_keys=True).encode()).hexdigest()
+
+# Optional ACT context disambiguates pauses from transitions. It is an internal
+# clock, never privileged object coordinates or a replacement for state9.
+ACTOR_CLOCK={"feature":"observation.environment_state","kind":"elapsed_policy_time",
+    "scale_s":80.,"input_source":"internal_elapsed_time",
+    "components":["elapsed_scaled","period_scaled"]}
+ACTOR_CLOCK_FOURIER={**ACTOR_CLOCK,"periods_s":[2.,4.,8.,16.,32.,64.],
+    "components":ACTOR_CLOCK["components"]+[f"{kind}_{period:g}s" for period in (2.,4.,8.,16.,32.,64.) for kind in ("sin","cos")]}
+ACTOR_ACTION_TRANSFORM={"kind":"servo_delta_from_command_estimate",
+    "relative_channels":list(range(6)),"base_channels":"absolute_body_velocity"}
+
+
+def clock_features(context, elapsed_s):
+    elapsed_s=float(elapsed_s)
+    if not math.isfinite(elapsed_s) or elapsed_s<0:raise ValueError("Неверное время политики")
+    result=[elapsed_s/context["scale_s"],context["period_s"]/context["scale_s"]]
+    for period in context.get("periods_s",[]):
+        phase=2*math.pi*elapsed_s/period
+        result.extend((math.sin(phase),math.cos(phase)))
+    return result
+
+
+def decode_policy_action(state, action, bundle):
+    """Reconstruct issued endpoints from declared training-space outputs."""
+    reference=[float(value) for value in state]
+    result=[float(value) for value in action]
+    if len(reference)!=9 or len(result)!=9 or not all(math.isfinite(value) for value in reference+result):
+        raise ValueError("Неверное действие политики")
+    transform=bundle.get("action_transform")
+    if transform is not None:
+        if transform!=ACTOR_ACTION_TRANSFORM:raise ValueError("Неподдерживаемое преобразование действий")
+        for index in transform["relative_channels"]:
+            result[index]+=reference[index]
+    return result
+
+
+def read_bundle(job_folder):
+    folder=Path(job_folder).resolve()
+    bundle=json.loads((folder/"bundle.json").read_text())
+    if bundle.get("format") not in ("explorer_mobile_act_bundle_v1","explorer_mobile_act_bundle_v2"):
+        raise ValueError("Неверный формат комплекта")
+    if bundle.get("format")=="explorer_mobile_act_bundle_v2" and (
+        bundle.get("sample_contract")!=SAMPLE_CONTRACT or bundle.get("sample_contract_sha256")!=CONTRACT_SHA256):
+        raise ValueError("Семантика данных не совпадает с исполнителем Explorer")
+    if bundle.get("dataset_kind")!="mobile_manipulation_9dof":raise ValueError("Комплект не для шасси и руки Explorer")
+    if bundle.get("action_order")!=ACTION_ORDER or bundle.get("observation_order")!=ACTION_ORDER or bundle.get("units")!=UNITS:
+        raise ValueError("Порядок или единицы команд не совпадают с Explorer")
+    if bundle.get("joint_state_source")!="command_estimate":raise ValueError("Недостоверный источник положения руки")
+    relative=Path(bundle["checkpoint_relative"])
+    if relative.is_absolute() or ".." in relative.parts:raise ValueError("Неверный путь checkpoint")
+    checkpoint=(folder/relative).resolve()
+    if not checkpoint.is_relative_to(folder):raise ValueError("Checkpoint вне задания")
+    digests=bundle.get("checkpoint_sha256",{})
+    if not {"model.safetensors","config.json"}.issubset(digests):raise ValueError("Неполный комплект модели")
+    for name,digest in digests.items():
+        path=(checkpoint/name).resolve()
+        if not path.is_relative_to(checkpoint) or not path.is_file():raise ValueError("Файл модели отсутствует")
+        if hashlib.sha256(path.read_bytes()).hexdigest()!=digest:raise ValueError("Контрольная сумма модели не совпала")
+    model=json.loads((checkpoint/"config.json").read_text())
+    if bundle.get("action_transform") is not None and bundle["action_transform"]!=ACTOR_ACTION_TRANSFORM:
+        raise ValueError("Неподдерживаемое преобразование действий политики")
+    context=bundle.get("actor_context")
+    extras=set(model.get("input_features",{}))-{"observation.state","observation.images.wrist"}
+    if extras:
+        if extras!={ACTOR_CLOCK["feature"]} or not isinstance(context,dict):
+            raise ValueError("Неподдерживаемый дополнительный вход политики")
+        spec=ACTOR_CLOCK_FOURIER if "periods_s" in context else ACTOR_CLOCK
+        if any(context.get(key)!=value for key,value in spec.items()) or not .016<=float(context.get("period_s",0))<=.5:
+            raise ValueError("Неверный внутренний контекст времени политики")
+        if model["input_features"][ACTOR_CLOCK["feature"]].get("shape")!=[len(spec["components"])]:
+            raise ValueError("Неверная размерность времени политики")
+    elif context:
+        raise ValueError("Контекст времени не соответствует входам модели")
+    if (model.get("type")!="act" or model.get("input_features",{}).get("observation.state",{}).get("shape")!=[9] or
+        model.get("input_features",{}).get("observation.images.wrist",{}).get("shape")!=[3,240,320] or
+        model.get("output_features",{}).get("action",{}).get("shape")!=[9]):
+        raise ValueError("Конфигурация модели не соответствует девяти командам Explorer")
+    steps=model.get("n_action_steps")
+    horizon=model.get("chunk_size")
+    if steps!=1 and not (type(steps) is int and 1<steps<=20 and type(horizon) is int and
+            steps<=horizon<=20 and
+            model.get("temporal_ensemble_coeff") is None and bundle.get("inference_execution")==
+            {"kind":"bounded_action_queue","actions_per_call":1,"queue_steps":steps}):
+        raise ValueError("Неподдерживаемое выполнение действий политики")
+    return bundle,checkpoint
+
+
+def bound_action(current,proposed,base_trial_limits=(.12,.12,.35)):
+    if len(current)!=9 or len(proposed)!=9:raise ValueError("Ожидались девять координат")
+    values=[float(value) for value in proposed]
+    reference=[float(value) for value in current]
+    if not all(math.isfinite(value) for value in values+reference):raise ValueError("Нечисловое действие политики")
+    goal=[]
+    arm_limited=False
+    for index,(minimum,maximum) in enumerate(JOINT_LIMITS):
+        if not minimum<=values[index]<=maximum or abs(values[index]-reference[index])>20:
+            raise ValueError("Недопустимый шаг сустава "+str(index+1))
+        step=max(-2.0,min(2.0,values[index]-reference[index]))
+        value=int(round(reference[index]+step))
+        arm_limited=arm_limited or abs(value-values[index])>1e-9
+        goal.append(value)
+    speed=[]
+    for index,limit in enumerate(BASE_LIMITS):
+        value=values[6+index]
+        if abs(value)>limit*1.2:raise ValueError("Модель запросила скорость вне шкалы обучения")
+        trial=min(limit,base_trial_limits[index])
+        speed.append(max(-trial,min(trial,value)))
+    return {"proposed":values,"issued_joint_goal_deg":goal,"issued_body_velocity":speed,
+            "arm_limited":arm_limited,
+            "base_limited":any(abs(speed[index]-values[6+index])>1e-9 for index in range(3)),
+            "attainment_measured":False}

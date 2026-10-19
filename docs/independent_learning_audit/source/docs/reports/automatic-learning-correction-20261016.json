@@ -1,0 +1,99 @@
+{
+  "at": 1792171171.6757991,
+  "scope": "Mac-only autonomous skill parameter learning; no ROSMASTER connection",
+  "previous_request": "e256de3e4d76",
+  "previous_training": "a53a81f5f24e",
+  "controller": {
+    "files": {
+      "src/task_executor.py": "5d3e5e5be75389891ccf5540b0aa57100aadf193a85590b6058836738f1ccc06",
+      "simulator/skill_port.py": "b987a905cad33b6c9dadbd854014f95fab95b2210f5bdb22a10c57299338f78c",
+      "simulator/rgbd_observation.py": "01c4664fb2cb8ccc49614b400347901f494b6fffd8f06b4b33674c43056a231f",
+      "simulator/placement_evidence.py": "f426b76bffd9ae456bd77d3a0bc1cef5ceec68fcf15ef509152a430267fa9d56",
+      "simulator/inspection_planning.py": "2ee1d28ed464b30fdad2e3b8c6ebb217a69f746c3de9510151f0b66e4ea9335d",
+      "simulator/manipulation_planning.py": "f3718128deb8fd8a31b02c5d0fcd7c3b0f05d190fa0646e760b25d02faab92f3",
+      "simulator/observed_free_space.py": "361d8411aa223a45783a4a45b7ef26aec75bb1300098081b20e39d4f198e915d",
+      "simulator/multiview_container.py": "cdaa324efa32632e1cff01a08b17570a3a443ad2cd232291d5ea1c39cab8f81c",
+      "simulator/observed_navigation.py": "2c5763b630c49e0db8c0dab6bb13e45558037aec2be457bd8ce43602e29d612c",
+      "simulator/grasp_planning.py": "2450449949cef6dfca6afc41a4f894e16e70c940c79b7374e18fd3b16c38c4eb",
+      "simulator/skill_parameters.py": "1761548624079ae6eaeb0ca7048f7557db35097ca5102a0bde715c6cac062f9e",
+      "simulator/resource_budget.py": "7e63ffc1788032a9e6cdf6d246ec4f5be1805ee96c9899bcd9ae1015ab2fc68e",
+      "simulator/skill_training.py": "5ef535100670c12870eb0ba6424e96040a8696ded17374e878a53ab979195023",
+      "simulator/skill_workshop.py": "274ff7229d21ba48006ac73e717a1206a6d275ae5d9325b80bdf59641e1ea6c6",
+      "simulator/domain_randomization.py": "c0c04eb46b55dd74c6773170fe125adb34ba4270d887ee39c8c71b477b3e0870",
+      "simulator/scene_recipes.py": "02b6c02cb00de5ca4b8804059b8d48d85d0bca780933da80faf340eddce8e211",
+      "simulator/semantic_vision.py": "2eec660532061d82ebea45a261d3742300c4960e92e8b0b5981268f8abd99953",
+      "simulator/grounded_skill_port.py": "56b0458294ea95549ce001cafe6e23a7af6b2e29137f25462388dbde32fa93b1",
+      "simulator/surface_destination.py": "549412a2e1b85292effc7c16674667b08a44d27134bda6be5fca8e4fa74ed1fd",
+      "simulator/scan_navigation.py": "6cbcbd5ed8f175f641e48f7d034cd78e8637ed7cf7b77d8cc81b1277bc2eac80",
+      "bin/simulator-grounding.py": "b2e89e87b7c0cc5558098f7e8719aeacf378b54622dfea47023784bc4891bb60",
+      "config/grounding-model.json": "ac1b4efe3347243a1602dde82a1b8dab6755f3649dd4bd4a5d30c8bbda8043df",
+      "simulator/environment.py": "23ef394c8f6e37ae8b2b491f4885f9e223afdfc1fc869e7ee8866f33ce65647b",
+      "simulator/explorer_model.py": "9c0289da7ea01fd7442f3da9db387b65b9a39e247cb0e0404d29e96fd8484270",
+      "simulator/model_config.json": "4ba8966fbea5837c300145e1c57fa05a817d2240ffa67ee0e786b14eada56e48",
+      "config/explorer.urdf": "9ee94f15a2473ba04c84c552bae47f7dd2bd734b8b3700f3fe25d752c3eace4b",
+      "config/explorer.srdf": "dba83e73a95a6a85e936f0900d2aefadbb434b89302da92d680b56f983b023a7",
+      "config/arm-motion.json": "8ab3bc35a2d88f78050c720d1af8c97dcfffb500f20fcc04fee6a95a8dd4ca3a",
+      "config/handeye-accepted.json": "89c3370055d6436911de5f394048ac2d1d3892585e1fc773c6eb666070d07a77",
+      "config/arm_model.json": "842dfe7960fd01be18992e62dabe293added502d0df3715a9d31944b60317d4f"
+    },
+    "sha256": "9d4ca7e70b6adb48a5c0d7ee9380832b2b94109ba405d3365863b313d813c730"
+  },
+  "corrections": [
+    "Compensated gripper linkage through continuous closure",
+    "Measured side approaches and continuous learnable pick fraction with swept chassis clearance",
+    "Separate high transport from final fresh destination inspection",
+    "Lateral second camera viewpoint without retreating out of placement reach",
+    "Compare rim anchors instead of cropped wall midpoints",
+    "Plan closed hover, open-only gripper motion, release roll and feasible withdrawal as one checked geometric sequence",
+    "Observe placement from additional checked empty-gripper viewpoints",
+    "Geometry-only FK in IK matches full forward; actual dynamics remain mj_step",
+    "Independent per-stage stagnation counters and stable paired training curriculum",
+    "Require three solved training pairs before untouched independent validation",
+    "Idempotent linked continuation after an implementation change; historical attempts and code retained"
+  ],
+  "training_algorithm": "observed_curriculum_cross_entropy_v2",
+  "models": [
+    "Qwen3.5 4B local intent planning",
+    "GroundingDINO tiny pinned RGB recognition"
+  ],
+  "physics_changed": false,
+  "geometry_changed": false,
+  "evidence_thresholds_relaxed": false,
+  "validation_groups": [
+    10,
+    10,
+    10
+  ],
+  "last_diagnostic": {
+    "folder": "/Volumes/ExplorerSim/ExplorerSim/maintenance/observed-correction-1792170760584411000",
+    "stage": "release",
+    "success": false,
+    "reason": "Opening compensated by moving the wrist could intersect the observed rim; now opening is planned with fixed arm angles before any placement"
+  },
+  "user_direction": "No further assistant-triggered diagnostic learning; autonomous installed program owns subsequent attempts",
+  "installed": true,
+  "background_learning_started": true,
+  "simulation_ready": false,
+  "physical_ready": false,
+  "software_tests": {
+    "passed": 187,
+    "subtests_passed": 3,
+    "javascript_syntax_checked": true,
+    "browser_contracts_passed": true,
+    "browser_test_real_mutations": 0
+  },
+  "installed_revision": "5c7c024d60aabdcc5f37920f60120f6ae6175d2e",
+  "installed_source": "/Users/vladromenko/Library/Application Support/ExplorerSimulator/automatic-source-5c7c024d60aa",
+  "installed_files_sha256_verified": 422,
+  "request_id": "85a4136cfc91",
+  "training_id": "88a556e9f672",
+  "budget": {
+    "attempts": 1000,
+    "hours": 24.0
+  },
+  "active_workers": 4,
+  "completed_attempts": 0,
+  "models_ready": true,
+  "real_camera_frame_verified": true,
+  "operator_training_commands": false
+}

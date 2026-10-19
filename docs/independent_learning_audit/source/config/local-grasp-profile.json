@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "scope": "experimental_local_sock_grasp_only",
+  "experimental_execution_authorized": true,
+  "object_kind": "soft",
+  "open_command_deg": 30,
+  "hold_command_deg": 160,
+  "gripper_linkage_reference_rad": -0.8,
+  "grasp_quaternion_xyzw": [-0.0086927613, 0.4999234098, 0.0151192533, 0.8658940053],
+  "approach_height_m": 0.055,
+  "lift_height_m": 0.065,
+  "grasp_tcp_offset_m": 0.0,
+  "max_position_uncertainty_m": 0.012,
+  "evidence": {
+    "gripper": "config/gripper-reference.json",
+    "observed_cycle": "docs/reports/pick-carry-20260928.json",
+    "handeye": "config/handeye-accepted.json"
+  },
+  "provenance": {
+    "joint_state": "command_estimate",
+    "aperture_mm": "unavailable",
+    "force": "unavailable",
+    "orientation": "nominal_FK_of_observed_successful_grasp_command",
+    "linkage": "URDF_reference_for_collision_envelope_only"
+  },
+  "limitations": [
+    "This authorizes bounded experimental learning, not production pick-and-deliver.",
+    "The 160 degree command has one visually observed sock hold and no force measurement.",
+    "Every motion still passes the current MoveIt path and stationary-base checks."
+  ]
+}

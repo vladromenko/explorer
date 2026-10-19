@@ -1,0 +1,32 @@
+{
+  "at": 1792433657.6198342,
+  "resumed_from": 6000,
+  "saved_step": 7000,
+  "changed_parameter_tensors": 75,
+  "all_parameters_finite": true,
+  "normalizers": {
+    "policy_preprocessor_step_3_normalizer_processor.safetensors": {
+      "previous": "055d93339c6040d9cecf68ae3c513cd2d699b05145d4ed4285f3a0160e87c86e",
+      "new": "055d93339c6040d9cecf68ae3c513cd2d699b05145d4ed4285f3a0160e87c86e"
+    },
+    "policy_postprocessor_step_0_unnormalizer_processor.safetensors": {
+      "previous": "0f08aa34ffeeaee82c7ca0fffde532e03130b623944147827a00137facd9665b",
+      "new": "0f08aa34ffeeaee82c7ca0fffde532e03130b623944147827a00137facd9665b"
+    }
+  },
+  "checkpoint_sha256": {
+    "pretrained_model/model.safetensors": "c0b540da39747aad6e306066718e5b6a82d926b1e6b7c60c62d0b8c47face4d3",
+    "training_state/optimizer_state.safetensors": "ac522c7236ac8b869498fa446a031cf0a5c7fbf7a44eb4b1210585817d1f49be",
+    "training_state/optimizer_param_groups.json": "c260c5087130bcb192eb09907eae900a445214c3e2fe6cfb02e0c129aed8edb7",
+    "training_state/rng_state.safetensors": "22bc612eef79f66ea74c9582b025ed97f5a68377624445c762beae249d0ce3de",
+    "training_state/training_step.json": "7f3a5739ca4509ae233b3f5f9706d1a8981c24c8b0b9417642d0e08aefe06541"
+  },
+  "optimizer_changed": true,
+  "training_step": {
+    "step": 7000,
+    "num_processes": 1,
+    "batch_size": 32
+  },
+  "same_data_batch_budget_optimizer_config": true,
+  "simulation_qualified": false
+}

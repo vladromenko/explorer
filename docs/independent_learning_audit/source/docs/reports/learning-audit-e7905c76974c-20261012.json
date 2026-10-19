@@ -1,0 +1,1316 @@
+{
+  "model": "e7905c76974c",
+  "original_training_profile": "fourier_timed_visual_act_v6",
+  "original_validation": {
+    "episodes": 10,
+    "successes": 2,
+    "failures": {
+      "execution_error": 0,
+      "no_two_finger_contact": 0,
+      "contact_without_verified_lift": 3,
+      "lift_without_verified_delivery": 5
+    },
+    "results": [
+      {
+        "id": "heldout-0000",
+        "success": false,
+        "failure": "lift_without_verified_delivery",
+        "first_grasp_frame": 246,
+        "first_lift_frame": 319,
+        "outcome": {
+          "id": "sock_basket",
+          "phase": "policy",
+          "grasp_contact": false,
+          "finger_contacts": [
+            false,
+            false
+          ],
+          "lifted": true,
+          "placed": false,
+          "success": false,
+          "lift_hold_s": 0.0
+        }
+      },
+      {
+        "id": "heldout-0001",
+        "success": true,
+        "failure": null,
+        "first_grasp_frame": 242,
+        "first_lift_frame": 319,
+        "outcome": {
+          "id": "sock_basket",
+          "phase": "policy",
+          "grasp_contact": false,
+          "finger_contacts": [
+            false,
+            false
+          ],
+          "lifted": true,
+          "placed": true,
+          "success": true,
+          "lift_hold_s": 0.0
+        }
+      },
+      {
+        "id": "heldout-0002",
+        "success": false,
+        "failure": "lift_without_verified_delivery",
+        "first_grasp_frame": 241,
+        "first_lift_frame": 318,
+        "outcome": {
+          "id": "sock_basket",
+          "phase": "policy",
+          "grasp_contact": false,
+          "finger_contacts": [
+            false,
+            false
+          ],
+          "lifted": true,
+          "placed": false,
+          "success": false,
+          "lift_hold_s": 0.0
+        }
+      },
+      {
+        "id": "heldout-0003",
+        "success": false,
+        "failure": "lift_without_verified_delivery",
+        "first_grasp_frame": 256,
+        "first_lift_frame": 322,
+        "outcome": {
+          "id": "sock_basket",
+          "phase": "policy",
+          "grasp_contact": false,
+          "finger_contacts": [
+            false,
+            false
+          ],
+          "lifted": true,
+          "placed": false,
+          "success": false,
+          "lift_hold_s": 0.0
+        }
+      },
+      {
+        "id": "heldout-0004",
+        "success": false,
+        "failure": "contact_without_verified_lift",
+        "first_grasp_frame": 242,
+        "first_lift_frame": null,
+        "outcome": {
+          "id": "sock_basket",
+          "phase": "policy",
+          "grasp_contact": false,
+          "finger_contacts": [
+            false,
+            false
+          ],
+          "lifted": false,
+          "placed": false,
+          "success": false,
+          "lift_hold_s": 0.0
+        }
+      },
+      {
+        "id": "heldout-0005",
+        "success": false,
+        "failure": "lift_without_verified_delivery",
+        "first_grasp_frame": 248,
+        "first_lift_frame": 321,
+        "outcome": {
+          "id": "sock_basket",
+          "phase": "policy",
+          "grasp_contact": false,
+          "finger_contacts": [
+            true,
+            false
+          ],
+          "lifted": true,
+          "placed": false,
+          "success": false,
+          "lift_hold_s": 0.0
+        }
+      },
+      {
+        "id": "heldout-0006",
+        "success": true,
+        "failure": null,
+        "first_grasp_frame": 242,
+        "first_lift_frame": 319,
+        "outcome": {
+          "id": "sock_basket",
+          "phase": "policy",
+          "grasp_contact": false,
+          "finger_contacts": [
+            false,
+            false
+          ],
+          "lifted": true,
+          "placed": true,
+          "success": true,
+          "lift_hold_s": 0.0
+        }
+      },
+      {
+        "id": "heldout-0007",
+        "success": false,
+        "failure": "contact_without_verified_lift",
+        "first_grasp_frame": 253,
+        "first_lift_frame": null,
+        "outcome": {
+          "id": "sock_basket",
+          "phase": "policy",
+          "grasp_contact": false,
+          "finger_contacts": [
+            false,
+            false
+          ],
+          "lifted": false,
+          "placed": false,
+          "success": false,
+          "lift_hold_s": 0.0
+        }
+      },
+      {
+        "id": "heldout-0008",
+        "success": false,
+        "failure": "contact_without_verified_lift",
+        "first_grasp_frame": 239,
+        "first_lift_frame": null,
+        "outcome": {
+          "id": "sock_basket",
+          "phase": "policy",
+          "grasp_contact": false,
+          "finger_contacts": [
+            false,
+            false
+          ],
+          "lifted": false,
+          "placed": false,
+          "success": false,
+          "lift_hold_s": 0.0
+        }
+      },
+      {
+        "id": "heldout-0009",
+        "success": false,
+        "failure": "lift_without_verified_delivery",
+        "first_grasp_frame": 253,
+        "first_lift_frame": 320,
+        "outcome": {
+          "id": "sock_basket",
+          "phase": "policy",
+          "grasp_contact": false,
+          "finger_contacts": [
+            true,
+            false
+          ],
+          "lifted": true,
+          "placed": false,
+          "success": false,
+          "lift_hold_s": 0.0
+        }
+      }
+    ],
+    "diagnostic_only": true
+  },
+  "training_exposure": {
+    "training_frames": 129548,
+    "steps": 20000,
+    "batch_size": 16,
+    "dataset_passes": 2.4701269027696298,
+    "proposed_minimum_epochs": 8,
+    "required_total_steps": 64774
+  },
+  "recorded_action_validation": {
+    "samples": 128,
+    "heldout_independent": true,
+    "validation_total_frames": 32360,
+    "sampling": "uniform_across_validation_frames",
+    "normalized_mae": 0.026305813162136673,
+    "normalized_hold_baseline_mae": 0.010074870670974128,
+    "joint_mae_deg": 0.3922985758933161,
+    "base_mae_mixed": 0.00036537626529783057,
+    "full_chunk": {
+      "prediction_horizon": 20,
+      "valid_commands": 2495,
+      "normalized_mae": 0.033675710181942924,
+      "normalized_hold_baseline_mae": 0.11393420316529625,
+      "joint_mae_deg": 0.498664102118755,
+      "per_channel_mae": [
+        0.0752981334984422,
+        0.7333032448151108,
+        0.42472615289783666,
+        0.4307155531502484,
+        0.022343340856517725,
+        1.3055981874943736,
+        0.0007951027644776696,
+        0.001983144055440264,
+        0.00022492422883853172
+      ],
+      "by_prediction_step": [
+        {
+          "step": 0,
+          "valid_commands": 128,
+          "joint_mae_deg": 0.3922985758927376,
+          "normalized_mae": 0.026305813162094325
+        },
+        {
+          "step": 1,
+          "valid_commands": 126,
+          "joint_mae_deg": 0.38114221712314533,
+          "normalized_mae": 0.025577305424616673
+        },
+        {
+          "step": 2,
+          "valid_commands": 126,
+          "joint_mae_deg": 0.36192083096257843,
+          "normalized_mae": 0.024312993325343632
+        },
+        {
+          "step": 3,
+          "valid_commands": 126,
+          "joint_mae_deg": 0.3741704214852118,
+          "normalized_mae": 0.025138149635637732
+        },
+        {
+          "step": 4,
+          "valid_commands": 126,
+          "joint_mae_deg": 0.3856210192160463,
+          "normalized_mae": 0.025957477549269782
+        },
+        {
+          "step": 5,
+          "valid_commands": 126,
+          "joint_mae_deg": 0.41558984510803376,
+          "normalized_mae": 0.028000923518778004
+        },
+        {
+          "step": 6,
+          "valid_commands": 126,
+          "joint_mae_deg": 0.4324186695042701,
+          "normalized_mae": 0.02919890850402203
+        },
+        {
+          "step": 7,
+          "valid_commands": 125,
+          "joint_mae_deg": 0.447268590656853,
+          "normalized_mae": 0.030212613438820982
+        },
+        {
+          "step": 8,
+          "valid_commands": 125,
+          "joint_mae_deg": 0.44187895668296406,
+          "normalized_mae": 0.029888354776703284
+        },
+        {
+          "step": 9,
+          "valid_commands": 125,
+          "joint_mae_deg": 0.4637902921361271,
+          "normalized_mae": 0.031407939160211104
+        },
+        {
+          "step": 10,
+          "valid_commands": 125,
+          "joint_mae_deg": 0.4788849719822884,
+          "normalized_mae": 0.0324798530260548
+        },
+        {
+          "step": 11,
+          "valid_commands": 125,
+          "joint_mae_deg": 0.5034490274189329,
+          "normalized_mae": 0.03412504981156758
+        },
+        {
+          "step": 12,
+          "valid_commands": 125,
+          "joint_mae_deg": 0.5360813730870552,
+          "normalized_mae": 0.03631165097324911
+        },
+        {
+          "step": 13,
+          "valid_commands": 123,
+          "joint_mae_deg": 0.581731501753274,
+          "normalized_mae": 0.03935695732777763
+        },
+        {
+          "step": 14,
+          "valid_commands": 123,
+          "joint_mae_deg": 0.5938203134271023,
+          "normalized_mae": 0.04014130162819889
+        },
+        {
+          "step": 15,
+          "valid_commands": 123,
+          "joint_mae_deg": 0.6216314741514599,
+          "normalized_mae": 0.041979646754800745
+        },
+        {
+          "step": 16,
+          "valid_commands": 123,
+          "joint_mae_deg": 0.628404903091129,
+          "normalized_mae": 0.04240827458417253
+        },
+        {
+          "step": 17,
+          "valid_commands": 123,
+          "joint_mae_deg": 0.6397035019396704,
+          "normalized_mae": 0.04323028498810635
+        },
+        {
+          "step": 18,
+          "valid_commands": 123,
+          "joint_mae_deg": 0.6492836744431805,
+          "normalized_mae": 0.043906339571681184
+        },
+        {
+          "step": 19,
+          "valid_commands": 123,
+          "joint_mae_deg": 0.6661142828054494,
+          "normalized_mae": 0.04506796480548629
+        }
+      ]
+    },
+    "applied_before_next_observation": 20,
+    "improves_hold_baseline": false,
+    "training_source": "synthetic_only",
+    "domain": "simulation",
+    "physics_acceptance": false,
+    "physical_success_evaluated": false,
+    "physical_success_verified": false,
+    "automatic_execution_allowed": false
+  },
+  "checkpoint_selection_audit": {
+    "criterion": "independent_recorded_full_chunk_normalized_mae",
+    "heldout_independent": true,
+    "final_task_test_used": false,
+    "candidates": [
+      {
+        "checkpoint_relative": "model/checkpoints/002000/pretrained_model",
+        "normalized_mae": 0.08091721244694063
+      },
+      {
+        "checkpoint_relative": "model/checkpoints/004000/pretrained_model",
+        "normalized_mae": 0.05949057852739394
+      },
+      {
+        "checkpoint_relative": "model/checkpoints/006000/pretrained_model",
+        "normalized_mae": 0.05782251266245754
+      },
+      {
+        "checkpoint_relative": "model/checkpoints/008000/pretrained_model",
+        "normalized_mae": 0.04880760628517947
+      },
+      {
+        "checkpoint_relative": "model/checkpoints/010000/pretrained_model",
+        "normalized_mae": 0.045282008389370465
+      },
+      {
+        "checkpoint_relative": "model/checkpoints/012000/pretrained_model",
+        "normalized_mae": 0.043096085397584874
+      },
+      {
+        "checkpoint_relative": "model/checkpoints/014000/pretrained_model",
+        "normalized_mae": 0.03890988171891556
+      },
+      {
+        "checkpoint_relative": "model/checkpoints/016000/pretrained_model",
+        "normalized_mae": 0.03989411680816014
+      },
+      {
+        "checkpoint_relative": "model/checkpoints/018000/pretrained_model",
+        "normalized_mae": 0.04041249054498519
+      },
+      {
+        "checkpoint_relative": "model/checkpoints/020000/pretrained_model",
+        "normalized_mae": 0.033675710181942924
+      }
+    ],
+    "checkpoint_relative": "model/checkpoints/020000/pretrained_model"
+  },
+  "feedback_comparison": {
+    "purpose": "tuning_only_not_qualification",
+    "seeds": [
+      90010000,
+      90010001,
+      90010002,
+      90010003,
+      90010004,
+      90010005,
+      90010006,
+      90010007,
+      90010008,
+      90010009
+    ],
+    "results": [
+      {
+        "seed": 90010004,
+        "mode": "queue20",
+        "success": false,
+        "outcome": {
+          "id": "sock_basket",
+          "phase": "ready",
+          "grasp_contact": false,
+          "finger_contacts": [
+            false,
+            false
+          ],
+          "lifted": false,
+          "placed": false,
+          "success": false,
+          "lift_hold_s": 0.0
+        },
+        "frames": 1600,
+        "grasp_frames": 56,
+        "error": null,
+        "wall_s": 51.323935985565186,
+        "max_acceleration_deg_s2": [
+          200.86364746093747,
+          1038.4765624999998,
+          1601.3980102539106,
+          1002.7458190917966,
+          141.78466796874997,
+          2261.4544677734384
+        ],
+        "sock_center_m": [
+          0.4104587774610316,
+          0.008419648965038733,
+          0.008657706206355139
+        ]
+      },
+      {
+        "seed": 90010004,
+        "mode": "queue5",
+        "success": true,
+        "outcome": {
+          "id": "sock_basket",
+          "phase": "ready",
+          "grasp_contact": false,
+          "finger_contacts": [
+            false,
+            false
+          ],
+          "lifted": true,
+          "placed": true,
+          "success": true,
+          "lift_hold_s": 0.0
+        },
+        "frames": 589,
+        "grasp_frames": 292,
+        "error": null,
+        "wall_s": 24.549004077911377,
+        "max_acceleration_deg_s2": [
+          135.18981933593747,
+          1092.1386718749998,
+          927.2430419921873,
+          965.9446716308591,
+          123.53210449218747,
+          989.0258789062498
+        ],
+        "sock_center_m": [
+          0.3960052571536155,
+          0.35439148657115094,
+          0.022330466021686163
+        ]
+      },
+      {
+        "seed": 90010004,
+        "mode": "ensemble1",
+        "success": false,
+        "outcome": {
+          "id": "sock_basket",
+          "phase": "ready",
+          "grasp_contact": false,
+          "finger_contacts": [
+            false,
+            false
+          ],
+          "lifted": false,
+          "placed": false,
+          "success": false,
+          "lift_hold_s": 0.0
+        },
+        "frames": 1600,
+        "grasp_frames": 56,
+        "error": null,
+        "wall_s": 77.83907413482666,
+        "max_acceleration_deg_s2": [
+          13.156127929687498,
+          451.96044921874534,
+          163.80310058593747,
+          507.5590133666991,
+          18.927001953124996,
+          1098.6474609375334
+        ],
+        "sock_center_m": [
+          0.3970323951409283,
+          0.0013732082559292224,
+          0.0032398808530746705
+        ]
+      },
+      {
+        "seed": 90010001,
+        "mode": "queue20",
+        "success": false,
+        "outcome": {
+          "id": "sock_basket",
+          "phase": "ready",
+          "grasp_contact": false,
+          "finger_contacts": [
+            false,
+            false
+          ],
+          "lifted": false,
+          "placed": false,
+          "success": false,
+          "lift_hold_s": 0.0
+        },
+        "frames": 1600,
+        "grasp_frames": 51,
+        "error": null,
+        "wall_s": 53.65273118019104,
+        "max_acceleration_deg_s2": [
+          133.91113281249997,
+          1626.125488281252,
+          859.6069335937499,
+          1048.963165283203,
+          109.37499999999999,
+          992.3486328124537
+        ],
+        "sock_center_m": [
+          0.4176669089748562,
+          -0.03487299961717977,
+          0.003081698601412075
+        ]
+      },
+      {
+        "seed": 90010001,
+        "mode": "queue5",
+        "success": false,
+        "outcome": {
+          "id": "sock_basket",
+          "phase": "ready",
+          "grasp_contact": false,
+          "finger_contacts": [
+            false,
+            false
+          ],
+          "lifted": false,
+          "placed": false,
+          "success": false,
+          "lift_hold_s": 0.0
+        },
+        "frames": 1600,
+        "grasp_frames": 50,
+        "error": null,
+        "wall_s": 58.9485137462616,
+        "max_acceleration_deg_s2": [
+          606.0791015624999,
+          1250.4031372070299,
+          1442.708740234377,
+          1817.5369262695308,
+          1219.5770263671873,
+          878.3666992187361
+        ],
+        "sock_center_m": [
+          0.4467462645553931,
+          -0.019058067498355685,
+          0.00314458411868983
+        ]
+      },
+      {
+        "seed": 90010001,
+        "mode": "ensemble1",
+        "success": false,
+        "outcome": {
+          "id": "sock_basket",
+          "phase": "ready",
+          "grasp_contact": false,
+          "finger_contacts": [
+            false,
+            false
+          ],
+          "lifted": false,
+          "placed": false,
+          "success": false,
+          "lift_hold_s": 0.0
+        },
+        "frames": 1600,
+        "grasp_frames": 54,
+        "error": null,
+        "wall_s": 74.04406094551086,
+        "max_acceleration_deg_s2": [
+          14.672851562499996,
+          501.7028808593692,
+          104.57458496093749,
+          508.3740234374999,
+          19.052124023437496,
+          713.0520629882482
+        ],
+        "sock_center_m": [
+          0.4121215825691022,
+          -0.026362879783248184,
+          0.008853618463110504
+        ]
+      },
+      {
+        "seed": 90010002,
+        "mode": "queue20",
+        "success": false,
+        "outcome": {
+          "id": "sock_basket",
+          "phase": "ready",
+          "grasp_contact": false,
+          "finger_contacts": [
+            false,
+            false
+          ],
+          "lifted": false,
+          "placed": false,
+          "success": false,
+          "lift_hold_s": 0.0
+        },
+        "frames": 1600,
+        "grasp_frames": 45,
+        "error": null,
+        "wall_s": 53.650092124938965,
+        "max_acceleration_deg_s2": [
+          159.49401855468747,
+          1485.0585937499998,
+          1100.7662963867174,
+          1020.1332092285154,
+          109.53979492187499,
+          1083.1213378906225
+        ],
+        "sock_center_m": [
+          0.3283422253643057,
+          -0.029904792426882675,
+          0.003216662899566397
+        ]
+      },
+      {
+        "seed": 90010002,
+        "mode": "queue5",
+        "success": true,
+        "outcome": {
+          "id": "sock_basket",
+          "phase": "ready",
+          "grasp_contact": false,
+          "finger_contacts": [
+            false,
+            false
+          ],
+          "lifted": true,
+          "placed": true,
+          "success": true,
+          "lift_hold_s": 0.0
+        },
+        "frames": 582,
+        "grasp_frames": 283,
+        "error": null,
+        "wall_s": 25.409961938858032,
+        "max_acceleration_deg_s2": [
+          78.22570800781249,
+          707.6171874999999,
+          815.8563232421897,
+          841.6526794433593,
+          123.55957031249997,
+          1075.8465576172368
+        ],
+        "sock_center_m": [
+          0.3962691002861242,
+          0.3792839282942031,
+          0.017421882879912535
+        ]
+      },
+      {
+        "seed": 90010002,
+        "mode": "ensemble1",
+        "success": true,
+        "outcome": {
+          "id": "sock_basket",
+          "phase": "ready",
+          "grasp_contact": false,
+          "finger_contacts": [
+            false,
+            false
+          ],
+          "lifted": true,
+          "placed": true,
+          "success": true,
+          "lift_hold_s": 0.0
+        },
+        "frames": 530,
+        "grasp_frames": 255,
+        "error": null,
+        "wall_s": 27.747135877609253,
+        "max_acceleration_deg_s2": [
+          13.327026367187498,
+          283.19702148437494,
+          112.93640136718747,
+          543.4627532958983,
+          18.936157226562496,
+          499.5391845703124
+        ],
+        "sock_center_m": [
+          0.39276677657458087,
+          0.3626770007435967,
+          0.015779943157675294
+        ]
+      },
+      {
+        "seed": 90010000,
+        "mode": "queue20",
+        "success": true,
+        "outcome": {
+          "id": "sock_basket",
+          "phase": "ready",
+          "grasp_contact": false,
+          "finger_contacts": [
+            false,
+            false
+          ],
+          "lifted": true,
+          "placed": true,
+          "success": true,
+          "lift_hold_s": 0.0
+        },
+        "frames": 580,
+        "first_grasp_frame": 244,
+        "first_lift_frame": 320,
+        "grasp_frames": 308,
+        "error": null,
+        "wall_s": 23.22689087499748,
+        "max_acceleration_deg_s2": [
+          63.150024414062486,
+          727.791748046875,
+          764.4348144531249,
+          948.7386703491209,
+          109.50012207031249,
+          1960.08422851562
+        ],
+        "sock_center_m": [
+          0.35313571382299175,
+          0.35834440144115637,
+          0.01572255536351079
+        ]
+      },
+      {
+        "seed": 90010000,
+        "mode": "queue5",
+        "success": true,
+        "outcome": {
+          "id": "sock_basket",
+          "phase": "ready",
+          "grasp_contact": false,
+          "finger_contacts": [
+            false,
+            false
+          ],
+          "lifted": true,
+          "placed": true,
+          "success": true,
+          "lift_hold_s": 0.0
+        },
+        "frames": 1424,
+        "first_grasp_frame": 246,
+        "first_lift_frame": 320,
+        "grasp_frames": 276,
+        "error": null,
+        "wall_s": 54.0304114999999,
+        "max_acceleration_deg_s2": [
+          353.57360839843744,
+          1330.512084960935,
+          1240.5300903320378,
+          2127.4841308593745,
+          1207.4218749999998,
+          1357.847595214795
+        ],
+        "sock_center_m": [
+          0.3743521119262994,
+          0.4290960936637782,
+          0.023404617366436804
+        ]
+      },
+      {
+        "seed": 90010003,
+        "mode": "queue20",
+        "success": false,
+        "outcome": {
+          "id": "sock_basket",
+          "phase": "ready",
+          "grasp_contact": false,
+          "finger_contacts": [
+            false,
+            true
+          ],
+          "lifted": true,
+          "placed": false,
+          "success": false,
+          "lift_hold_s": 0.0
+        },
+        "frames": 1600,
+        "first_grasp_frame": 248,
+        "first_lift_frame": 319,
+        "grasp_frames": 294,
+        "error": null,
+        "wall_s": 52.35601099999985,
+        "max_acceleration_deg_s2": [
+          106.20727539062499,
+          1663.3929443359418,
+          1209.1464233398424,
+          950.8441925048826,
+          109.52453613281249,
+          1345.6521606445303
+        ],
+        "sock_center_m": [
+          0.27275294099124453,
+          0.026059126989426553,
+          0.2760154153760894
+        ]
+      },
+      {
+        "seed": 90010003,
+        "mode": "queue5",
+        "success": false,
+        "outcome": {
+          "id": "sock_basket",
+          "phase": "ready",
+          "grasp_contact": false,
+          "finger_contacts": [
+            false,
+            false
+          ],
+          "lifted": false,
+          "placed": false,
+          "success": false,
+          "lift_hold_s": 0.0
+        },
+        "frames": 1600,
+        "first_grasp_frame": 251,
+        "first_lift_frame": null,
+        "grasp_frames": 45,
+        "error": null,
+        "wall_s": 57.25332133300253,
+        "max_acceleration_deg_s2": [
+          458.1665039062499,
+          1314.6418762207018,
+          1242.0465087890645,
+          1790.8584594726558,
+          1120.0744628906248,
+          1557.6232910156248
+        ],
+        "sock_center_m": [
+          0.3522326926509584,
+          -0.012478418279605967,
+          0.0030507111128334472
+        ]
+      },
+      {
+        "seed": 90010005,
+        "mode": "queue20",
+        "success": false,
+        "outcome": {
+          "id": "sock_basket",
+          "phase": "ready",
+          "grasp_contact": false,
+          "finger_contacts": [
+            false,
+            false
+          ],
+          "lifted": false,
+          "placed": false,
+          "success": false,
+          "lift_hold_s": 0.0
+        },
+        "frames": 1600,
+        "first_grasp_frame": 245,
+        "first_lift_frame": null,
+        "grasp_frames": 57,
+        "error": null,
+        "wall_s": 51.98377549999714,
+        "max_acceleration_deg_s2": [
+          105.63964843749999,
+          1211.7401123046873,
+          1087.7459716796861,
+          970.387268066406,
+          109.53063964843749,
+          1047.5561523437475
+        ],
+        "sock_center_m": [
+          0.37101810115070893,
+          -0.017280695996105367,
+          0.003061790224466301
+        ]
+      },
+      {
+        "seed": 90010005,
+        "mode": "queue5",
+        "success": false,
+        "outcome": {
+          "id": "sock_basket",
+          "phase": "ready",
+          "grasp_contact": false,
+          "finger_contacts": [
+            false,
+            false
+          ],
+          "lifted": false,
+          "placed": false,
+          "success": false,
+          "lift_hold_s": 0.0
+        },
+        "frames": 1600,
+        "first_grasp_frame": 241,
+        "first_lift_frame": null,
+        "grasp_frames": 62,
+        "error": null,
+        "wall_s": 56.012026832999254,
+        "max_acceleration_deg_s2": [
+          286.47766113281244,
+          1439.9902343749998,
+          969.2590332031242,
+          2091.744995117187,
+          1195.2728271484373,
+          1373.7402343749407
+        ],
+        "sock_center_m": [
+          0.3467354889262719,
+          -0.005750503540636434,
+          0.0030683598954709002
+        ]
+      },
+      {
+        "seed": 90010006,
+        "mode": "queue20",
+        "success": true,
+        "outcome": {
+          "id": "sock_basket",
+          "phase": "ready",
+          "grasp_contact": false,
+          "finger_contacts": [
+            false,
+            false
+          ],
+          "lifted": true,
+          "placed": true,
+          "success": true,
+          "lift_hold_s": 0.0
+        },
+        "frames": 906,
+        "first_grasp_frame": 235,
+        "first_lift_frame": 319,
+        "grasp_frames": 308,
+        "error": null,
+        "wall_s": 40.28360995800176,
+        "max_acceleration_deg_s2": [
+          63.143920898437486,
+          1060.8123779296873,
+          908.332824707031,
+          1013.252258300781,
+          109.56726074218749,
+          872.5579833984368
+        ],
+        "sock_center_m": [
+          0.46485267174884226,
+          0.3633816991014852,
+          0.017535290071409217
+        ]
+      },
+      {
+        "seed": 90010006,
+        "mode": "queue5",
+        "success": false,
+        "outcome": {
+          "id": "sock_basket",
+          "phase": "ready",
+          "grasp_contact": false,
+          "finger_contacts": [
+            false,
+            false
+          ],
+          "lifted": false,
+          "placed": false,
+          "success": false,
+          "lift_hold_s": 0.0
+        },
+        "frames": 1600,
+        "first_grasp_frame": 233,
+        "first_lift_frame": null,
+        "grasp_frames": 71,
+        "error": null,
+        "wall_s": 54.684962375002215,
+        "max_acceleration_deg_s2": [
+          357.57751464843744,
+          1091.5460205078145,
+          1453.035888671877,
+          2344.8608398437495,
+          1249.3133544921873,
+          1518.4204101562498
+        ],
+        "sock_center_m": [
+          0.37932315717120085,
+          0.027096168885200042,
+          0.006532522429257071
+        ]
+      },
+      {
+        "seed": 90010007,
+        "mode": "queue20",
+        "success": true,
+        "outcome": {
+          "id": "sock_basket",
+          "phase": "ready",
+          "grasp_contact": false,
+          "finger_contacts": [
+            false,
+            false
+          ],
+          "lifted": true,
+          "placed": true,
+          "success": true,
+          "lift_hold_s": 0.0
+        },
+        "frames": 559,
+        "first_grasp_frame": 255,
+        "first_lift_frame": 319,
+        "grasp_frames": 277,
+        "error": null,
+        "wall_s": 20.898646125002415,
+        "max_acceleration_deg_s2": [
+          56.112670898437486,
+          856.2905883789062,
+          830.2627563476561,
+          1101.9439697265623,
+          109.57641601562499,
+          1429.5263671874975
+        ],
+        "sock_center_m": [
+          0.3896620265916676,
+          0.3835132416098861,
+          0.017764632163403953
+        ]
+      },
+      {
+        "seed": 90010007,
+        "mode": "queue5",
+        "success": true,
+        "outcome": {
+          "id": "sock_basket",
+          "phase": "ready",
+          "grasp_contact": false,
+          "finger_contacts": [
+            false,
+            false
+          ],
+          "lifted": true,
+          "placed": true,
+          "success": true,
+          "lift_hold_s": 0.0
+        },
+        "frames": 673,
+        "first_grasp_frame": 252,
+        "first_lift_frame": 318,
+        "grasp_frames": 301,
+        "error": null,
+        "wall_s": 28.839764374999504,
+        "max_acceleration_deg_s2": [
+          83.82568359374999,
+          1019.8791503906248,
+          846.4593505859397,
+          847.5219726562499,
+          123.76403808593747,
+          1071.7871093749861
+        ],
+        "sock_center_m": [
+          0.36547413987829847,
+          0.3925529235578015,
+          0.01889033935781181
+        ]
+      },
+      {
+        "seed": 90010008,
+        "mode": "queue20",
+        "success": true,
+        "outcome": {
+          "id": "sock_basket",
+          "phase": "ready",
+          "grasp_contact": false,
+          "finger_contacts": [
+            false,
+            false
+          ],
+          "lifted": true,
+          "placed": true,
+          "success": true,
+          "lift_hold_s": 0.0
+        },
+        "frames": 636,
+        "first_grasp_frame": 231,
+        "first_lift_frame": 319,
+        "grasp_frames": 292,
+        "error": null,
+        "wall_s": 24.788776166999014,
+        "max_acceleration_deg_s2": [
+          91.26586914062499,
+          939.7735595703123,
+          894.965515136718,
+          1055.3459167480466,
+          109.57336425781249,
+          1961.8347167968745
+        ],
+        "sock_center_m": [
+          0.35584720176384027,
+          0.33785411922529124,
+          0.014947838387559921
+        ]
+      },
+      {
+        "seed": 90010008,
+        "mode": "queue5",
+        "success": false,
+        "outcome": {
+          "id": "sock_basket",
+          "phase": "ready",
+          "grasp_contact": false,
+          "finger_contacts": [
+            false,
+            false
+          ],
+          "lifted": true,
+          "placed": false,
+          "success": false,
+          "lift_hold_s": 0.0
+        },
+        "frames": 1600,
+        "first_grasp_frame": 253,
+        "first_lift_frame": 318,
+        "grasp_frames": 269,
+        "error": null,
+        "wall_s": 67.29001683300157,
+        "max_acceleration_deg_s2": [
+          340.38696289062494,
+          1174.758300781252,
+          1577.3474121093725,
+          1709.0698242187498,
+          1179.7821044921873,
+          1171.9555664062452
+        ],
+        "sock_center_m": [
+          0.34631767711258954,
+          0.29609825901250275,
+          0.01843118703245386
+        ]
+      },
+      {
+        "seed": 90010009,
+        "mode": "queue20",
+        "success": false,
+        "outcome": {
+          "id": "sock_basket",
+          "phase": "ready",
+          "grasp_contact": false,
+          "finger_contacts": [
+            false,
+            false
+          ],
+          "lifted": true,
+          "placed": false,
+          "success": false,
+          "lift_hold_s": 0.0
+        },
+        "frames": 1600,
+        "first_grasp_frame": 244,
+        "first_lift_frame": 320,
+        "grasp_frames": 317,
+        "error": null,
+        "wall_s": 53.1302031669984,
+        "max_acceleration_deg_s2": [
+          83.78906249999999,
+          1641.0583496093748,
+          1243.4857177734355,
+          1278.0326843261716,
+          109.45129394531249,
+          1098.9196777343748
+        ],
+        "sock_center_m": [
+          0.25193031911505315,
+          0.03939625630182534,
+          0.008798720848001226
+        ]
+      },
+      {
+        "seed": 90010009,
+        "mode": "queue5",
+        "success": true,
+        "outcome": {
+          "id": "sock_basket",
+          "phase": "ready",
+          "grasp_contact": false,
+          "finger_contacts": [
+            false,
+            false
+          ],
+          "lifted": true,
+          "placed": true,
+          "success": true,
+          "lift_hold_s": 0.0
+        },
+        "frames": 720,
+        "first_grasp_frame": 247,
+        "first_lift_frame": 319,
+        "grasp_frames": 289,
+        "error": null,
+        "wall_s": 28.095774707999226,
+        "max_acceleration_deg_s2": [
+          144.28405761718747,
+          1065.3137207031248,
+          873.6364746093726,
+          743.6523437499999,
+          123.29101562499997,
+          1307.057189941406
+        ],
+        "sock_center_m": [
+          0.3394959863287074,
+          0.33529128641954553,
+          0.017892364626542024
+        ]
+      }
+    ],
+    "successes": {
+      "queue20": 4,
+      "queue5": 5
+    },
+    "short_queue_regression_seeds": [
+      90010006,
+      90010008
+    ],
+    "short_queue_improvement_seeds": [
+      90010002,
+      90010004,
+      90010009
+    ],
+    "default_queue_steps": 20,
+    "short_queue_promoted": false
+  },
+  "active_queue_untouched": [
+    {
+      "id": "a152bd60cce1",
+      "kind": "night",
+      "status": "running",
+      "message": "Носок → корзина · раунд 3 · trials",
+      "progress": 0
+    },
+    {
+      "id": "8a43f0bed4c2",
+      "kind": "trials",
+      "status": "running",
+      "message": "Попытка 48 из 300",
+      "progress": 15.666666666666666
+    }
+  ],
+  "real_hardware_accepted": false,
+  "automatic_execution": false,
+  "tests_passed": 78,
+  "source_reference": "https://tonyzhaozh.github.io/aloha/aloha.pdf"
+}

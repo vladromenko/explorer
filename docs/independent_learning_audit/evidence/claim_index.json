@@ -1,0 +1,142 @@
+[
+  {
+    "id": "E01",
+    "status": "VERIFIED",
+    "claim": "История доступна с27.09; более ранняя часть не восстановлена",
+    "evidence": "evidence/conversation_index.csv; evidence/git_history.tsv",
+    "reports": "19;02"
+  },
+  {
+    "id": "E02",
+    "status": "VERIFIED",
+    "claim": "Раннее ready относилось к компонентам, полного mobile executor не было",
+    "evidence": "19 D04 + source/docs/LEARNING-IMPLEMENTATION.ru.md",
+    "reports": "19;02;09"
+  },
+  {
+    "id": "E03",
+    "status": "VERIFIED",
+    "claim": "15–17.10 parameter search временно не обучал ACT",
+    "evidence": "source/simulator/skill_training.py;19 D15/D18",
+    "reports": "04;19"
+  },
+  {
+    "id": "E04",
+    "status": "VERIFIED",
+    "claim": "Реальные gradient runs и числовые checkpoints существуют",
+    "evidence": "experiments.csv;checkpoints.csv;evidence/historical/checkpoint-007000-proof.json",
+    "reports": "05;14;17"
+  },
+  {
+    "id": "E05",
+    "status": "VERIFIED",
+    "claim": "Текущий набор739 records/629959 raw rows",
+    "evidence": "dataset_statistics.json;evidence/recording_statistics.json;scripts/analyze_dataset.py",
+    "reports": "06"
+  },
+  {
+    "id": "E06",
+    "status": "VERIFIED",
+    "claim": "Command estimate nextstate равен прошлой action; это не measured joints",
+    "evidence": "dataset_statistics.json;source/src/mobile_policy_contract.py; пользовательское уточнение",
+    "reports": "03;06;07"
+  },
+  {
+    "id": "E07",
+    "status": "VERIFIED",
+    "claim": "Плечо123° вне полного диапазона учебных наблюдений",
+    "evidence": "evidence/runtime_distribution_followup.json;examples/refusal-695/actions.jsonl",
+    "reports": "05;06"
+  },
+  {
+    "id": "E08",
+    "status": "VERIFIED",
+    "claim": "Clock40.75s:728retreat/6unhook/1place; runtime остаётсяpick",
+    "evidence": "evidence/runtime_distribution_followup.json",
+    "reports": "05;06;07"
+  },
+  {
+    "id": "E09",
+    "status": "VERIFIED",
+    "claim": "Fresh gripper target75.8205 и отказ при48° точно воспроизводятся",
+    "evidence": "examples/refusal-695/refusal_forensics.json;source/simulator/room_policy.py::issued_command",
+    "reports": "05"
+  },
+  {
+    "id": "E10",
+    "status": "UNKNOWN",
+    "claim": "Единственная причинная доля clock/state/vision/teacher для скачка",
+    "evidence": "examples/refusal-695/refusal_forensics.json counterfactuals and limitations",
+    "reports": "05;11;12"
+  },
+  {
+    "id": "E11",
+    "status": "VERIFIED",
+    "claim": "Четыре cross-split группы точных RGB в ограниченной выборке",
+    "evidence": "evidence/visual_and_state_followup.json",
+    "reports": "06"
+  },
+  {
+    "id": "E12",
+    "status": "UNKNOWN",
+    "claim": "Полная semantic scene leakage и противоречивые targets всех кадров",
+    "evidence": "visual sample scope2217 only; recording statistics",
+    "reports": "06;15"
+  },
+  {
+    "id": "E13",
+    "status": "VERIFIED",
+    "claim": "Teacher до3.6°/кадр против runtime2°; rawguard20°",
+    "evidence": "dataset_statistics.json;source/src/mobile_policy_contract.py;source/simulator/room_policy.py",
+    "reports": "07;05"
+  },
+  {
+    "id": "E14",
+    "status": "VERIFIED",
+    "claim": "Timing repair10/10s не устранил последующий fresh refusal",
+    "evidence": "evidence/historical/cadence-physics-regression.json;08 failures",
+    "reports": "07;08"
+  },
+  {
+    "id": "E15",
+    "status": "VERIFIED",
+    "claim": "Локальные5/10 не равны полной миссии",
+    "evidence": "system_snapshot.json recovery history; selected full trial/result.json",
+    "reports": "01;17"
+  },
+  {
+    "id": "E16",
+    "status": "VERIFIED",
+    "claim": "Сохранены667 checkpointpaths/649 files/644 hashes",
+    "evidence": "checkpoints.csv;evidence/checkpoint_inventory_summary.json",
+    "reports": "14"
+  },
+  {
+    "id": "E17",
+    "status": "VERIFIED",
+    "claim": "Пользовательская пауза действует;29000 полный,29078 job",
+    "evidence": "system_snapshot.json",
+    "reports": "17"
+  },
+  {
+    "id": "E18",
+    "status": "NOT_IMPLEMENTED",
+    "claim": "Универсальное моторное обучение произвольной задаче из языка",
+    "evidence": "source/simulator/language_learning.py;source/simulator/room_learning.py;09",
+    "reports": "09;04"
+  },
+  {
+    "id": "E19",
+    "status": "UNKNOWN",
+    "claim": "Реальные torque/lag/material/current latency и надёжность transfer",
+    "evidence": "03 таблица;15",
+    "reports": "03;15"
+  },
+  {
+    "id": "E20",
+    "status": "STRONGLY_SUPPORTED",
+    "claim": "Поздний контракт/сквозная проверка/потеря neuralconsumer объясняют существенную потерю времени",
+    "evidence": "26 decision chains19, run histories02, failure database08",
+    "reports": "11;19"
+  }
+]

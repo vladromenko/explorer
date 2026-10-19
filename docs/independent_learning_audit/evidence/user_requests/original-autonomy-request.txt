@@ -1,0 +1,1113 @@
+You are ASTRA. Act as a senior robotics systems engineer, ROS 2 architect,
+embedded/controls engineer, edge-AI engineer and embodied-agent engineer.
+
+Your task is not to write a proposal. Your task is to take the real physical
+robot Explorer, work on it through SSH, implement the complete system, install
+what is needed, test only what is necessary, fix problems and leave me with a
+working autonomous intelligent mobile manipulator.
+
+TARGET MACHINE
+==============
+
+The physical Jetson installed on the robot is reached from the current computer by:
+
+    ssh explorer
+
+This Jetson IS the target machine.
+
+Do not treat the local workstation as the deployment target.
+Do not ask me to manually copy commands when you can execute them yourself
+through `ssh explorer`.
+
+Work primarily on the real robot.
+
+Use:
+
+    inspect → decide → implement → verify → continue
+
+Avoid:
+- repeated diagnostics;
+- tests of things already confirmed working;
+- unnecessary documentation;
+- long architectural essays;
+- unnecessary packages;
+- unnecessary recompilation;
+- unnecessary firmware changes;
+- verbose reports;
+- wasting context/tokens.
+
+Keep status updates short.
+
+Do not stop after planning. Implement the system.
+
+============================================================
+GOAL
+============================================================
+
+Explorer should become the smartest practical self-contained robot that can be
+built from its current hardware:
+
+    an intelligent fast arm on mecanum wheels
+    with local perception,
+    navigation,
+    mapping,
+    manipulation,
+    memory,
+    autonomous exploration,
+    local LLM/agent,
+    manual control,
+    and remote control.
+
+I ultimately want commands such as:
+
+    "go to the chair"
+    "explore this room"
+    "what is in this room?"
+    "find my backpack"
+    "go inspect that object"
+    "map this apartment"
+    "collect the socks in this room and put them in the laundry basket"
+    "find the bottle and bring it to me"
+
+The robot should autonomously decompose these into perception, navigation,
+manipulation and verification steps.
+
+Core operation should be LOCAL.
+
+After initial setup Explorer must not require:
+- my Mac;
+- a remote computer;
+- cloud LLM;
+- cloud GPU;
+- constant internet.
+
+Internet may be used for research, software installation and optional remote
+interfaces such as Telegram.
+
+============================================================
+CURRENT VERIFIED MACHINE
+============================================================
+
+Compute:
+- NVIDIA Jetson Orin Nano 8 GB
+- Ubuntu 24.04.4
+- JetPack 7.2.1-b49
+- L4T R39.2.1
+- kernel 6.8.12-1021-tegra
+- MAXN_SUPER power mode
+- 1 TB Kingston NVMe root disk
+- ROS 2 Jazzy
+- hostname: explorer
+- mDNS: explorer.local
+- Wi-Fi works
+- SSH works
+
+Old MILO runtime has been disabled.
+
+Do not restore MILO as the final system.
+
+Historical directories such as:
+
+    ~/MILO_Final
+    ~/MILO_Next
+    ~/Jetson_Friend
+
+may be inspected as reference sources only.
+
+============================================================
+STM32 / LOW LEVEL
+============================================================
+
+Main controller:
+- STM32H7 family
+- STM32CubeProgrammer identified STM32H7xx / Cortex-M7
+- Chip ID 0x450
+
+USB UART:
+- Silicon Labs CP2104
+- USB 10c4:ea60
+
+Stable Linux alias:
+
+    /dev/explorer_mcu
+
+currently resolves to:
+
+    /dev/ttyUSB0
+
+micro-ROS serial:
+    2,000,000 baud
+
+ROS domain:
+    ROS_DOMAIN_ID=30
+
+Current STM32 ROS node:
+
+    /robotio
+
+Important:
+the installed STM32 firmware has already been flashed and its final 1 MiB
+readback was verified byte-for-byte against the intended firmware.
+
+Do NOT repeatedly reflash it.
+
+Only modify STM32 if an important capability genuinely cannot be implemented
+on the Jetson/controller interface as it exists.
+
+If firmware modification is truly required:
+- preserve the working binary;
+- inspect existing reference firmware;
+- combine required changes;
+- make one carefully designed revision;
+- verify it before flashing;
+- preserve rollback.
+
+The current firmware is a functional low-level baseline, not a reason to keep
+old Yahboom/MILO high-level architecture.
+
+============================================================
+VERIFIED ROS INTERFACES
+============================================================
+
+The following have been verified on the physical robot.
+
+Published by /robotio:
+
+    /battery
+        std_msgs/msg/Float32
+
+    /imu/data_raw
+        sensor_msgs/msg/Imu
+
+    /odom_raw
+        nav_msgs/msg/Odometry
+
+    /scan0
+        sensor_msgs/msg/LaserScan
+
+    /scan1
+        sensor_msgs/msg/LaserScan
+
+Subscribed by /robotio:
+
+    /cmd_vel
+        geometry_msgs/msg/Twist
+
+    /beep
+        std_msgs/msg/UInt16
+
+    /rgb
+        std_msgs/msg/ColorRGBA
+
+    /arm_joint
+        arm_msgs/msg/ArmJoint
+
+    /arm6_joints
+        arm_msgs/msg/ArmJoints
+
+Measured live:
+
+    battery ≈ 12.25 V
+    IMU ≈ 25 Hz
+    odom ≈ 11.1 Hz
+    scan0 ≈ 7.15 Hz
+    scan1 ≈ 7.18 Hz
+
+Do not waste time rediscovering whether these interfaces exist.
+
+A Humble micro-ROS Agent Docker image was used temporarily for diagnostics.
+
+Determine the cleanest maintainable integration with the main ROS 2 Jazzy
+system. Prefer a native/current solution where practical, but do not break the
+working STM32 client simply for architectural purity.
+
+============================================================
+MOBILE BASE
+============================================================
+
+Mechanical platform:
+Yahboom ROSMASTER M3 Pro hardware.
+
+Final software/system identity:
+Explorer.
+
+Drive:
+- 4 mecanum wheels
+- approximately 80 mm wheel diameter
+- 4 motors
+- encoders
+- omnidirectional motion
+
+Controller already accepts geometry_msgs/Twist via /cmd_vel.
+
+Known historical/reference controller bounds:
+
+    |vx| <= ~0.7 m/s
+    |vy| <= ~0.7 m/s
+    |wz| <= ~4.2 rad/s
+
+Known reference PID:
+
+    Kp = 0.8
+    Ki = 0.06
+    Kd = 0.5
+
+Do not change these blindly.
+
+Perform one proper commissioning of:
+- wheel direction;
+- mecanum kinematics;
+- encoder signs;
+- odometry scale;
+- useful max velocities;
+- acceleration/deceleration.
+
+Then stop repeatedly retesting it.
+
+Implement smooth:
+- forward/backward;
+- lateral strafing;
+- rotation;
+- combined vectors;
+- manual control;
+- autonomous control.
+
+============================================================
+ARM
+============================================================
+
+Installed arm is the ROSMASTER M3 Pro / DOFBOT-Pro style manipulator:
+
+    servo 1 = base
+    servo 2 = shoulder
+    servo 3 = elbow
+    servo 4 = wrist pitch
+    servo 5 = wrist rotation
+    servo 6 = gripper
+
+Current control interfaces:
+
+    /arm_joint
+    /arm6_joints
+
+Existing `arm_msgs` definitions already exist in old workspaces and can be
+reused.
+
+Known controller-side reference limits:
+
+    servo 1: 0..180°
+    servo 2: 0..180°
+    servo 3: 0..180°
+    servo 4: 0..180°
+    servo 5: 0..270°
+    servo 6: 30..180°
+
+Command runtime reference:
+
+    100..5000 ms
+
+These are low-level hardware safety bounds.
+
+Remove old arbitrary MILO behavioral restrictions, NOT real physical safety.
+
+I want the arm to be:
+- fast;
+- responsive;
+- capable of simultaneous multi-joint motion;
+- capable of Cartesian jogging;
+- capable of visual servoing;
+- capable of operating while the base moves;
+- capable of grasping/carrying objects while driving.
+
+Do not intentionally slow it down because old software did.
+
+Determine experimentally, once, the highest useful safe velocities and
+accelerations supported by the actual servos/mechanics.
+
+Keep:
+- real mechanical limits;
+- self-collision protection;
+- chassis collision protection;
+- stability constraints;
+- watchdogs;
+- valid servo ranges.
+
+============================================================
+ARM REFERENCE GEOMETRY
+============================================================
+
+Reference URDF data recovered from the M3 Pro arm model:
+
+Arm base relative to base_link approximately:
+
+    xyz = 0.033617, -0.000010, 0.1475
+    yaw ≈ 0.028395 rad
+
+Joint 1:
+    origin xyz ≈ 0.033617, -0.000012, 0.185
+    axis = 0,0,1
+    reference limits ≈ -1.5708 .. +1.5708 rad
+
+Joint 2:
+    origin xyz ≈ -0.002152, 0.000061, 0.033
+    axis approximately 0,-1,0
+    reference limits ≈ -1.5708 .. +1.5708 rad
+
+Joint 3:
+    origin xyz ≈ 0,0,0.08285
+    axis approximately 0,-1,0
+    reference limits ≈ -1.5708 .. +1.5708 rad
+
+Joint 4:
+    origin xyz ≈ 0,0,0.08285
+    axis approximately 0,-1,0
+    reference limits ≈ -1.5708 .. +1.5708 rad
+
+Joint 5:
+    origin xyz ≈ 0.000573,0,0.074815
+    axis approximately 0,-1,0
+    reference limits ≈ -1.5708 .. +3.1416 rad
+
+Gripper/tool reference:
+    xyz from joint 5 ≈ -0.000625, 0.000240, 0.093235
+
+Reference maximum sampled TCP radius:
+    about 0.335 m
+
+Historical vendor home reference for first 5 joints:
+
+    [90, 120, 0, 0, 90] degrees
+
+Historical conversion convention:
+
+    q = (servo_deg - 90) * pi / 180
+
+Treat these values as REFERENCE STARTING DATA.
+
+Do not blindly assume every zero/axis/limit is physically exact.
+Validate critical transforms/calibration once on the real robot.
+
+============================================================
+RGB-D CAMERA
+============================================================
+
+Installed camera:
+
+    Orbbec DaBai DCW2
+
+Verified USB devices include:
+
+    2bc5:0561 RGB
+    2bc5:06a0 depth
+
+RGB UVC devices are visible.
+
+Research the CURRENT correct Orbbec SDK / ROS 2 driver for:
+- Ubuntu 24.04;
+- ROS 2 Jazzy;
+- JetPack 7.2;
+- actual DaBai DCW2 firmware.
+
+Provide:
+- RGB;
+- depth;
+- camera_info;
+- timestamps;
+- intrinsics;
+- RGB-depth alignment if supported;
+- correct TF.
+
+Reference historical camera transform from the arm model:
+
+camera relative to arm4 approximately:
+
+    xyz = -0.0483883, 0.0024518, 0.06719
+    rpy ≈ 1.84287, -1.570796, -1.814475
+
+Validate it physically/calibrationally before trusting precision manipulation.
+
+============================================================
+LIDAR / IMU / ODOMETRY
+============================================================
+
+Installed:
+    2 × Tmini Plus TOF LiDAR
+
+Current topics:
+    /scan0
+    /scan1
+
+Both are working.
+
+Use both rather than discarding one by default.
+
+Determine/validate their transforms and use them intelligently for:
+- navigation;
+- SLAM;
+- costmaps;
+- close obstacle detection;
+- collision monitoring;
+- blind-zone reduction.
+
+IMU:
+    /imu/data_raw
+    ~25 Hz
+
+Odometry:
+    /odom_raw
+    ~11 Hz
+
+Build proper state estimation and TF.
+
+Investigate/use as appropriate:
+- robot_localization;
+- EKF/UKF;
+- encoder calibration;
+- IMU bias;
+- mecanum odometry;
+- map → odom → base_footprint → base_link.
+
+============================================================
+OTHER VERIFIED HARDWARE
+============================================================
+
+OLED:
+    /dev/i2c-7
+    address 0x3C
+
+The OLED is physically alive but currently blank because its old display
+program is not running.
+
+Create a very lightweight Explorer status display showing useful things such as:
+- READY;
+- IP;
+- battery;
+- MCU;
+- LiDAR 2/2;
+- ARM;
+- NAV;
+- AI;
+- temperature / memory.
+
+USB audio:
+- C-Media USB audio
+- capture and playback present
+
+Voice control is optional and lower priority.
+
+There is also a QinHeng 1a86:7522 device behind a 1a86:8091 hub.
+Ignore it unless investigation shows it is needed.
+
+============================================================
+ROBOTICS SOFTWARE
+============================================================
+
+Research current software yourself before deciding.
+
+Do not restrict yourself to packages I happen to know.
+
+Investigate current:
+- ROS 2 Jazzy ecosystem;
+- ros2_control;
+- MoveIt 2;
+- MoveIt Servo;
+- MoveIt Task Constructor;
+- Nav2;
+- robot_localization;
+- SLAM Toolbox;
+- RTAB-Map;
+- Isaac ROS;
+- Isaac Visual SLAM;
+- nvblox;
+- cuRobo;
+- cuMotion;
+- current grasp planners;
+- current mobile-manipulation frameworks;
+- current embodied-AI / VLA frameworks;
+- current teleoperation frameworks;
+- current robot OS/runtime/deployment approaches.
+
+Search:
+- official documentation;
+- maintained GitHub projects;
+- NVIDIA;
+- ROS;
+- Orbbec;
+- Yahboom hardware references;
+- recent papers and serious robotics projects.
+
+If a better current tool exists than one named here, use it.
+
+Do not install everything.
+
+Install only what improves Explorer.
+
+============================================================
+"ROBOT OS"
+============================================================
+
+Research whether any current robot-focused OS/runtime/deployment architecture
+provides a meaningful advantage, including options such as:
+- current Ubuntu 24.04 + ROS 2 Jazzy;
+- JetPack + Isaac ROS;
+- Ubuntu Core robotics deployment;
+- ROS snaps/foundational deployment;
+- current serious robot operating/deployment systems.
+
+Do NOT reinstall the OS merely because another system has "robot" in its name.
+
+Current Ubuntu + JetPack already works.
+
+Only migrate if there is a major proven advantage and full compatibility with:
+- Jetson GPU/CUDA;
+- JetPack;
+- ROS;
+- camera;
+- USB;
+- STM32;
+- micro-ROS;
+- NVMe.
+
+Working physical functionality is more important than architectural purity.
+
+============================================================
+NAVIGATION / MAPS
+============================================================
+
+Explorer must:
+- map unknown environments;
+- save maps;
+- reload maps;
+- localize itself;
+- navigate to clicked coordinates;
+- navigate to semantic targets;
+- avoid obstacles;
+- replan;
+- recover;
+- remember previously explored places.
+
+Choose the best practical combination of:
+- LiDAR SLAM;
+- RGB-D mapping;
+- Nav2;
+- RTAB-Map;
+- SLAM Toolbox;
+- Isaac/NVIDIA accelerated components;
+- semantic mapping.
+
+Do not run several redundant heavy mapping stacks simultaneously.
+
+============================================================
+FAST PERCEPTION
+============================================================
+
+Object recognition is mandatory and must be fast.
+
+Do NOT feed every camera frame to an LLM/VLM.
+
+Use:
+
+    RGB/depth
+      ↓
+    fast detector / segmentation
+      ↓
+    tracker
+      ↓
+    depth association
+      ↓
+    object 3D position
+      ↓
+    semantic world model
+      ↓
+    higher-level agent
+
+Use Jetson acceleration:
+- TensorRT;
+- optimized image pipelines;
+- Isaac ROS where useful.
+
+Research current detectors rather than blindly selecting an old YOLO version.
+
+Need:
+- common object recognition;
+- tracking;
+- 3D localization;
+- confidence;
+- object position in robot/map frame;
+- persistent last-seen locations.
+
+For arbitrary concepts such as "sock", provide an open-vocabulary or
+fallback strategy.
+
+Possible architecture:
+
+    fast fixed detector
+    +
+    open-vocabulary detector/VLM when needed
+
+VLM should be event-driven, not always consuming the GPU.
+
+============================================================
+LOCAL AI BRAIN
+============================================================
+
+Install a LOCAL LLM/tool-calling agent appropriate for Orin Nano 8 GB.
+
+Research current models/runtimes.
+
+Benchmark:
+- RAM/unified memory;
+- tokens/sec;
+- first-token latency;
+- tool calling;
+- reasoning;
+- interference with navigation/perception.
+
+Potential runtimes include:
+- llama.cpp;
+- Ollama;
+- TensorRT-LLM;
+- current NVIDIA Jetson AI runtimes.
+
+Use the smallest model that provides good practical tool use.
+
+Do not allow a large LLM to make the robot unusable.
+
+Robotics control always has priority over LLM inference.
+
+The LLM must NOT directly output motor PWM or uncontrolled servo values.
+
+Provide constrained semantic tools such as:
+
+    get_status()
+    get_pose()
+    list_visible_objects()
+    locate_object()
+    navigate_to()
+    navigate_to_object()
+    explore_area()
+    inspect_object()
+    move_arm()
+    grasp_object()
+    place_object()
+    capture_image()
+    save_map()
+    load_map()
+    stop_robot()
+    return_home()
+
+AI decides WHAT to do.
+
+Deterministic robotics stack decides HOW to execute it.
+
+============================================================
+AGENTS / OPENCLAW / EMBODIED AI
+============================================================
+
+Research current OpenClaw support on Jetson and other strong local agent
+frameworks.
+
+Also research current embodied AI/VLA approaches and projects similar to
+"give an LLM a body and let it explore the world".
+
+Use useful concepts/components when realistic for this hardware.
+
+Do not copy demos blindly.
+
+Do not allow an unconstrained LLM agent direct actuator access.
+
+============================================================
+AUTONOMOUS CURIOSITY / EXPLORATION
+============================================================
+
+I want Explorer to actively investigate the world.
+
+Implement this as structured exploration, NOT random LLM motion.
+
+Conceptually:
+
+    map/frontiers
+      ↓
+    determine unknown or interesting area/object
+      ↓
+    navigate
+      ↓
+    observe with RGB-D/LiDAR
+      ↓
+    recognize/classify
+      ↓
+    update map/world model
+      ↓
+    remember
+      ↓
+    choose next useful observation
+
+Explorer should gradually know:
+- rooms;
+- visited regions;
+- object locations;
+- unknown objects;
+- last-seen timestamps;
+- exploration coverage.
+
+It should eventually answer:
+- "what did you discover?"
+- "where did you see my backpack?"
+- "what is on the desk?"
+- "which rooms have you explored?"
+
+Do not continuously retrain neural network weights on uncontrolled real-world
+data.
+
+Persistent structured memory is more important.
+
+A lightweight local database such as SQLite is fine unless something better is
+actually needed.
+
+============================================================
+MANIPULATION
+============================================================
+
+Build real manipulation, not only joint demos.
+
+Need:
+- FK/IK;
+- collision model;
+- Cartesian jogging;
+- trajectory planning;
+- visual servoing;
+- grasping;
+- pick-and-place;
+- base repositioning when object is out of reach;
+- carry while driving;
+- place verification.
+
+Use MoveIt 2 / MoveIt Servo / Task Constructor or better current alternatives.
+
+The robot should eventually execute:
+
+    detect object
+    → estimate object/grasp pose
+    → find reachable base pose
+    → navigate/reposition
+    → approach
+    → grasp
+    → verify
+    → carry
+    → place
+
+Base and arm should be able to move concurrently where safe.
+
+Do not architect the robot so every arm action unnecessarily freezes the base.
+
+============================================================
+REMOTE / MANUAL CONTROL
+============================================================
+
+I also want Explorer to feel like an advanced RC robot.
+
+Provide a browser interface accessible from computer/phone with:
+- low-latency live camera;
+- detection overlays;
+- battery/status;
+- map and pose;
+- manual drive;
+- arm control;
+- gripper;
+- mode switch;
+- E-stop;
+- autonomous mission controls;
+- natural-language command box.
+
+Prefer low-latency streaming such as WebRTC or another current efficient
+solution.
+
+Also support a normal gamepad, preferably including PlayStation controllers.
+
+Suggested modes:
+
+BASE MODE:
+    sticks → mecanum translation/rotation
+
+ARM MODE:
+    sticks → Cartesian/joint arm movement
+    triggers → gripper
+
+Buttons:
+    mode switch
+    autonomy pause
+    home/stow
+    emergency stop
+
+Manual input must be able to override autonomy immediately.
+
+Explicit robot modes:
+
+    MANUAL
+    ASSISTED
+    AUTONOMOUS
+
+============================================================
+OPTIONAL TELEGRAM / VOICE
+============================================================
+
+If useful, add Telegram interface:
+
+    "where are you?"
+    "show me what you see"
+    "go to the kitchen"
+    "start exploring"
+    "stop"
+
+Telegram is only a transport.
+Robot intelligence remains local.
+
+USB audio exists.
+
+A lightweight local speech interface is optional only if it does not hurt
+navigation/perception/control performance.
+
+Do not prioritize voice over the robot actually working.
+
+============================================================
+SAFETY
+============================================================
+
+Safety must be deterministic and independent of the LLM.
+
+Implement:
+- E-stop;
+- command watchdog;
+- stale command timeout;
+- communication-loss stop;
+- collision monitoring;
+- acceleration limits;
+- joint safety;
+- self-collision;
+- chassis/arm collision;
+- arbitration between manual/autonomous control;
+- sensor health;
+- battery handling.
+
+If the AI process crashes, the robot must not continue uncontrolled motion.
+
+For tasks such as "throw away socks", first validate with designated test
+objects/bins before allowing destructive classification actions on arbitrary
+belongings.
+
+============================================================
+8 GB RESOURCE CONSTRAINT
+============================================================
+
+8 GB unified memory is a hard constraint.
+
+Measure actual:
+- RAM;
+- GPU usage;
+- CPU;
+- temperature;
+- latency;
+- tegrastats.
+
+Do not simultaneously load huge:
+- LLM;
+- VLM;
+- detector;
+- SLAM;
+- reconstruction;
+- grasp model
+
+unless resources allow it.
+
+Prefer:
+- TensorRT;
+- quantization;
+- event-driven models;
+- lifecycle/loading strategies;
+- optimized image transport.
+
+Navigation, collision avoidance and low-level control must stay responsive
+under AI load.
+
+============================================================
+PROJECT STRUCTURE
+============================================================
+
+Create a clean Explorer project/workspace, for example:
+
+    ~/Explorer
+or
+    ~/explorer_ws
+
+Do not destroy old projects.
+
+Use old code only as hardware/reference material.
+
+Use modular packages, but do not create unnecessary packages just to look clean.
+
+Possible logical areas:
+
+    description
+    hardware/base
+    arm
+    sensors
+    localization/navigation
+    perception
+    manipulation
+    world model
+    agent
+    teleop/web
+    bringup
+
+Use version control and commit stable milestones.
+
+============================================================
+AUTOSTART
+============================================================
+
+Finished Explorer must work after reboot.
+
+Use systemd / ROS launch / containers where technically justified.
+
+Boot should conceptually bring up:
+
+    hardware / micro-ROS
+    → sensors
+    → state estimation
+    → navigation
+    → manipulation
+    → perception
+    → AI
+    → web/remote interfaces
+
+Use health checking/restart where appropriate.
+
+============================================================
+TESTING
+============================================================
+
+Do NOT repeat the full hardware audit.
+
+Already confirmed:
+- Jetson;
+- storage;
+- Wi-Fi;
+- SSH;
+- STM32;
+- micro-ROS serial;
+- battery;
+- IMU;
+- odom;
+- two LiDARs;
+- RGB-D hardware presence;
+- audio;
+- OLED;
+- ROS control subscribers.
+
+Only perform missing commissioning.
+
+For wheels:
+- safely verify physical directions;
+- encoder polarity;
+- mecanum motion;
+- velocities.
+
+For arm:
+- start with small movements;
+- determine real joint direction/zero;
+- validate geometry;
+- then test useful high speeds.
+
+Do these once properly, not dozens of repetitive tests.
+
+============================================================
+ACCEPTANCE TARGET
+============================================================
+
+Do not declare success because code builds.
+
+The physical robot should ultimately demonstrate as much of the following as
+its hardware realistically allows:
+
+1. cold boot → ready automatically;
+2. working health status;
+3. manual mecanum drive;
+4. gamepad drive;
+5. emergency stop;
+6. low-latency remote camera;
+7. fast manual arm control;
+8. Cartesian arm jogging;
+9. gripper;
+10. arm + base simultaneous motion;
+11. fused state estimation;
+12. both LiDARs in useful operation;
+13. obstacle avoidance;
+14. autonomous map creation;
+15. save/load maps;
+16. localization on saved maps;
+17. autonomous navigation;
+18. fast object recognition;
+19. object 3D localization;
+20. navigation to semantic object;
+21. grasp test object;
+22. carry object while moving;
+23. place object;
+24. local natural-language task planning;
+25. autonomous exploration;
+26. persistent semantic memory;
+27. local AI/tool calling;
+28. browser control;
+29. no external compute required for core operation.
+
+A representative end goal is:
+
+USER:
+    "Collect the socks in this room and put them in the laundry basket."
+
+Explorer should conceptually:
+
+    understand objective
+    → determine/search room
+    → detect sock candidates
+    → approach
+    → estimate grasp
+    → grasp and verify
+    → locate basket
+    → navigate while carrying
+    → place
+    → continue search
+    → stop when systematic coverage/confidence is sufficient.
+
+============================================================
+FINAL RULE
+============================================================
+
+Do not spend the project producing documents.
+
+The main deliverable is:
+
+    A WORKING PHYSICAL EXPLORER ROBOT.
+
+Leave only concise useful documentation:
+- how to start/stop it;
+- service names;
+- control URL;
+- gamepad mapping;
+- emergency stop;
+- logs;
+- recovery procedure.
+
+Start by:
+
+    ssh explorer
+
+Inspect only what is still necessary.
+
+Research current solutions on the internet where useful.
+
+Then implement.
+
+Do not stop after telling me what could be done.
+
+Make the physical Explorer work and aim for the highest practical level of
+autonomous embodied intelligence achievable with this hardware.

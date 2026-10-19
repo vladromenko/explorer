@@ -1,0 +1,33 @@
+{
+  "recordings": 739,
+  "valid_observation_min": [
+    70.53682818052025,
+    0.0,
+    17.996331595988146,
+    0.0,
+    66.50559224296558,
+    30.0,
+    -0.1,
+    -0.05719910890327394,
+    -0.07315152653826544
+  ],
+  "valid_observation_max": [
+    95.81229428357983,
+    116.55168536620508,
+    101.56365994697354,
+    90.0,
+    96.53365365934793,
+    170.0,
+    0.12,
+    0.10027704387903214,
+    0.2
+  ],
+  "valid_observations_shoulder_ge_123": 0,
+  "training_phases_at_40_75_s": {
+    "release_retreat": 728,
+    "release_unhook": 6,
+    "place": 1
+  },
+  "commands_sent": false,
+  "training_updates": 0
+}

@@ -1,0 +1,41 @@
+{
+  "kind": "finite_control_cadence_component_probe_not_policy_success",
+  "results": [
+    {
+      "legacy_extra_ticks": true,
+      "actor_steps": 200,
+      "actor_elapsed_s": 10.0,
+      "physics_elapsed_s": 21.999999999998575,
+      "maximum_arm_drift_during_zero_delta_manual_tick_deg": 1.6255999999999915,
+      "finite": true,
+      "warnings": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "legacy_extra_ticks": false,
+      "actor_steps": 200,
+      "actor_elapsed_s": 10.0,
+      "physics_elapsed_s": 10.000000000000076,
+      "maximum_arm_drift_during_zero_delta_manual_tick_deg": 0.0,
+      "finite": true,
+      "warnings": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  ],
+  "physical_ready": false,
+  "simulation_qualified": false
+}

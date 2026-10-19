@@ -1,0 +1,8 @@
+{
+  "root": "/Volumes/ExplorerSim/ExplorerSim/vprobe/395c6a0365d9",
+  "model": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/live-room-395c6a0365d9/model",
+  "profile": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/live-room-395c6a0365d9/handoff.json",
+  "seed": 1703000014,
+  "output": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/live-room-395c6a0365d9/trial",
+  "stop": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/live-room-395c6a0365d9/pause.request"
+}

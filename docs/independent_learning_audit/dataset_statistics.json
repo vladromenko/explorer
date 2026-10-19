@@ -1,0 +1,1470 @@
+{
+  "scope": "All current run recordings; metadata inventory of all raw episode families; visual sample only",
+  "recording_count": 739,
+  "raw_episode_manifests": 1177,
+  "raw_declared_outcomes": {
+    "True": 753,
+    "False": 424
+  },
+  "raw_parse_errors": [],
+  "recording_hash_overlap": [],
+  "seed_overlap": [],
+  "total_raw_rows": 629959,
+  "target_masked_rows": 940,
+  "nonfinite_rows": 0,
+  "nonincreasing_clock_pairs": 0,
+  "idle_definition": "max arm target-current <0.1 degree AND max base velocity <0.005",
+  "idle_rows": 307252,
+  "idle_fraction_of_unmasked": 0.4884621927159593,
+  "target_minus_state_degrees": {
+    "n": 629019,
+    "minimum": [
+      -1.2174078581039396,
+      -2.400000000000091,
+      -2.400000000000091,
+      -3.0000000000001137,
+      -3.0000000000001137,
+      -3.6000000000001364
+    ],
+    "p05": [
+      -0.03447006986502572,
+      -1.2350536273231854,
+      -0.38980869309499155,
+      -0.5241600000000091,
+      -0.0021155908077616914,
+      -0.6719232000000659
+    ],
+    "median": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "p95": [
+      0.01732793103741557,
+      1.7015385562157772,
+      0.1569847176749647,
+      0.1560267212518335,
+      0.0017927827525468822,
+      0.6719231999999877
+    ],
+    "maximum": [
+      0.1546997053182224,
+      2.400000000000091,
+      2.1484949479907414,
+      2.604800000000015,
+      2.2142399999999895,
+      3.6000000000001364
+    ]
+  },
+  "target_distribution": {
+    "n": 629019,
+    "minimum": [
+      70.53682818052025,
+      0.0,
+      17.996331595988146,
+      0.0,
+      66.50559224296558,
+      30.0,
+      -0.1,
+      -0.05719910890327394,
+      -0.07315152653826544
+    ],
+    "p05": [
+      85.11789633077231,
+      1.6289816896606834e-12,
+      34.793748826429315,
+      6.890189509440106e-17,
+      81.09704486109757,
+      30.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "median": [
+      89.22431729778424,
+      72.96313297989066,
+      66.8414051596464,
+      3.9886755214660132,
+      81.50877007951154,
+      30.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "p95": [
+      92.15255620733437,
+      101.16597519566585,
+      100.95671329121508,
+      33.34503314267559,
+      81.53420069037367,
+      170.0,
+      0.02628965973544158,
+      0.1,
+      0.003025892344932054
+    ],
+    "maximum": [
+      95.81229428357983,
+      116.55168536620508,
+      101.56365994697354,
+      89.98645957031364,
+      96.53365365934793,
+      170.0,
+      0.12,
+      0.1,
+      0.2
+    ]
+  },
+  "durations_s": {
+    "n": 739,
+    "minimum": 40.45,
+    "p05": 41.300000000000004,
+    "median": 42.2,
+    "p95": 46.050000000000004,
+    "maximum": 53.2
+  },
+  "initial_states": {
+    "n": 739,
+    "minimum": [
+      90.0,
+      90.0,
+      90.0,
+      90.0,
+      90.0,
+      30.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "p05": [
+      90.0,
+      90.0,
+      90.0,
+      90.0,
+      90.0,
+      30.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "median": [
+      90.0,
+      90.0,
+      90.0,
+      90.0,
+      90.0,
+      30.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "p95": [
+      90.0,
+      90.0,
+      90.0,
+      90.0,
+      90.0,
+      30.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "maximum": [
+      90.0,
+      90.0,
+      90.0,
+      90.0,
+      90.0,
+      30.0,
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "next_state_minus_prior_action_absmax": {
+    "n": 629220,
+    "minimum": 0.0,
+    "p05": 0.0,
+    "median": 0.0,
+    "p95": 0.0,
+    "maximum": 0.0
+  },
+  "domain_distributions": {
+    "height": {
+      "n": 739,
+      "minimum": 0.08,
+      "p05": 0.08,
+      "median": 0.16,
+      "p95": 0.3,
+      "maximum": 0.3
+    },
+    "sock_position": {
+      "n": 739,
+      "minimum": [
+        0.2800543459499879,
+        -0.03498265707724091,
+        0.015
+      ],
+      "p05": [
+        0.28332053081377734,
+        -0.03200915274291302,
+        0.015
+      ],
+      "median": [
+        0.31801644603662566,
+        0.0004418064991567361,
+        0.015
+      ],
+      "p95": [
+        0.35533717204408394,
+        0.032128365396278155,
+        0.015
+      ],
+      "maximum": [
+        0.359735400194778,
+        0.0349521931436238,
+        0.015
+      ]
+    },
+    "basket_position": {
+      "n": 739,
+      "minimum": [
+        0.43008308704193954,
+        0.2669647373541589,
+        0.0
+      ],
+      "p05": [
+        0.43204309981932065,
+        0.29785005255956554,
+        0.0
+      ],
+      "median": [
+        0.4501703864696543,
+        0.3415292774091264,
+        0.0
+      ],
+      "p95": [
+        0.46804976274112486,
+        0.3959299379539035,
+        0.0
+      ],
+      "maximum": [
+        0.4699823761252934,
+        0.4165821494500659,
+        0.0
+      ]
+    },
+    "lighting": {
+      "n": 739,
+      "minimum": 0.7004618331740262,
+      "p05": 0.7323736880176562,
+      "median": 0.9269833185721867,
+      "p95": 1.123650814852158,
+      "maximum": 1.1499754805883016
+    },
+    "sock_rgb": {
+      "n": 739,
+      "minimum": [
+        0.10084925100211453,
+        0.10088479001640022,
+        0.10023037784970795
+      ],
+      "p05": [
+        0.13505153665904732,
+        0.14944497666299458,
+        0.13979542635289127
+      ],
+      "median": [
+        0.4944481175410086,
+        0.49841488996990235,
+        0.49022934771516163
+      ],
+      "p95": [
+        0.8200237773743679,
+        0.8190949731909696,
+        0.8245526633840751
+      ],
+      "maximum": [
+        0.8490457476498576,
+        0.8497413842418751,
+        0.8493971789081951
+      ]
+    },
+    "basket_rgb": {
+      "n": 739,
+      "minimum": [
+        0.1500587105149262,
+        0.150155406543281,
+        0.15220337063393685
+      ],
+      "p05": [
+        0.17684992736621524,
+        0.17381108510768606,
+        0.18033459549798864
+      ],
+      "median": [
+        0.4557553286548267,
+        0.44581790806124993,
+        0.4349547056370157
+      ],
+      "p95": [
+        0.7177513615641371,
+        0.7130363246044715,
+        0.7116676249805197
+      ],
+      "maximum": [
+        0.7475859894713563,
+        0.7498750350836426,
+        0.7490171608665795
+      ]
+    },
+    "mass": {
+      "n": 739,
+      "minimum": 0.015032174488380163,
+      "p05": 0.016114980258237523,
+      "median": 0.02502723209256683,
+      "p95": 0.03376569377951949,
+      "maximum": 0.034917529851287814
+    },
+    "young": {
+      "n": 739,
+      "minimum": 8027.565789414508,
+      "p05": 8252.55100805576,
+      "median": 10991.43586925415,
+      "p95": 13727.384856172235,
+      "maximum": 13992.331461688567
+    },
+    "friction": {
+      "n": 739,
+      "minimum": 0.900149244970694,
+      "p05": 0.914150009222944,
+      "median": 1.044197486720269,
+      "p95": 1.1820490504342276,
+      "maximum": 1.1992381584704261
+    }
+  },
+  "phase_counts": {
+    "inspect_floor": 47296,
+    "align_base": 44268,
+    "approach": 38748,
+    "lower": 38428,
+    "close": 45079,
+    "lift": 63176,
+    "transport": 67159,
+    "place": 128841,
+    "release_retreat": 153332,
+    "release_unhook": 3632
+  },
+  "visual_sample_count": 2217,
+  "sampled_image_problems": [],
+  "nearest_cross_split_rgb_thumbnail": [
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0000",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 3.577590237956174e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0000/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0001",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 3.370906475084649e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0001/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0004",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 4.3092814754635385e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0004/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0005",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.1413554915257203e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0005/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0007",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.085668471446332e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0007/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0008",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.2244474071835773e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0008/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0009",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.4571712780450175e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0009/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0011",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 2.0135025651188702e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0011/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0013",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 3.910861138537964e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0013/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0015",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 2.7514649568954627e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0015/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0022",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 2.0741590146346564e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0022/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0023",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.0969143106903801e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0023/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0025",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.7876710832775707e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0025/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0026",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.4015592202192171e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0026/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0031",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 8.275397851284608e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0031/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0033",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 5.343824981636541e-10,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0033/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0035",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 6.2892128885409745e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0035/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0036",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 3.605957294570202e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0036/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0037",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.6364172380553498e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0037/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0038",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 7.2446113030013585e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0038/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0041",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 9.019169469730168e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0041/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0042",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 3.845334812576066e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0042/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0043",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.3903402260845907e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0043/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0044",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 2.182389180531237e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0044/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0045",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.1310320903187143e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0045/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0046",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 3.396758277547866e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0046/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0050",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 6.553349565333547e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0050/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0052",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 9.291706489649943e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0052/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0053",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.692602019188318e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0053/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0057",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.7934802580992238e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0057/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0058",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.7161695621154315e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0058/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0060",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.619274038537527e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0060/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0062",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 2.4531095276306952e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0062/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0063",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 9.01049676072054e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0063/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0065",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.2587003135526826e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0065/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0068",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 2.3927043744595294e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0068/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0069",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.8513761053802824e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0069/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0070",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 6.416660841004117e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0070/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0072",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 4.2989603025607426e-11,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0072/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0073",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 3.415367468011347e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0073/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0075",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 5.470625694936776e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0075/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0079",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.8899222122108088e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0079/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0080",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 9.708111343753742e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0080/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0081",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.147736732974335e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0081/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0082",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.2672343989147165e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0082/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0083",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 3.9859005906644073e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0083/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0085",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.2882467024042644e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0085/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0086",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 2.7570323292179208e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0086/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0087",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.5191579257074628e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0087/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0088",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.2022919617322436e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0088/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0089",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 2.4817366314564535e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0089/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0090",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 7.488441122761718e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0090/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0091",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.5559322500011765e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0091/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0094",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.1600064215185035e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0094/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-29ecb2e5d771-0096",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 4.421653622855213e-10,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0096/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0000",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 2.7386159295819992e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0000/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0001",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 7.501394834187484e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0001/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0002",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.983952242011323e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0002/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0004",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 2.8737864207345012e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0004/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0006",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.09921052347571e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0006/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0007",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 2.383708377080325e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0007/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0009",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 6.733197392250644e-10,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0009/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0011",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.747038771573737e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0011/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0012",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 3.784885755952973e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0012/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0013",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 2.36128013390417e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0013/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0018",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 4.902951723131652e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0018/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0022",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 5.016075773614371e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0022/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0024",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 7.585808812640421e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0024/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0027",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 3.2049865683923034e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0027/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0030",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.8115063989515642e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0030/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0032",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 3.121780479207575e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0032/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0034",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.9978743112419884e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0034/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0036",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.8713276692233264e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0036/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0037",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 5.411335921586788e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0037/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0039",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.81928426787581e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0039/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0040",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 4.521637074024186e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0040/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0041",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.2524559203250915e-10,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0041/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0043",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 2.119991145420267e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0043/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0044",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.9630921711821207e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0044/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0045",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 4.455238280253578e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0045/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0046",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 8.508837334079674e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0046/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0048",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 7.548295521511618e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0048/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0049",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 5.406122888107202e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0049/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0052",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 4.750105906043904e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0052/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0054",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 7.69239920226659e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0054/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0056",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 2.9780602327786907e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0056/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0057",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 4.089070668106364e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0057/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0058",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 2.627282846441792e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0058/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0061",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.7965522158341678e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0061/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0062",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 7.613779932704709e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0062/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0063",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.1346131419143055e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0063/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0064",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 3.232616279652592e-09,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0064/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0065",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.4979521526521605e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0065/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0067",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 9.60156675502385e-10,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0067/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0068",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 2.6693832058882107e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0068/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0069",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 2.172540986657012e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0069/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0071",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 4.968280595284813e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0071/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0072",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 2.440202087264059e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0072/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0073",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 2.0851817489018072e-10,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0073/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    },
+    {
+      "phase": "initial",
+      "id": "trial-354815778ea5-0074",
+      "other": "trial-29ecb2e5d771-0006",
+      "rgb_thumbnail_rmse": 0.0,
+      "state_arm_rmse_deg": 0.0,
+      "target_arm_rmse_deg": 1.3041693399357105e-08,
+      "clock_difference_s": 0.0,
+      "source_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-354815778ea5-0074/frames/000000.jpg",
+      "other_image": "/Volumes/ExplorerSim/ExplorerSim/demonstrations/trial-29ecb2e5d771-0006/frames/000000.jpg"
+    }
+  ],
+  "limitations": [
+    "Visual comparison uses 3 sampled frames per recording, not all images",
+    "RGB thumbnail similarity is not proof of scene identity or semantic leakage",
+    "Original full physics states and expert targets at all student states do not exist",
+    "All historical datasets are inventoried by provenance, not decoded in full again"
+  ]
+}

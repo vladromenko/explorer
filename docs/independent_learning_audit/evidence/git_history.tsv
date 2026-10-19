@@ -1,0 +1,211 @@
+commit	author_date	commit_date	subject
+ecea3ce40ba53eb5cb62ae45f131877809753a62	2026-09-27T03:15:01+03:00	2026-09-27T03:15:01+03:00	Bring up Explorer local sensing, guarded control, perception and AI runtime
+bbb5da6e15bd7828d61739bb68065fa03e2609ac	2026-09-27T03:15:30+03:00	2026-09-27T03:15:30+03:00	Record deployed model hashes and live verification results
+311b03ffedd912f7e912db6ff35f08c5f2ea3fd5	2026-09-27T03:33:19+03:00	2026-09-27T03:33:19+03:00	Add supervised base commissioning and provisional dual lidar mapping
+c8c19dbb70b6d20b9202beda7f2a92c0c263a5c7	2026-09-27T03:50:28+03:00	2026-09-27T03:50:28+03:00	Add stationary-safe map storage and read-only route planning
+534c07ec2b82a3659b7272d16715800f96531727	2026-09-27T04:33:34+03:00	2026-09-27T04:33:34+03:00	Add gated Nav2 missions, frontier memory and reference arm planning
+2ffa839e9108e7ab6e497424a9cf16b3f1285898	2026-09-27T04:34:29+03:00	2026-09-27T04:34:29+03:00	Reject malformed request envelopes without stopping the controller
+c7f8aec1c5321dfb39807920edb2a68cc7f2dc99	2026-09-27T10:30:51+03:00	2026-09-27T10:30:51+03:00	Commission observed arm startup and restore OLED and RGB output
+10f5059d745ee481ae3e6f97440d56126a500fbf	2026-09-27T11:40:48+03:00	2026-09-27T11:40:48+03:00	Show approximate battery reserve and disable decorative lighting
+aa5ef7ffa3121053e02c2115101beb593b275a2a	2026-09-27T15:42:47+03:00	2026-09-27T15:43:57+03:00	Add supervised LeRobot learning panel and conservative arm and power safeguards
+1e2e6d2886f4870a398ca58fd3fedfe3e12e84ab	2026-09-27T22:49:30+03:00	2026-09-27T22:49:30+03:00	Add observed arm control, local learning interface, grounding and voice
+e52ddf2c6e65748dea65143c5b4053e1753268c1	2026-09-27T23:31:20+03:00	2026-09-27T23:31:20+03:00	Add supervised ACT execution and Cartesian jog; record link-loss limits
+331833827ee8e2f087fcb6ae940a959e1b750794	2026-09-28T00:08:01+03:00	2026-09-28T00:08:01+03:00	Add gated robot workflows and private Telegram VPN transport
+a39c9cbe1abdb728c68b24dbe9e22bb7a8024b07	2026-09-28T03:11:43+03:00	2026-09-28T03:11:43+03:00	Add bounded experiment lab, paired Telegram interface and clock-safe startup
+20e0c8ff314cdf7d4639bc6909a8c9d5fde6fa21	2026-09-28T03:36:33+03:00	2026-09-28T03:36:33+03:00	Confirm base settling before arm preparation and record six-direction checks
+a2d0a72079d4bc4c6c1222bf953b5415d17e34c2	2026-09-28T04:01:59+03:00	2026-09-28T04:01:59+03:00	Measure arm approach repeatability and preserve camera mount calibration frames
+420a0c65153a73da68eeea410f7064dc84614824	2026-09-28T05:01:21+03:00	2026-09-28T05:01:21+03:00	Fix arm execution and link recovery; verify observed sock pickup and carry
+a03276ce7b26ae5eae52806677af859353265c68	2026-09-28T21:11:31+03:00	2026-09-28T21:11:31+03:00	Fix motion ownership, finite base-arm handoffs and obstacle diagnostics
+7d7a6f2b6dc0a1bb764558150cb934f0076a7957	2026-09-29T03:57:25+03:00	2026-09-29T03:57:25+03:00	Integrate measured controller execution and local delivery coordinator
+be78399b51bd186b41a03fd1df79c53735a246b4	2026-09-29T04:25:42+03:00	2026-09-29T04:25:42+03:00	Fix STM32 arm execution and sensor recovery; prepare verified release
+94557805a3eb96e5b67fa9d5e51e4c6d35d485e5	2026-09-29T04:49:15+03:00	2026-09-29T04:49:15+03:00	Prepare Jetson controller transition and reliable local delivery execution
+0aa8aef526eefdda3994902246d71572ce2a48ce	2026-09-30T01:24:37+03:00	2026-09-30T01:24:37+03:00	Integrate factory robotio mobile manipulation and scoped calibration status
+c86575ebbf03221bfbea319d3df3e3e9095b6bbd	2026-09-30T01:26:05+03:00	2026-09-30T01:26:05+03:00	Add read-only controller snapshot utility
+9b04787c9e17d9114e132cebbe4cdb55ef93d669	2026-09-30T01:30:01+03:00	2026-09-30T01:30:01+03:00	Expose phone controls on local Wi-Fi and report both access modes
+9f6215b553c071a669fd90ff9594c638feb7ff71	2026-09-30T01:34:36+03:00	2026-09-30T01:34:36+03:00	Initialize factory arm automatically and add manual rehome control
+de969b75571fa513b4520382308590aaa7243af7	2026-09-30T01:45:00+03:00	2026-09-30T01:45:00+03:00	Add evidence-driven autonomy graduation
+5a9b73e258e7b1f0ccea1ec73e36c2be7d0e591a	2026-09-30T01:47:14+03:00	2026-09-30T01:47:14+03:00	Add guided autonomy calibration exercises
+8885f5124efc29c6dbb8e620b33ae8a29598246a	2026-09-30T02:02:11+03:00	2026-09-30T02:02:11+03:00	Package Explorer recovery and operator handbook
+5f379ed12af53588a29474d48bff70a1b37b5ec9	2026-09-30T02:06:30+03:00	2026-09-30T02:06:30+03:00	Fix mobile login on insecure network origins
+f15674de8f77edf730e456ffdd3570bd05ad9197	2026-09-30T02:22:33+03:00	2026-09-30T02:22:33+03:00	Add Milo OLED and configurable front lighting
+636f8b3eb2b3d590cf5a6e94a0e5af3367fff397	2026-09-30T02:34:49+03:00	2026-09-30T02:34:49+03:00	Smooth and accelerate factory arm motion
+5013cd3ed6190022dc0c3bec4110c0b8ca02cfad	2026-09-30T02:53:52+03:00	2026-09-30T02:53:52+03:00	Restore manual control and redesign operator panels
+effb4a91012ab104daf51904fddfab7e76c33056	2026-09-30T02:54:40+03:00	2026-09-30T02:54:40+03:00	Use normal gamepad drive profile
+cc007faa9a7e030c1ca7c8fffbec5792d3c4d82d	2026-09-30T02:55:13+03:00	2026-09-30T02:55:13+03:00	Add Explorer OLED preview
+0ace657495e966164e381d8ce65125d8013354a3	2026-09-30T03:15:45+03:00	2026-09-30T03:15:45+03:00	Add coordinated chassis and arm control
+f2919a3c96f83c1149ba6c09a269f31a260f4173	2026-09-30T18:36:02+03:00	2026-09-30T18:36:02+03:00	Recover factory arm state after reboot
+4f10285efdf6bb55c648457580c82d4d37a5630f	2026-09-30T19:12:39+03:00	2026-09-30T19:12:39+03:00	Simplify gamepad arm controls
+c55301788dca39584bcf7d68f761580de2a6c7ac	2026-10-01T22:41:38+03:00	2026-10-01T22:41:38+03:00	Unify keyboard and gamepad teleoperation
+a18e39856ded68d6919748fff72b1477a2e04148	2026-10-01T22:50:26+03:00	2026-10-01T22:50:26+03:00	Checkpoint deployed Explorer before unified autonomy reform
+1d6ddf538369e6c54b1fedb22f6e57ef2ec119d2	2026-10-01T23:25:13+03:00	2026-10-01T23:25:19+03:00	Add persistent learning autonomy runtime
+892958acc8361144c1e0fb3a29dc9b402733452e	2026-10-02T01:08:06+03:00	2026-10-02T01:08:06+03:00	Add capability-scoped autonomy readiness
+d89b27bf5f768f274c5e7478ef2e0ba2c06e8c92	2026-10-02T01:11:50+03:00	2026-10-02T01:11:50+03:00	Unify human and autonomous learning episodes
+2e484e39f98078d99b5e579c043bc1f6e5072ee6	2026-10-02T01:16:00+03:00	2026-10-02T01:16:00+03:00	Add bounded local grasp learning loop
+28d5473308b720e56fa33ed799f15d9f52fde634	2026-10-02T01:23:06+03:00	2026-10-02T01:23:06+03:00	Add autonomous day and endurance controls
+204ce7b58ec734d56f747cf14231151126e29950	2026-10-02T01:28:40+03:00	2026-10-02T01:28:40+03:00	Complete bootstrap learning transitions
+9c7cf9d1155d1e45db331e37005e319c69dc3980	2026-10-02T01:30:20+03:00	2026-10-02T01:30:20+03:00	Cover four learning workflows end to end
+cfbd8eb0d2f6f0b4defa055aac9ea972380f6c84	2026-10-04T09:52:36+03:00	2026-10-04T09:52:36+03:00	Restore web controls after JavaScript parse failure
+c33e20af9a9e497eba481771052a65e16d314023	2026-10-04T10:06:55+03:00	2026-10-04T10:06:55+03:00	Fix keyboard and continuous gamepad teleop
+8586368782883ec0f27d05e7898c1e6124a77d49	2026-10-04T10:14:59+03:00	2026-10-04T10:14:59+03:00	Increase manual arm speed fourfold
+f414eb0fe2e4aecdf5cff11e5cd6771a60b9490a	2026-10-04T10:19:25+03:00	2026-10-04T10:19:25+03:00	Quadruple fast manual arm timing
+eb561c0b9ee46bedb5bc520b3e5566ccae7e9e00	2026-10-04T10:36:40+03:00	2026-10-04T10:36:40+03:00	Accelerate coordinated chassis and arm teleop
+1bca329222b34ab967fc1549a28478635346c7f2	2026-10-04T10:51:07+03:00	2026-10-04T10:51:07+03:00	Smooth and reduce chassis joystick response
+ebce6d486566499689947069835025922fc16b3b	2026-10-04T11:08:43+03:00	2026-10-04T11:08:43+03:00	Add manual control reference
+2197935749e39e49dc92c1ab862589f17aaf49fd	2026-10-04T11:59:07+03:00	2026-10-04T11:59:07+03:00	Checkpoint autonomy stack before controls reform
+2e82a917570bbef5e01ea2babc79c3d01c5e2153	2026-10-04T12:21:42+03:00	2026-10-04T12:21:42+03:00	Reform manual controls and show live lidar pose
+d0af50a385107a92e3ca24441bf990dded5e3543	2026-10-04T12:21:54+03:00	2026-10-04T12:21:54+03:00	Reform manual controls and show live lidar pose
+5df4d257ce96d5a4b2adef0872e01ddfc547f606	2026-10-04T12:23:01+03:00	2026-10-04T12:23:01+03:00	Cover teleop profile and web login
+6291cd4b4eba0b694d5ad3f6a966e8b2c6d55dd8	2026-10-04T12:23:01+03:00	2026-10-04T12:23:01+03:00	Cover teleop profile and web login
+ebe89ea1bad4730dc12fe1c2d1af1a140c2b0874	2026-10-04T12:24:21+03:00	2026-10-04T12:24:21+03:00	Document current manual controls
+53984df46a25fa5c21eaf8b882db5078c2bfbe48	2026-10-04T12:24:24+03:00	2026-10-04T12:24:24+03:00	Document current manual controls
+146a4630ef407efef09b5f6ec3944909b206634e	2026-10-04T12:51:45+03:00	2026-10-04T12:51:45+03:00	Add guided sock training workflow
+563ad83220634da33963a59147edc89152c2733d	2026-10-04T12:52:22+03:00	2026-10-04T12:52:22+03:00	Add guided sock training workflow
+05cd098b9c3823c3c8278e38197f3158990b50cd	2026-10-04T13:03:09+03:00	2026-10-04T13:03:09+03:00	Show training recordings and detector output
+ad54aa18db79185d78498d0e5a7598c6ebf58167	2026-10-04T13:03:31+03:00	2026-10-04T13:03:31+03:00	Show training recordings and detector output
+2d3aeae87d190f83449981fbdad5cf5e55673f36	2026-10-04T13:49:49+03:00	2026-10-04T13:49:49+03:00	Document the complete learning pipeline
+5db446d32752698256ddb7e4a5c36cc258967605	2026-10-08T00:08:05+03:00	2026-10-08T00:08:05+03:00	Add automatic on-robot mobile demonstration learning workflow
+bd957cae7f76b4f8f6f8f719f3b72e54ba6ce2af	2026-10-08T00:09:32+03:00	2026-10-08T00:09:32+03:00	Require actual base arm and gripper actions in full demonstrations
+a30f4ce7bfa5c5bbb395cfdc92c9b4c97ee50c5d	2026-10-08T00:10:07+03:00	2026-10-08T00:10:07+03:00	Explain observed trial blockers in learning interface
+2bb2d0ad483f51cfbf9010fcf5d8425de9af55bf	2026-10-08T00:14:13+03:00	2026-10-08T00:14:13+03:00	Capture supervised corrections from mobile policy takeover
+7b6258fd0c79ac39ecf4a8b9c0b4ed7fbfcbe42d	2026-10-08T00:15:05+03:00	2026-10-08T00:15:05+03:00	Recheck camera and gripper acceptance during learned trials
+6577f63423ce7c15aa533722b9e1872651a39ddd	2026-10-08T00:16:37+03:00	2026-10-08T00:16:37+03:00	Batch new demonstrations before retraining mobile skill
+432556290c7e5af285483b7ec1f8c30a51d283ee	2026-10-08T00:40:07+03:00	2026-10-08T00:40:07+03:00	Make experiments actionable and show live dual-lidar mapping
+fd57a0f27a3d5f80fadc937e93a97c8db865803d	2026-10-08T00:59:24+03:00	2026-10-08T00:59:24+03:00	Fix audited autonomy, delivery, training and service-status defects
+4162d96081fe70cefa5c9860e8832b2863cba075	2026-10-08T02:08:11+03:00	2026-10-08T02:08:11+03:00	Add onboard-camera room missions and fix navigation sensor timing
+2131aee0272ef6e3644f3701a5eb5eca9196ff14	2026-10-08T18:26:37+03:00	2026-10-08T18:26:37+03:00	Resume room exploration with measured navigation recovery
+5558e308766808838a7352833d97cb214443705c	2026-10-08T18:29:37+03:00	2026-10-08T18:29:37+03:00	Record bounded mapping result after passage clearance
+ca10245afd44df81c20efdad902359d6a3018792	2026-10-08T18:39:46+03:00	2026-10-08T18:39:46+03:00	Validate frontier positions across ROS and NumPy coordinates
+4e575c9ffbd3c20a4dd186a584dfa4647a77c741	2026-10-08T19:28:57+03:00	2026-10-08T19:28:57+03:00	Improve manual arm response and add bounded camera click navigation
+d2090303fdc5122b6fc58b3e29dacb4d54e0f203	2026-10-08T19:40:04+03:00	2026-10-08T19:40:04+03:00	Document current Explorer arm state and limits
+d82e47b5d24304ddb764ccea1b6de4c4775ec8e4	2026-10-10T20:39:40+03:00	2026-10-10T20:39:40+03:00	Complete onboard skills and learning pipeline with shared smooth arm execution
+6c2160dc4b0c509ecba7ab6e237fbef1d6182bae	2026-10-10T20:44:05+03:00	2026-10-10T20:44:05+03:00	Record installed verification and battery condition for physical handoff
+be319e30afe609840871aebed245625f5bb7861a	2026-10-11T01:47:03+03:00	2026-10-11T01:47:03+03:00	Fix local grasp readiness, radial reach and camera preflight; align base using complete arm paths
+7ce53657409fce8ff7334783fca5dbbd8fcc5017	2026-10-11T02:15:44+03:00	2026-10-11T02:15:44+03:00	Persist grasp preflight evidence and operator action without counting unexecuted trials
+0832bbbaf70bb2867a823b6dcb1ab19ab17ca763	2026-10-11T02:46:57+03:00	2026-10-11T02:46:57+03:00	Record supervised above-sock checkpoint without claiming grasp or measured attainment
+dfdb90b577405b7315d51e4c2467cf579826ecca	2026-10-11T02:49:04+03:00	2026-10-11T02:49:04+03:00	Record operator alignment and prepare unexecuted open-gripper descent
+514f27b3537d66d7a574ef24fd05cb540c82fec5	2026-10-11T03:04:25+03:00	2026-10-11T03:04:25+03:00	Record operator-verified physical sock pick lift and return with smooth motion
+1dafe92d46bf66759c9898c9846a3861f11fb399	2026-10-11T03:21:51+03:00	2026-10-11T03:21:51+03:00	Record household perception improvement and detector training plan
+d4e9ff1794a24be365d841e9136e3687c61ed164	2026-10-11T03:22:45+03:00	2026-10-11T03:22:45+03:00	Define end-to-end search and grasp acceptance for perception work
+1708c1588ba1a7b1d04771875b3b3fe6074c9b5c	2026-10-11T09:33:50+03:00	2026-10-11T09:33:50+03:00	Bound grounding memory and track recognized objects on synchronized RGB-D frames
+98445c3d25cea55a0c9fa52e5511eb38b20c9168	2026-10-11T09:40:11+03:00	2026-10-11T09:40:11+03:00	Reobserve texture-poor grounded targets only from a stationary camera
+a354a21001f725fce54f95d8a06f2d6665abd636	2026-10-11T09:43:59+03:00	2026-10-11T09:43:59+03:00	Keep grounded association outside the live RGB-D cache and bound static depth work
+58da4afba8c323ea0b283aa40c46dc74924054b0	2026-10-11T09:46:24+03:00	2026-10-11T09:46:24+03:00	Distinguish stationary reobservation from continuous motion feedback
+d19f58c04dbff52de30258bf4e104feaca973be4	2026-10-11T10:00:31+03:00	2026-10-11T10:00:31+03:00	Fix early navigation stop and reobserve each manipulation base correction
+e2403fa9b66201c74629d9604473d7566ba91c39	2026-10-11T10:03:09+03:00	2026-10-11T10:03:09+03:00	Choose arm workspace with margin for measured base arrival
+2f2f6684d40b7bda2123a34bad2f98fb2aa5f726	2026-10-11T10:05:44+03:00	2026-10-11T10:05:44+03:00	Match base arrival to floor grasp workspace and invalidate moved observer
+a5ef82912ed0a358aefb219223946220ce87f6d4	2026-10-11T10:12:26+03:00	2026-10-11T10:12:26+03:00	Use collision checked precision approach while preserving room navigation
+8b8b8e27f4de3c40f25a2babe00399ee8ecc672e	2026-10-11T10:35:21+03:00	2026-10-11T10:35:21+03:00	Use observed foreground points instead of empty folded object centroids
+9e776e886a4a933bc69aaaa813578ff2dac796fd	2026-10-11T10:36:58+03:00	2026-10-11T10:36:58+03:00	Serialize interior grasp pixels as native integers
+41f93e4a933b45b0ca8c96fce266f7f8abf77981	2026-10-11T10:39:10+03:00	2026-10-11T10:39:10+03:00	Prefer central arm workspace when correcting the base
+ffaf3e3e004600a2eac380411a6cc16956b2d58d	2026-10-11T10:49:50+03:00	2026-10-11T10:49:50+03:00	Record precision approach evidence and preserve surface targets on regrasp
+d352d75afe5dd7c57e53c102b286e783310441ca	2026-10-11T14:53:16+03:00	2026-10-11T14:53:16+03:00	Record fresh boot, deployed surface fix and full Jetson validation
+e1b4f36479896d61dc28e33e02f34cdd59e24191	2026-10-11T15:08:35+03:00	2026-10-11T15:08:35+03:00	Preserve supervised approach and unresolved target identity evidence
+1999bd4eae52f56688176e3f560008fb5ffcb20e	2026-10-11T15:19:12+03:00	2026-10-11T15:19:12+03:00	Recover lost floor targets with camera inspection and checked Nav2 retreat
+296648bb277f54d3a181540ac8ef0e411deca7fd	2026-10-11T15:32:00+03:00	2026-10-11T15:32:00+03:00	Handle floating-point conversion at factory servo limits
+f958fb6faa118aa107a2dea74188363f8b4baa9d	2026-10-11T15:38:40+03:00	2026-10-11T15:38:40+03:00	Recognize nested inspection boxes and expose recovery in map UI
+c1ff5520f614e65c2c4396a917124b90f98b96a6	2026-10-11T15:42:26+03:00	2026-10-11T15:42:26+03:00	Inspect clipped and nested targets after base alignment
+f34746d2af00c27cfeeb0dea052dcbc12adbf761	2026-10-11T15:45:07+03:00	2026-10-11T15:45:07+03:00	Record automatic view recovery trials and final validation
+d6794fd77f7357b164ea735f8e171fc61f0a38a1	2026-10-11T16:13:47+03:00	2026-10-11T16:13:47+03:00	Complete verified vision, agent memory and demonstration pipeline fixes
+3eaec99739149a83a40be0c96a4de3203bc8413d	2026-10-11T16:18:16+03:00	2026-10-11T16:18:16+03:00	Align dataset provenance regression and link current operator instructions
+ea934d1dc86ba2ded5c97813d8d8344f7e5dd22e	2026-10-11T16:20:21+03:00	2026-10-11T16:20:21+03:00	Preserve enclosing cloth hypotheses during active inspection
+bff4edefb8f7aa4881f469a95c47f0cb8a12bb35	2026-10-11T16:24:37+03:00	2026-10-11T16:24:37+03:00	Wait for fresh post-inference frames and cancel motion before memory writes
+8d3af32a1315fb7c732dd8ac14065751e64cbcb5	2026-10-11T16:26:41+03:00	2026-10-11T16:26:41+03:00	Use raw inspection even when filtered parts lack depth
+9b0e9368d8deabce1fa10247dae6796bd0dae4b9	2026-10-11T16:44:16+03:00	2026-10-11T16:44:16+03:00	Remove redundant RGB-D geometry work and wake cache on received frames
+55e5ea96874275739ba39daf4a800ed945c0bad7	2026-10-11T16:51:42+03:00	2026-10-11T16:51:42+03:00	Dispatch STOP before journals and add bounded onboard instruction search
+b1bea8ff44e2ea7506197de46cdb43706c756ff7	2026-10-11T17:17:44+03:00	2026-10-11T17:17:44+03:00	Deliver DCW2 frames independently to remove SDK depth buffering
+aafc74afb56422d6a27269f7be3895f6f772c2f8	2026-10-11T17:23:14+03:00	2026-10-11T17:23:14+03:00	Use shared memory for local camera frames while preserving UDP control
+f58fe5cc83a4a965d4740f5f983e1f4fa7e0626a	2026-10-11T17:32:31+03:00	2026-10-11T17:32:31+03:00	Record completed runtime checks, camera evidence and verified rollback
+0bd772860832ef54d8a65aed0d8abaa8f1bce0d7	2026-10-11T20:45:41+03:00	2026-10-11T20:45:41+03:00	Add isolated Mac physics simulator, ACT learning and verified policy transfer
+b3bb3522be23a098b960f73a1a78694481f09c11	2026-10-11T20:47:03+03:00	2026-10-11T20:47:03+03:00	Specify simulator branch for reproducible Git installation
+0ea483fc23b525ee78538aa96dcfae2b2a141494	2026-10-11T20:58:07+03:00	2026-10-11T20:58:07+03:00	Confirm simulator app cold start and native viewer after Mac unlock
+1b4ce57bd9d40582ae01af75965762d56397daf1	2026-10-11T22:14:57+03:00	2026-10-11T22:14:57+03:00	Fix simulator replay, ACT execution and task validation
+a6b50dba3495c66ebde188ec3b8cad88f839fd28	2026-10-11T23:17:00+03:00	2026-10-11T23:17:00+03:00	Add persistent multi-task simulator curriculum and checked policy transfer
+a350edd3e6d9ce2ba7c8122d717686b987f81ef0	2026-10-12T00:05:42+03:00	2026-10-12T00:05:42+03:00	Add local language-guided simulation learning and checked goal transfer
+f7c039c1af4556f65b0cb5ef576bbf6e542576b1	2026-10-12T00:52:10+03:00	2026-10-12T00:52:10+03:00	Add varied sock night curriculum with round 30 cm basket and runtime checks
+ad581bc5fb33d6ddf18cbcafc2ee73cafac1aa3a	2026-10-12T01:03:11+03:00	2026-10-12T01:03:11+03:00	Clarify task selection and generalize automatic learning controls
+0293b068acf58542b8ec61605c75ab7feed8e802	2026-10-12T09:22:10+03:00	2026-10-12T09:22:10+03:00	Keep background learning active when simulator tab loses focus
+47b31a551cf4d007280470dfe951f6f21582c126	2026-10-12T09:43:56+03:00	2026-10-12T09:43:56+03:00	Expose simulation package to Jetson ROS web receiver
+5adf55b47ed50ba18a54cd9c5252fb9e42617f47	2026-10-12T10:41:12+03:00	2026-10-12T10:41:12+03:00	Record intermediate ACT audit and unsuccessful independent diagnostic rollout
+013fe6ac2ed29a6cf6a8e5761a1948d4755cf3fc	2026-10-12T21:01:16+03:00	2026-10-12T21:01:16+03:00	Resume automatic simulation generation from verified completed attempts
+0e15f39c86192abbe390ac446a448de53e0e09da	2026-10-12T23:43:57+03:00	2026-10-12T23:43:57+03:00	Audit ACT failures and scale automatic training exposure with dataset size
+9d48b83d3338ac819d017c3e3f63c6c05b91581a	2026-10-13T00:35:02+03:00	2026-10-13T00:35:02+03:00	Prepare four independent simulator workers with measured idle-queue transition
+4b979c1c737a675150644c96d91ed90db63d15e5	2026-10-13T00:43:05+03:00	2026-10-13T00:43:05+03:00	Select four or eight simulator workers from measured memory and throughput
+60fb230a5febbcc60dc24121be919b7721d0ddc6	2026-10-13T04:15:13+03:00	2026-10-13T04:15:13+03:00	Fix simulator owner detection for macOS paths with spaces
+e9ad08be2d3694369610d88676024015b21ec6d8	2026-10-14T01:14:51+03:00	2026-10-14T01:14:51+03:00	Resume simulator ACT from verified optimizer checkpoints
+f2ac13dff1b378fc05600bd1443fb537441d289e	2026-10-14T01:17:34+03:00	2026-10-14T01:17:34+03:00	Count remaining LeRobot updates correctly after resume
+a84407a5f59628e4e0c2e687f5bc08dc1c35a635	2026-10-14T11:40:42+03:00	2026-10-14T11:40:42+03:00	Record completed ACT training and Jetson diagnostic import
+62262b6ef874d5932f3699ce6854d41665909e1a	2026-10-14T13:21:00+03:00	2026-10-14T13:21:00+03:00	Complete durable simulator learning cycle and display worker cameras
+67908f956eea5b5f72db5c906bf989d8810c2504	2026-10-15T00:10:01+03:00	2026-10-15T00:10:01+03:00	Stop stagnant simulator cycles and improve sock demonstrations
+3fb69053bafc5185b70dcbef75988bf79d043bb2	2026-10-15T09:22:42+03:00	2026-10-15T09:22:42+03:00	Distinguish simulator maintenance cancellation from operator pause
+6d6394a4ba3a2e92381b2f45fbd60f4867e572b5	2026-10-15T17:46:32+03:00	2026-10-15T17:46:32+03:00	Introduce observed task stages and finite skill preparation
+4146b1c6ba509b31431fcbde5daa291d184b869e	2026-10-15T18:30:32+03:00	2026-10-15T18:30:32+03:00	Verify observed destinations, placement evidence and skill cancellation
+b189ffdf845cb2f11c609b1c5a4f16ed44b67648	2026-10-15T18:35:31+03:00	2026-10-15T18:35:31+03:00	Distinguish completed diagnostics from live skill motion
+9c4c22886233c510d0db0f36d40a0e8c84d4df3a	2026-10-15T18:37:42+03:00	2026-10-15T18:37:42+03:00	Show skill failures in plain language
+9332761e39c3ba93c5da32cdb636d2f8bca429e0	2026-10-15T19:11:01+03:00	2026-10-15T19:11:01+03:00	Reject camera views that miss height or range constraints
+819a607594b9eca502a3c1d24a319b23e6ce590b	2026-10-15T19:48:01+03:00	2026-10-15T19:48:01+03:00	Count only distinct camera views in bounded destination search
+8a874d655182ff5781ac906d674ac69d46ca504f	2026-10-15T19:53:14+03:00	2026-10-15T19:53:14+03:00	Preserve hand orientation during observed hold probes
+fd8160d8ee0b16faafca7aeecb3c12454ce6bb30	2026-10-15T20:19:24+03:00	2026-10-15T20:19:24+03:00	Compare held material in the rotating hand frame
+9f1112a5625e236fcdeba1d924fcafc73f18ccaa	2026-10-15T20:37:58+03:00	2026-10-15T20:37:58+03:00	Preserve verified grip during destination inspection and transport setup
+772187e3b5547f8b8400a91dffda504fc0376e3c	2026-10-16T02:35:31+03:00	2026-10-16T02:35:31+03:00	Add autonomous observed skill policy search with durable simulation trials
+981623a5d0c378d7d999d990421ffe8def9b4793	2026-10-16T02:38:20+03:00	2026-10-16T02:38:20+03:00	Record installed skill learner awaiting memory without reminders
+29f2f39aea46696b1584efe626579923cf21ac25	2026-10-16T02:40:16+03:00	2026-10-16T02:40:16+03:00	Use native macOS memory pressure for simulator admission
+00aaf5b815333fdde6d2fcade7bcaeec525babf5	2026-10-16T02:46:27+03:00	2026-10-16T02:46:27+03:00	Verify learning controls and restore language goal resume buttons
+c36f3c2db2165942aa05d77f6e98b40fc9d54529	2026-10-16T02:47:27+03:00	2026-10-16T02:47:27+03:00	Record live learner and verified interface deployment
+e0166480440e96710134c1c268d44a5ddf60d4c2	2026-10-16T03:26:02+03:00	2026-10-16T03:26:02+03:00	Build a single automatic skill-learning workflow with scene compilation and vision
+a097080a68195a661e0eb369917380584e75240f	2026-10-16T03:29:55+03:00	2026-10-16T03:29:55+03:00	Verify automatic UI and preserve compatible parameter initialization
+888049fa794ef426bf7f86ea24ea68ddf97a03c4	2026-10-16T03:33:56+03:00	2026-10-16T03:33:56+03:00	Clarify optimizer phase and show honest camera loading placeholders
+83afbe0aa675630fb63ee451dfca2d0ac889ab42	2026-10-16T03:35:04+03:00	2026-10-16T03:35:04+03:00	Keep learning controls disabled throughout safe disk disconnect
+bd80b2ccbe19e2cea16e535e844ccd14b29edaf4	2026-10-16T03:41:50+03:00	2026-10-16T03:41:50+03:00	Recover interrupted requests and pause the entire automatic queue safely
+10fd69fef9f80a421f916a7d40fc1e6471378133	2026-10-16T03:44:07+03:00	2026-10-16T03:44:07+03:00	Persist pause signals independently of concurrent progress updates
+64cbcb7a436c1c35b7f169ef2cc6e08b5bec1a86	2026-10-16T03:45:13+03:00	2026-10-16T03:45:13+03:00	Keep automatic learning awake during active planning and simulation
+99a990b9b3f070ceb6a5786cb008003534fbb68d	2026-10-16T03:47:09+03:00	2026-10-16T03:47:09+03:00	Finish an interrupted paired search batch before applying the next budget check
+44c2ffbf2077d804206ca1f6b85ce8cc86cc671f	2026-10-16T03:58:03+03:00	2026-10-16T03:58:03+03:00	Record installed automatic learning pipeline and real pause-resume verification
+5c7c024d60aabdcc5f37920f60120f6ae6175d2e	2026-10-16T20:18:16+03:00	2026-10-16T20:18:16+03:00	Correct autonomous skill curriculum and preplan the complete placement sequence
+0a55e710b56f6fec01eeac82abf9a753301eec1a	2026-10-16T20:19:31+03:00	2026-10-16T20:19:31+03:00	Record autonomous background learning launch and verified installation
+2d4bd41d381eed8cf08ac230a61d29989ce1f6e0	2026-10-17T01:21:12+03:00	2026-10-17T01:21:12+03:00	Make observed skill learning recover and adapt autonomously
+3e3b4e6567b1ff95f7e5e710ba5de1a228d614ab	2026-10-17T01:26:17+03:00	2026-10-17T01:26:17+03:00	Record verified autonomous adaptive learner launch
+7059d409ad54fed8cfcae592e4cd4832da017ba6	2026-10-17T02:15:32+03:00	2026-10-17T02:15:32+03:00	Synthesize and verify causal skill repairs from historical experience
+8b53a8d5871d6d2339c34cd8e68dd52d4a617840	2026-10-17T02:17:29+03:00	2026-10-17T02:17:29+03:00	Record staged causal repair handoff and unchanged active learning
+0878d65bb992dec2bd042534287c115d0d51f569	2026-10-17T04:43:21+03:00	2026-10-17T04:43:21+03:00	Recover stalled simulator render workers without scoring infrastructure failures
+323e48dc3d60d4f1cedcab41b3a699eb99abca86	2026-10-17T05:07:11+03:00	2026-10-17T05:07:11+03:00	Record applied simulator recovery and observed background progress
+e80770702ddff7c2b0f9bdc75d729aa22b8e6c05	2026-10-17T05:54:03+03:00	2026-10-17T05:54:03+03:00	Repair observed skill learning and measure Mac acceleration with portable transfer
+431b8d6355e3182ac63f9bb15d120c0a21ae860a	2026-10-17T05:54:20+03:00	2026-10-17T05:54:20+03:00	Normalize transfer module formatting before runtime freeze
+c6343b2a7b3dc6997bf335cc3a278b70af34cbe9	2026-10-17T05:56:49+03:00	2026-10-17T05:56:49+03:00	Keep GPU inference diagnostics serializable and bound UI reconnection waits
+958496830aeac71b0d7836c5cc47e9fec92fd1ab	2026-10-17T06:05:11+03:00	2026-10-17T06:05:11+03:00	Use bounded actor processes and spend extra Mac capacity on curriculum quality
+c4108093cc57191a9dae44bd6230a1f686f757cd	2026-10-17T06:12:39+03:00	2026-10-17T06:12:39+03:00	Record verified background learner and quality-first resource policy
+bb50b0f8e9c907f0d673c8a78c8d42ac3c4b2ccf	2026-10-17T06:24:24+03:00	2026-10-17T06:24:24+03:00	Distinguish path failures from visual hold failures and collapse archived runs
+ba6741deaf257926220cb7b8dd88aaf1afe2c021	2026-10-17T06:32:40+03:00	2026-10-17T06:32:40+03:00	Keep live worker views stable and distinguish current attempts from saved history
+2161826271fb90efd9bd6e9ae7cc818590d09e51	2026-10-17T07:00:19+03:00	2026-10-17T07:00:19+03:00	docs: define neural skill learning pipeline
+853c4c0d9c418fac3a4b9f1318c9b036e3c11b33	2026-10-17T07:01:43+03:00	2026-10-17T07:01:43+03:00	fix: select neural policy by closed-loop result
+30271bae7e0c53a3a06462fa55a7da962dace506	2026-10-17T10:21:08+03:00	2026-10-17T10:21:08+03:00	fix: show active neural training above paused search history
+b9cd5e31f29d86935c60e24ff577878eaa785801	2026-10-17T10:38:21+03:00	2026-10-17T10:38:21+03:00	fix: open active neural dashboard from Explorer app
+94b9dbc9fb92dfa8af3f62a98dd7203682b38819	2026-10-18T02:42:12+03:00	2026-10-18T02:42:12+03:00	fix: recover neural cycle after service loss without duplicate writers
+711abcce06e188d0ce566a58c35607864701bb60	2026-10-18T12:33:21+03:00	2026-10-18T12:33:21+03:00	feat: diagnose neural inputs and compare intermediate policies in physics
+b4186e1749ad2ac12d845fc51e63adf74828fad8	2026-10-18T13:44:44+03:00	2026-10-18T13:44:44+03:00	feat: aggregate learner recovery data and select ACT weights by physical delivery
+299c8b550f3f3daf6bf8404bfbe1f780c23d95a2	2026-10-18T13:47:03+03:00	2026-10-18T13:47:03+03:00	fix: keep worker camera publisher alive through slow service startup
+42374fe013127d9a3d82eb0a81011f51c29e05c8	2026-10-18T13:49:04+03:00	2026-10-18T13:49:04+03:00	fix: teach diagnosed failure replays without leaking inherited validation
+3ee1ae0d67d368ac860abbfb3bb86be82e73e776	2026-10-18T13:49:19+03:00	2026-10-18T13:49:19+03:00	fix: clear the saved pause reason when recovery resumes
+37ae853480c6dc88c7dbbebdfd348e38fa0876f2	2026-10-18T18:55:49+03:00	2026-10-18T18:55:49+03:00	Add observed room cleanup with corrective ACT learning and gated Jetson transfer
+5b27e215b94ff0d483806391559f4dc83a8b7576	2026-10-18T20:46:44+03:00	2026-10-18T20:46:44+03:00	Recover room search and navigation faults with paired executor checks
+9b43c88191c314b18a1002ceaa56e04425066328	2026-10-19T01:07:56+03:00	2026-10-19T01:07:56+03:00	Diagnose frozen intermediate ACT in a bounded CPU-only room trial
+3568b300116926717f03b8b13cf01c3984702093	2026-10-19T01:11:10+03:00	2026-10-19T01:11:10+03:00	Resolve preserved episode copies by trained content hash for room handoff
+929497a7f85366983d2bfbdf4dea9910e727ced2	2026-10-19T01:14:14+03:00	2026-10-19T01:14:14+03:00	Expose the source project and keep isolated vision sockets within macOS limits
+934c47986e11621fe0e0a074e51866e2bc81b92b	2026-10-19T02:28:52+03:00	2026-10-19T02:28:52+03:00	Explore informative scan frontiers before empty local views in room search
+8c6ce11c8f27c91e60aaa8c9623a55040a019706	2026-10-19T04:05:06+03:00	2026-10-19T04:05:06+03:00	Exclude resource waiting from the active early room diagnostic budget
+c7466967cbe00f26ff7ee867cd0ff8542d8b0050	2026-10-19T06:01:29+03:00	2026-10-19T06:01:29+03:00	Frame observed basket rims within reachable high-camera views
+a5d9ea7c3f40324fe4c37a54bd3425b46bf34f65	2026-10-19T08:56:33+03:00	2026-10-19T08:56:33+03:00	Refine observed approach sweeps with conservative CAD hull planes
+726f8cbd72f7d4723d8a0e8500099efbae3dfb67	2026-10-19T11:54:16+03:00	2026-10-19T11:54:16+03:00	Plan reachable close camera ranges before room reobservation
+0b231e48e2e7af1256d2a60a6cc67e6f1287556f	2026-10-19T19:13:50+03:00	2026-10-19T19:13:50+03:00	Resume verified prepared datasets and diagnose refused ACT commands safely
+fd629068482570e18bc5d2d087133dc647f8a957	2026-10-19T19:48:11+03:00	2026-10-19T19:48:11+03:00	Keep learning status available through scene and vision cold startup
+d1c4d1155fad093f5ca04c92343dd1c0d44a6fb5	2026-10-19T19:55:59+03:00	2026-10-19T19:55:59+03:00	Observe real learner updates and evaluate stable checkpoints within a bounded budget
+cfe4aa7044e75798384d8fd6269fcab84761820d	2026-10-19T20:26:08+03:00	2026-10-19T20:26:08+03:00	Repair ACT execution cadence and require prospective independent whole-room evaluation
+b6373e35bd827ba42f50d5d1b2e6954e575ed61e	2026-10-19T20:48:30+03:00	2026-10-19T20:48:30+03:00	Project ACT horizon reads and own checkpoint evaluation through resume
+bf36e4ea370d44eb1757c093247bb1e10e167ff6	2026-10-19T20:51:09+03:00	2026-10-19T20:51:09+03:00	Record full phase-aligned trajectory similarity audit
+65c57387e988998cc07349d5fc89e624dcb9d122	2026-10-19T20:52:27+03:00	2026-10-19T20:52:27+03:00	Distinguish restored checkpoint counters from fresh weight updates
+09cb7282c2a9a52977329c6cff78470e9ebe1a3d	2026-10-19T21:08:31+03:00	2026-10-19T21:08:31+03:00	Use native Mac budget for early evaluation and reuse verified phase derivation
+b8281297e4eb3f846bba22193710b04cacc6775a	2026-10-19T21:20:57+03:00	2026-10-19T21:20:57+03:00	Measure direct ACT forward and drain observers across stage transitions
+4386cc0cdf162de3dbaab6d3568335301146003d	2026-10-19T21:40:40+03:00	2026-10-19T21:40:40+03:00	Collect room corrections from bounded student states with expert-only targets
+43304eb10133002fe2fe11395d9f2d67317d7c16	2026-10-19T21:44:17+03:00	2026-10-19T21:44:17+03:00	Require actual expert motion in successful pickup-state corrections
+5bb69148a733272d53f3897acbcab65a6a335f4b	2026-10-19T21:50:25+03:00	2026-10-19T21:50:25+03:00	Reacquire consecutive fresh targets at the ACT handoff
+1da8ecb26efaa798d4293f126d7d123aff7985e5	2026-10-19T21:51:49+03:00	2026-10-19T21:51:49+03:00	Publish terminal status after the finite intervention preflight
+bded49e11fa075c75189da7f505d5f12552cfbfa	2026-10-19T22:49:48+03:00	2026-10-19T22:49:48+03:00	docs: reconstruct Explorer learning work from October 1 through 19

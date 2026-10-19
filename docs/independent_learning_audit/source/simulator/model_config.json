@@ -1,0 +1,102 @@
+{
+  "schema": 1,
+  "model_status": "Simulation model; real dynamics have not been validated",
+  "geometry_source": "config/explorer.urdf and checksum-verified vendor/m3_reference/meshes",
+  "inertial_source": "CAD inertial tensors in URDF; not independently measured. Placeholder imu/laser duplicated tensors omitted.",
+  "camera_source": "config/handeye-accepted.json arm4 optical transform; original URDF Camera is a separate chassis visual",
+  "camera": {
+    "width": 640,
+    "height": 480,
+    "fx": 480.7078552246094,
+    "fy": 480.7112731933594,
+    "cx": 322.29058837890625,
+    "cy": 245.64146423339844,
+    "intrinsics_status": "recorded RGB registered-depth camera_info from settled capture",
+    "near_m": 0.015,
+    "far_m": 8.0,
+    "distortion": [
+      -0.01774778589606285,
+      0.0024330997839570045,
+      0.00028392899548634887,
+      -0.000394188187783584,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "rendering_status": "ideal pinhole RGB and registered metric depth; distortion coefficients recorded as provenance, not applied",
+    "camera_info_version": "f9623bebe94601dbade469588cd82025864d7c6d0f5752c2fc0c153041a13754",
+    "recorded_stamp": 1791704134.255977,
+    "source_archive": "Explorer-backups/20261011-R1/working-install.tar.gz",
+    "source_member": "Explorer/data/object-searches/aef6a3b39a684944a000e6630ed495b6/rgbd.npz"
+  },
+  "physics": {
+    "timestep_s": 0.002,
+    "gravity_m_s2": 9.81,
+    "floor_friction": 0.8,
+    "contact_status": "estimated",
+    "servo_kp": 25.0,
+    "servo_kv": 0.65,
+    "servo_torque_nm": [
+      1.0,
+      1.2,
+      1.2,
+      0.9,
+      0.7,
+      0.35
+    ],
+    "servo_status": "estimated finite-torque PD servos; gains selected for stable simulated endpoint tracking under CAD gravity load, not measured real servo dynamics; endpoint rate limits from arm-motion.json",
+    "wheel_kv": 0.08,
+    "wheel_torque_nm": 0.25,
+    "wheel_radius_m": 0.04,
+    "roller_count": 12,
+    "roller_radius_m": 0.008,
+    "roller_half_length_m": 0.009,
+    "roller_mass_kg": 0.0008,
+    "roller_damping": 2e-06,
+    "wheel_status": "URDF fixed wheels replaced with motorized axle hinges and passive 45 degree roller hinges; roller dimensions/friction estimated from mesh envelope, no kinematic chassis forcing",
+    "estimated_payload_mass_kg": 0.65,
+    "payload_status": "estimated additional Jetson/electronics/battery mass; unknown measured hardware mass, CAD assembled mass may already include some hardware",
+    "wheel_radius_source": "80 mm Mecanum manufacturer ROSMASTER-M3PRO README https://github.com/YahboomTechnology/ROSMASTER-M3PRO"
+  },
+  "gripper": {
+    "open_servo_deg": 30.0,
+    "closed_servo_deg": 170.0,
+    "linkage_open_rad": 0.0,
+    "linkage_closed_rad": -1.1,
+    "mapping_status": "observed servo opening/closing directions and endpoints; estimated affine drive endpoint -1.10 rad produces closing force against physical opposing-pad collision around -1.04 rad; force-limited dynamics prevents pad penetration; aperture and torque not physically calibrated",
+    "contact_geometry_status": "estimated rounded fingertip capsule envelopes, 4 mm radius and 28 mm segment; avoids numerical cloth snag on sharp box corners; CAD visual linkage retained"
+  },
+  "sock": {
+    "length_m": 0.16,
+    "width_m": 0.05,
+    "initial_thickness_m": 0.009,
+    "mass_kg": 0.022,
+    "rings": 7,
+    "ring_vertices": 8,
+    "contact_radius_m": 0.0015,
+    "friction": 1.1,
+    "young_pa": 10000.0,
+    "thickness_m": 0.0007,
+    "status": "estimated sewn tube with open cuff, closed toe, deformable 2D triangular shell; physical flex contact and self collision, no attach/weld grasp"
+  },
+  "bin": {
+    "inner_half_size_m": [
+      0.1,
+      0.085
+    ],
+    "height_m": 0.12,
+    "wall_thickness_m": 0.008,
+    "floor_collision_backing_m": 0.02,
+    "floor_collision_backing_status": "numerical backing below floor; top surface and delivery thresholds unchanged; not a measured basket thickness"
+  },
+  "sources": [
+    "https://mujoco.readthedocs.io/en/stable/XMLreference.html#body-flexcomp",
+    "config/arm_model.json",
+    "config/controller-calibration.json",
+    "config/handeye-accepted.json",
+    "config/lidar_geometry.json",
+    "config/gripper-reference.json",
+    "config/arm-motion.json"
+  ]
+}

@@ -1,0 +1,419 @@
+{
+  "schema": "explorer_learning_audit_v1",
+  "at": 1792428987.184322,
+  "host": "MacBook-Pro-Vlad.local",
+  "platform": "macOS-15.6.1-arm64-arm-64bit",
+  "architecture": "arm64",
+  "code_revision": "d1c4d1155fad093f5ca04c92343dd1c0d44a6fb5",
+  "run_id": "d4f59a63085b",
+  "state": "training",
+  "steps_completed": 905,
+  "steps": 145799,
+  "batch_size": 32,
+  "minimum_expected_passes": 8.00001371753873,
+  "accumulation_steps": 1,
+  "num_workers": 2,
+  "prefetch_factor": null,
+  "configured_device": "mps",
+  "device_placement_proven": false,
+  "actor_config": {
+    "type": "act",
+    "device": "mps",
+    "push_to_hub": false,
+    "chunk_size": 20,
+    "n_action_steps": 20,
+    "temporal_ensemble_coeff": null,
+    "pretrained_backbone_weights": "ResNet18_Weights.IMAGENET1K_V1",
+    "dim_model": 128,
+    "n_heads": 4,
+    "dim_feedforward": 512,
+    "n_encoder_layers": 2,
+    "n_decoder_layers": 1,
+    "n_vae_encoder_layers": 2,
+    "use_vae": false,
+    "dropout": 0.0,
+    "optimizer_lr": 5e-05,
+    "optimizer_lr_backbone": 1e-05,
+    "input_features": {
+      "observation.state": {
+        "type": "STATE",
+        "shape": [
+          9
+        ]
+      },
+      "observation.images.wrist": {
+        "type": "VISUAL",
+        "shape": [
+          3,
+          240,
+          320
+        ]
+      },
+      "observation.environment_state": {
+        "type": "ENV",
+        "shape": [
+          14
+        ]
+      }
+    },
+    "normalization_mapping": {
+      "VISUAL": "MEAN_STD",
+      "STATE": "MEAN_STD",
+      "ACTION": "MEAN_STD",
+      "ENV": "IDENTITY"
+    },
+    "output_features": {
+      "action": {
+        "type": "ACTION",
+        "shape": [
+          9
+        ]
+      }
+    },
+    "pretrained_path": "/Volumes/ExplorerSim/ExplorerSim/runs/d4f59a63085b/initial-policy"
+  },
+  "train": {
+    "episodes": 590,
+    "unique_episode_ids": 590,
+    "unique_recording_hashes": 590,
+    "unique_scene_seeds": 588,
+    "samples": 502939,
+    "effective_replay_frames": 583195,
+    "replay_weights": {
+      "1": 559,
+      "4": 31
+    },
+    "sources": {
+      "simulation": 590
+    },
+    "teacher_profiles": {
+      "unspecified": 429,
+      "planned_release_v4": 161
+    },
+    "scene_profiles": {
+      "sock_variants_v1": 590
+    },
+    "basket_heights": {
+      "0.08": 117,
+      "0.12": 110,
+      "0.3": 118,
+      "0.2": 124,
+      "0.16": 121
+    },
+    "positive_physics_labels": 0,
+    "whole_room_outcome_labels": 0,
+    "room_label_caveat": "Absence of room_cleanup_success is not proof of absence; inspect recorded task stages.",
+    "unique_sock_placements": 588,
+    "privileged_actor_inputs": false,
+    "actor_inputs": [
+      "observation.state",
+      "observation.images.wrist",
+      "observation.environment_state"
+    ],
+    "actor_context": {
+      "feature": "observation.environment_state",
+      "kind": "elapsed_policy_time",
+      "scale_s": 80.0,
+      "input_source": "internal_elapsed_time",
+      "components": [
+        "elapsed_scaled",
+        "period_scaled",
+        "sin_2s",
+        "cos_2s",
+        "sin_4s",
+        "cos_4s",
+        "sin_8s",
+        "cos_8s",
+        "sin_16s",
+        "cos_16s",
+        "sin_32s",
+        "cos_32s",
+        "sin_64s",
+        "cos_64s"
+      ],
+      "periods_s": [
+        2.0,
+        4.0,
+        8.0,
+        16.0,
+        32.0,
+        64.0
+      ],
+      "period_s": 0.05
+    },
+    "joint_state_source": "command_estimate",
+    "action_transform": null,
+    "provenance_sha256": "b3e4f442c4e8ce0fc2ead07bd8a0bc05985500fffc654fc94a7a8908539bc78a"
+  },
+  "validation": {
+    "episodes": 149,
+    "unique_episode_ids": 149,
+    "unique_recording_hashes": 149,
+    "unique_scene_seeds": 147,
+    "samples": 126080,
+    "effective_replay_frames": 126080,
+    "replay_weights": {
+      "1": 149
+    },
+    "sources": {
+      "simulation": 149
+    },
+    "teacher_profiles": {
+      "unspecified": 111,
+      "planned_release_v4": 38
+    },
+    "scene_profiles": {
+      "sock_variants_v1": 149
+    },
+    "basket_heights": {
+      "0.2": 23,
+      "0.3": 33,
+      "0.08": 33,
+      "0.12": 33,
+      "0.16": 27
+    },
+    "positive_physics_labels": 0,
+    "whole_room_outcome_labels": 0,
+    "room_label_caveat": "Absence of room_cleanup_success is not proof of absence; inspect recorded task stages.",
+    "unique_sock_placements": 147,
+    "privileged_actor_inputs": false,
+    "actor_inputs": [
+      "observation.state",
+      "observation.images.wrist",
+      "observation.environment_state"
+    ],
+    "actor_context": {
+      "feature": "observation.environment_state",
+      "kind": "elapsed_policy_time",
+      "scale_s": 80.0,
+      "input_source": "internal_elapsed_time",
+      "components": [
+        "elapsed_scaled",
+        "period_scaled",
+        "sin_2s",
+        "cos_2s",
+        "sin_4s",
+        "cos_4s",
+        "sin_8s",
+        "cos_8s",
+        "sin_16s",
+        "cos_16s",
+        "sin_32s",
+        "cos_32s",
+        "sin_64s",
+        "cos_64s"
+      ],
+      "periods_s": [
+        2.0,
+        4.0,
+        8.0,
+        16.0,
+        32.0,
+        64.0
+      ],
+      "period_s": 0.05
+    },
+    "joint_state_source": "command_estimate",
+    "action_transform": null,
+    "provenance_sha256": "84f47bbea2722c9c2d87a6dadaea8d179d46a98db7b42a41a659f387fea79f1f"
+  },
+  "shared_recording_hashes": [],
+  "shared_scene_seeds": [],
+  "unique_total_recordings": 739,
+  "unique_total_scene_seeds": 735,
+  "near_duplicate_trajectories_checked": false,
+  "whole_room_policy_success_proven": false,
+  "robot_verified": false,
+  "versions": {
+    "torch": "2.11.0",
+    "torchvision": "0.26.0",
+    "lerobot": "0.6.1",
+    "mujoco": "3.14.0",
+    "datasets": "4.8.5",
+    "pyarrow": "26.0.0",
+    "accelerate": "1.15.0"
+  },
+  "config_sha256": "be1fc5737a133c267e88dc214813330b800fa86c70f82972a5af7c02c785e274",
+  "split_sha256": "57b4a0f28feec521d83de131e3d96b618900eba2864e52efea34c5f05a013abf",
+  "memory": {
+    "total_bytes": 25769803776,
+    "available_bytes": 7556890624,
+    "swap_used_bytes": 1847001088
+  },
+  "processes": [
+    {
+      "pid": 28967,
+      "ppid": 1,
+      "command": [
+        "/Volumes/ExplorerSim/env/bin/python",
+        "-m",
+        "simulator.neural_recovery",
+        "--root",
+        "/Volumes/ExplorerSim/ExplorerSim",
+        "--id",
+        "924d1ee5ab01"
+      ],
+      "rss_bytes": 18022400,
+      "rss_caveat": "RSS includes shared mapped dataset pages; do not sum as private allocations.",
+      "cpu_seconds": 5.474742912,
+      "cwd": "/Users/vladromenko/Library/Application Support/ExplorerSimulator/desktop-source-0b231e48e2e7"
+    },
+    {
+      "pid": 29015,
+      "ppid": 28967,
+      "command": [
+        "/Volumes/ExplorerSim/env/bin/python",
+        "-m",
+        "simulator.neural_recovery",
+        "worker",
+        "/Volumes/ExplorerSim/ExplorerSim/runs/d4f59a63085b/request.json"
+      ],
+      "rss_bytes": 15532032,
+      "rss_caveat": "RSS includes shared mapped dataset pages; do not sum as private allocations.",
+      "cpu_seconds": 14.88378624,
+      "cwd": "/Users/vladromenko/Library/Application Support/ExplorerSimulator/desktop-source-0b231e48e2e7"
+    },
+    {
+      "pid": 30609,
+      "ppid": 29015,
+      "command": [
+        "/Volumes/ExplorerSim/env/bin/python",
+        "-m",
+        "simulator.train_entry",
+        "--config_path=/Volumes/ExplorerSim/ExplorerSim/runs/d4f59a63085b/train-config.json"
+      ],
+      "rss_bytes": 199983104,
+      "rss_caveat": "RSS includes shared mapped dataset pages; do not sum as private allocations.",
+      "cpu_seconds": 53.420036096000004,
+      "cwd": "/Users/vladromenko/Library/Application Support/ExplorerSimulator/desktop-source-0b231e48e2e7"
+    },
+    {
+      "pid": 34953,
+      "ppid": 1,
+      "command": [
+        "/Volumes/ExplorerSim/env/bin/python",
+        "-m",
+        "simulator.live_room_diagnostic",
+        "--root",
+        "/Volumes/ExplorerSim/ExplorerSim",
+        "--folder",
+        "/Volumes/ExplorerSim/ExplorerSim/diagnostics/live-room-8c8e4fbc4b7f",
+        "--training",
+        "/Volumes/ExplorerSim/ExplorerSim/runs/1bd683a1d22b",
+        "--snapshot-copy",
+        "/Volumes/ExplorerSim/ExplorerSim/diagnostics/live-room-bb530d402919/model",
+        "--model-source",
+        "/Volumes/ExplorerSim/ExplorerSim/runs/34de45050a00"
+      ],
+      "rss_bytes": 19742720,
+      "rss_caveat": "RSS includes shared mapped dataset pages; do not sum as private allocations.",
+      "cpu_seconds": 6.474305727999999,
+      "cwd": "/Users/vladromenko/Library/Application Support/ExplorerSimulator/room-source-fd6290684825"
+    },
+    {
+      "pid": 36935,
+      "ppid": 1,
+      "command": [
+        "/Users/vladromenko/Library/Application Support/ExplorerSimulator/runtime/bin/python",
+        "-m",
+        "simulator.server",
+        "--port",
+        "8766"
+      ],
+      "rss_bytes": 227491840,
+      "rss_caveat": "RSS includes shared mapped dataset pages; do not sum as private allocations.",
+      "cpu_seconds": 1.867535728,
+      "cwd": "/Users/vladromenko/Library/Application Support/ExplorerSimulator/desktop-source-d1c4d1155fad"
+    }
+  ],
+  "training_log": {
+    "size_bytes": 114258,
+    "modified_at": 1792428986.9974015,
+    "recent_windows": [
+      {
+        "step": 790,
+        "loss": 0.017,
+        "gradient_norm": 1.055,
+        "update_s": 0.185,
+        "data_s": 0.549
+      },
+      {
+        "step": 800,
+        "loss": 0.013,
+        "gradient_norm": 1.318,
+        "update_s": 0.183,
+        "data_s": 0.537
+      },
+      {
+        "step": 810,
+        "loss": 0.012,
+        "gradient_norm": 1.391,
+        "update_s": 0.191,
+        "data_s": 0.565
+      },
+      {
+        "step": 820,
+        "loss": 0.016,
+        "gradient_norm": 1.309,
+        "update_s": 0.185,
+        "data_s": 0.568
+      },
+      {
+        "step": 830,
+        "loss": 0.014,
+        "gradient_norm": 1.215,
+        "update_s": 0.186,
+        "data_s": 0.528
+      },
+      {
+        "step": 840,
+        "loss": 0.015,
+        "gradient_norm": 1.317,
+        "update_s": 0.186,
+        "data_s": 0.526
+      },
+      {
+        "step": 850,
+        "loss": 0.017,
+        "gradient_norm": 1.245,
+        "update_s": 0.187,
+        "data_s": 0.558
+      },
+      {
+        "step": 860,
+        "loss": 0.015,
+        "gradient_norm": 1.233,
+        "update_s": 0.181,
+        "data_s": 0.469
+      },
+      {
+        "step": 870,
+        "loss": 0.019,
+        "gradient_norm": 1.31,
+        "update_s": 0.186,
+        "data_s": 0.475
+      },
+      {
+        "step": 880,
+        "loss": 0.044,
+        "gradient_norm": 1.246,
+        "update_s": 0.182,
+        "data_s": 0.437
+      },
+      {
+        "step": 890,
+        "loss": 0.02,
+        "gradient_norm": 1.157,
+        "update_s": 0.181,
+        "data_s": 0.471
+      },
+      {
+        "step": 900,
+        "loss": 0.015,
+        "gradient_norm": 1.122,
+        "update_s": 0.178,
+        "data_s": 0.511
+      }
+    ]
+  }
+}

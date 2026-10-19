@@ -1,0 +1,21 @@
+{
+  "at": 1792441361.929346,
+  "actuator_commands": false,
+  "firmware_changed": false,
+  "results": [
+    {
+      "alias": "explorer",
+      "returncode": 255,
+      "stdout": "",
+      "stderr": "ssh: Could not resolve hostname explorer.local: nodename nor servname provided, or not known\n",
+      "elapsed": 5.0154430866241455
+    },
+    {
+      "alias": "homebrain",
+      "returncode": 255,
+      "stdout": "",
+      "stderr": "ssh: Could not resolve hostname homebrain.local: nodename nor servname provided, or not known\n",
+      "elapsed": 5.006870985031128
+    }
+  ]
+}

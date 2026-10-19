@@ -1,0 +1,67 @@
+{
+  "date": "2026-10-11",
+  "scope": "Persistent Mac multi-task simulation training, checked inactive import and observed Jetson trial integration",
+  "hardware_execution": false,
+  "jetson_connection_attempted": false,
+  "firmware_changed": false,
+  "tasks": [
+    "sock_basket",
+    "cookie_delivery",
+    "toy_box",
+    "cloth_basket"
+  ],
+  "queue": {
+    "persistent": true,
+    "resume_after_restart": true,
+    "rounds_max": 5,
+    "default_rounds": 3,
+    "default_attempts_per_task": 40,
+    "default_steps": 10000,
+    "default_hours": 8,
+    "best_checkpoint_selection": true,
+    "final_unused_scenes_after_selection": 10
+  },
+  "tests": {
+    "passed": 107,
+    "subtests_passed": 14,
+    "warnings": 1,
+    "warning": "FastAPI Starlette TestClient deprecation"
+  },
+  "pipeline_smoke": {
+    "plan_id": "37888fcaa245",
+    "job_id": "eb850e5fb087",
+    "model_id": "56cd0fb7645b",
+    "task": "toy_box",
+    "independent_teacher_demonstrations": 2,
+    "training_device": "mps",
+    "gradient_steps": 5,
+    "learned_closed_loop_successes": 0,
+    "heldout_scenes": 10,
+    "simulation_qualified": false,
+    "export_sha256": "83261dd47405e0ab630730492ccf2bca58e9f35f7eef02199ffeed4edfa9366b",
+    "imported_inactive": true,
+    "source_vs_import_inference_samples": 25,
+    "max_action_difference": 0.0
+  },
+  "teacher_physics_regressions": {
+    "sock_basket_seed_101": true,
+    "cookie_delivery_seed_105": true,
+    "cube_seed_101": true,
+    "cloth_seed_101": true,
+    "uses_ground_truth": true,
+    "teacher_success_is_not_learned_policy_success": true,
+    "attachment_or_teleport": false
+  },
+  "remaining": {
+    "dynamics_identification": "not completed; estimated contact pads and actuator parameters",
+    "robust_learned_policies": "not established by the five-step smoke test",
+    "real_multiroom_pick_delivery": "not completed for newly trained task models",
+    "human_hand_handover": "not implemented; cookie task uses supported tray",
+    "physical_import_trial": "not performed; robot offline"
+  },
+  "evidence": {
+    "pipeline": "/Volumes/ExplorerSim/ExplorerSim/logs/night-pipeline-smoke-result-20261011.json",
+    "inference_parity": "/Volumes/ExplorerSim/ExplorerSim/logs/night-transfer-roundtrip-20261011.json",
+    "physical_scene_regressions": "/Volumes/ExplorerSim/ExplorerSim/runs/curriculum-physical-regression-final-20261011"
+  }
+}

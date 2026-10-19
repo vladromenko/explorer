@@ -1,0 +1,27 @@
+{
+  "velocity_deg_s": [28, 28, 28, 35, 35, 40],
+  "acceleration_deg_s2": [100, 100, 100, 140, 140, 160],
+  "jerk_deg_s3": [1000, 1000, 1000, 1400, 1400, 1800],
+  "publish_period_s": 0.08,
+  "lookahead_s": 0.20,
+  "min_duration_s": 0.35,
+  "profile": "coordinated_quintic_lookahead",
+  "streaming": {
+    "generator": "ruckig_community_velocity",
+    "ruckig_version": "0.15.3",
+    "publish_period_s": 0.04,
+    "lookahead_s": 0.08,
+    "velocity_deg_s": [48, 48, 48, 60, 60, 72],
+    "acceleration_deg_s2": [800, 800, 800, 1120, 1120, 1280],
+    "jerk_deg_s3": [16000, 16000, 16000, 22400, 22400, 28800],
+    "endpoint_replacement_physically_verified": false
+  },
+  "teleop": {
+    "velocity_scale": 4.0,
+    "acceleration_scale": 8.0,
+    "jerk_scale": 16.0,
+    "min_duration_s": 0.12,
+    "publish_period_s": 0.04,
+    "lookahead_s": 0.08
+  }
+}

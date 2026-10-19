@@ -1,0 +1,526 @@
+{
+  "date": "2026-10-11",
+  "scope": "isolated Mac simulator and learning tools; no robot connection or firmware mutation",
+  "hardware": {
+    "platform": "Apple M4 Pro, arm64, 24 GB RAM",
+    "learning_device": "MPS"
+  },
+  "storage": {
+    "volume": "/Volumes/ExplorerSim",
+    "filesystem": "APFS",
+    "uuid": "1B222F24-62C3-4E85-A85B-452FCEE04106",
+    "formatting": "explicitly authorized and completed",
+    "free_bytes": 973010640896
+  },
+  "installed": {
+    "app": "/Users/vladromenko/Applications/Explorer Simulator.app",
+    "url": "http://127.0.0.1:8766/",
+    "source_snapshot": "/Users/vladromenko/Library/Application Support/ExplorerSimulator/source",
+    "standalone_interpreter": "/Users/vladromenko/Library/Application Support/ExplorerSimulator/python/cpython-3.12.14-macos-aarch64-none",
+    "packages": "/Volumes/ExplorerSim/env",
+    "startup": "user application; no launch-at-login service",
+    "server_health": "ready; RGB/depth/state available; latest model and package restored",
+    "native_viewer": "/Volumes/ExplorerSim/Explorer 3D.command"
+  },
+  "geometry": {
+    "mesh_count": 20,
+    "all_sha256_verified": true,
+    "source": "https://github.com/dimwael/yahboom_m3pro_description",
+    "revision": "bdac682e57a8eeaf7b18eece44bfbfc54de98e8a",
+    "calibrations": "existing Explorer arm, hand-eye and dual-lidar geometry"
+  },
+  "dynamics": {
+    "status": "estimated, not identified digital twin",
+    "finite_actuator_torques": true,
+    "physical_sock_contacts": true,
+    "object_attachment_or_teleport": false,
+    "chassis_pose_forcing": false,
+    "unknowns": [
+      "servo dynamics",
+      "friction",
+      "fabric properties",
+      "payload distribution",
+      "real suspension and backlash"
+    ]
+  },
+  "verification": {
+    "simulator_tests_passed": 52,
+    "existing_learning_boundary_tests_passed": 43,
+    "existing_subtests_passed": 14,
+    "dependency_check": true,
+    "javascript_syntax": true,
+    "shell_syntax": true,
+    "native_viewer_8_second_smoke": "passed after final interpreter relocation and user unlock; exit code 0",
+    "final_native_UI_check": "fresh user application start; RGB/depth, model 1/10 and downloadable package restored; no active jobs",
+    "app_restart_server_pid": 31902,
+    "repeated_app_launch": "existing server reused",
+    "total_unique_tests_passed": 95,
+    "downloaded_package_sha256_verified": true
+  },
+  "teacher": {
+    "camera_first_episodes": 3,
+    "successes": 3,
+    "uses_simulator_ground_truth_for_teacher_planning": true,
+    "success_does_not_validate_actor": true
+  },
+  "learned_policy": {
+    "job": "/Volumes/ExplorerSim/ExplorerSim/runs/queued-visual-act-2400",
+    "state": "trained_simulation_unvalidated",
+    "trained_steps": 3000,
+    "selected_checkpoint_step": 2400,
+    "warm_start_steps": 0,
+    "input": "wrist RGB + 9D command estimate + 14D declared internal clock; no object truth",
+    "training_episodes": 6,
+    "offline_heldout_episodes": 1,
+    "chunk_size": 20,
+    "actions_applied_per_call": 1,
+    "queue_steps": 20,
+    "joint_mae_deg": 1.0479734271450525,
+    "weights_sha256": "8fa92b32dfec4f744cb37de1d876fd4baac708d1eca663962e1e18783b950e25",
+    "closed_loop": {
+      "validation_kind": "closed_loop_policy",
+      "episodes": 10,
+      "successes": 1,
+      "physics_validated": false,
+      "real_hardware_accepted": false,
+      "results": [
+        {
+          "id": "heldout-0000",
+          "success": true,
+          "error": null,
+          "outcome": {
+            "phase": "policy",
+            "grasp_contact": false,
+            "finger_contacts": [
+              false,
+              false
+            ],
+            "lifted": true,
+            "placed": true,
+            "success": true,
+            "lift_hold_s": 0.0
+          }
+        },
+        {
+          "id": "heldout-0001",
+          "success": false,
+          "error": null,
+          "outcome": {
+            "phase": "policy",
+            "grasp_contact": false,
+            "finger_contacts": [
+              false,
+              false
+            ],
+            "lifted": false,
+            "placed": false,
+            "success": false,
+            "lift_hold_s": 0.0
+          }
+        },
+        {
+          "id": "heldout-0002",
+          "success": false,
+          "error": null,
+          "outcome": {
+            "phase": "policy",
+            "grasp_contact": false,
+            "finger_contacts": [
+              false,
+              false
+            ],
+            "lifted": false,
+            "placed": false,
+            "success": false,
+            "lift_hold_s": 0.0
+          }
+        },
+        {
+          "id": "heldout-0003",
+          "success": false,
+          "error": null,
+          "outcome": {
+            "phase": "policy",
+            "grasp_contact": false,
+            "finger_contacts": [
+              false,
+              false
+            ],
+            "lifted": false,
+            "placed": false,
+            "success": false,
+            "lift_hold_s": 0.0
+          }
+        },
+        {
+          "id": "heldout-0004",
+          "success": false,
+          "error": null,
+          "outcome": {
+            "phase": "policy",
+            "grasp_contact": false,
+            "finger_contacts": [
+              false,
+              false
+            ],
+            "lifted": false,
+            "placed": false,
+            "success": false,
+            "lift_hold_s": 0.0
+          }
+        },
+        {
+          "id": "heldout-0005",
+          "success": false,
+          "error": "Servo endpoints exceed model reference limits",
+          "outcome": {
+            "phase": "policy",
+            "grasp_contact": true,
+            "finger_contacts": [
+              true,
+              true
+            ],
+            "lifted": false,
+            "placed": false,
+            "success": false,
+            "lift_hold_s": 0.0
+          }
+        },
+        {
+          "id": "heldout-0006",
+          "success": false,
+          "error": null,
+          "outcome": {
+            "phase": "policy",
+            "grasp_contact": false,
+            "finger_contacts": [
+              false,
+              false
+            ],
+            "lifted": false,
+            "placed": false,
+            "success": false,
+            "lift_hold_s": 0.0
+          }
+        },
+        {
+          "id": "heldout-0007",
+          "success": false,
+          "error": null,
+          "outcome": {
+            "phase": "policy",
+            "grasp_contact": false,
+            "finger_contacts": [
+              false,
+              false
+            ],
+            "lifted": false,
+            "placed": false,
+            "success": false,
+            "lift_hold_s": 0.0
+          }
+        },
+        {
+          "id": "heldout-0008",
+          "success": false,
+          "error": null,
+          "outcome": {
+            "phase": "policy",
+            "grasp_contact": false,
+            "finger_contacts": [
+              false,
+              false
+            ],
+            "lifted": false,
+            "placed": false,
+            "success": false,
+            "lift_hold_s": 0.0
+          }
+        },
+        {
+          "id": "heldout-0009",
+          "success": false,
+          "error": null,
+          "outcome": {
+            "phase": "policy",
+            "grasp_contact": false,
+            "finger_contacts": [
+              false,
+              false
+            ],
+            "lifted": false,
+            "placed": false,
+            "success": false,
+            "lift_hold_s": 0.0
+          }
+        }
+      ],
+      "environment_provenance": {
+        "schema": 1,
+        "model_status": "Simulation model; real dynamics have not been validated",
+        "geometry_source": "config/explorer.urdf and checksum-verified vendor/m3_reference/meshes",
+        "inertial_source": "CAD inertial tensors in URDF; not independently measured. Placeholder imu/laser duplicated tensors omitted.",
+        "camera_source": "config/handeye-accepted.json arm4 optical transform; original URDF Camera is a separate chassis visual",
+        "camera": {
+          "width": 640,
+          "height": 480,
+          "fx": 480.7078552246094,
+          "fy": 480.7112731933594,
+          "cx": 322.29058837890625,
+          "cy": 245.64146423339844,
+          "intrinsics_status": "recorded RGB registered-depth camera_info from settled capture",
+          "near_m": 0.015,
+          "far_m": 8.0,
+          "distortion": [
+            -0.01774778589606285,
+            0.0024330997839570045,
+            0.00028392899548634887,
+            -0.000394188187783584,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rendering_status": "ideal pinhole RGB and registered metric depth; distortion coefficients recorded as provenance, not applied",
+          "camera_info_version": "f9623bebe94601dbade469588cd82025864d7c6d0f5752c2fc0c153041a13754",
+          "recorded_stamp": 1791704134.255977,
+          "source_archive": "Explorer-backups/20261011-R1/working-install.tar.gz",
+          "source_member": "Explorer/data/object-searches/aef6a3b39a684944a000e6630ed495b6/rgbd.npz"
+        },
+        "physics": {
+          "timestep_s": 0.002,
+          "gravity_m_s2": 9.81,
+          "floor_friction": 0.8,
+          "contact_status": "estimated",
+          "servo_kp": 25.0,
+          "servo_kv": 0.65,
+          "servo_torque_nm": [
+            1.0,
+            1.2,
+            1.2,
+            0.9,
+            0.7,
+            0.35
+          ],
+          "servo_status": "estimated finite-torque PD servos; gains selected for stable simulated endpoint tracking under CAD gravity load, not measured real servo dynamics; endpoint rate limits from arm-motion.json",
+          "wheel_kv": 0.08,
+          "wheel_torque_nm": 0.25,
+          "wheel_radius_m": 0.04,
+          "roller_count": 12,
+          "roller_radius_m": 0.008,
+          "roller_half_length_m": 0.009,
+          "roller_mass_kg": 0.0008,
+          "roller_damping": 2e-06,
+          "wheel_status": "URDF fixed wheels replaced with motorized axle hinges and passive 45 degree roller hinges; roller dimensions/friction estimated from mesh envelope, no kinematic chassis forcing",
+          "estimated_payload_mass_kg": 0.65,
+          "payload_status": "estimated additional Jetson/electronics/battery mass; unknown measured hardware mass, CAD assembled mass may already include some hardware",
+          "wheel_radius_source": "80 mm Mecanum manufacturer ROSMASTER-M3PRO README https://github.com/YahboomTechnology/ROSMASTER-M3PRO"
+        },
+        "gripper": {
+          "open_servo_deg": 30.0,
+          "closed_servo_deg": 170.0,
+          "linkage_open_rad": 0.0,
+          "linkage_closed_rad": -1.1,
+          "mapping_status": "observed servo opening/closing directions and endpoints; estimated affine drive endpoint -1.10 rad produces closing force against physical opposing-pad collision around -1.04 rad; force-limited dynamics prevents pad penetration; aperture and torque not physically calibrated",
+          "contact_geometry_status": "estimated rounded fingertip capsule envelopes, 4 mm radius and 28 mm segment; avoids numerical cloth snag on sharp box corners; CAD visual linkage retained"
+        },
+        "sock": {
+          "length_m": 0.16,
+          "width_m": 0.05,
+          "initial_thickness_m": 0.009,
+          "mass_kg": 0.022,
+          "rings": 7,
+          "ring_vertices": 8,
+          "contact_radius_m": 0.0015,
+          "friction": 1.1,
+          "young_pa": 10000.0,
+          "thickness_m": 0.0007,
+          "status": "estimated sewn tube with open cuff, closed toe, deformable 2D triangular shell; physical flex contact and self collision, no attach/weld grasp"
+        },
+        "bin": {
+          "inner_half_size_m": [
+            0.1,
+            0.085
+          ],
+          "height_m": 0.12,
+          "wall_thickness_m": 0.008,
+          "floor_collision_backing_m": 0.02,
+          "floor_collision_backing_status": "numerical backing below floor; top surface and delivery thresholds unchanged; not a measured basket thickness"
+        },
+        "sources": [
+          "https://mujoco.readthedocs.io/en/stable/XMLreference.html#body-flexcomp",
+          "config/arm_model.json",
+          "config/controller-calibration.json",
+          "config/handeye-accepted.json",
+          "config/lidar_geometry.json",
+          "config/gripper-reference.json",
+          "config/arm-motion.json"
+        ],
+        "arm_joints": [
+          "arm1_Joint",
+          "arm2_Joint",
+          "arm3_Joint",
+          "arm4_Joint",
+          "arm5_Joint",
+          "rlink1_Joint"
+        ],
+        "wheel_joints": [
+          "lwheel1_Joint",
+          "rwheel1_Joint",
+          "lwheel2_Joint",
+          "rwheel2_Joint"
+        ],
+        "handeye": {
+          "schema_version": 1,
+          "accepted_at": "2026-09-30T00:20:00+03:00",
+          "execution_authorized": true,
+          "reference_mount": "arm4",
+          "camera_frame": "camera_color_optical_frame",
+          "camera_to_mount_reference": [
+            [
+              0.016549137236173187,
+              0.9996176887008756,
+              0.022149548379142354,
+              -0.05080040639920698
+            ],
+            [
+              -0.9997658064323368,
+              0.016852423269582546,
+              -0.013576749192736612,
+              0.008390836326068152
+            ],
+            [
+              -0.013944832212667187,
+              -0.021919677612468377,
+              0.9996624777340108,
+              0.0796749412518667
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ]
+          ],
+          "joint_state_source": "command_estimate",
+          "measured_joint_positions": false,
+          "physical_validation_record": "data/handeye-validations/20260930-001104/result.json",
+          "physical_validation_sha256": "45d3ee22ca4686d460e9b8ab1df2c41897930bb6713394fd91ce562c6a3c3375",
+          "translation_error_max_m": 0.0056209455429707365,
+          "rotation_error_max_deg": 1.6836993123876307,
+          "validated_joints": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "scope": "stationary_frames_after_completed_factory_robotio_commands",
+          "limitations": [
+            "servo position is a command estimate",
+            "do not compensate images captured while the arm command is executing"
+          ]
+        },
+        "lidar_geometry": {
+          "source": "https://github.com/dimwael/yahboom_m3pro_description",
+          "physically_calibrated": true,
+          "navigation_validated": true,
+          "precision_manipulation_validated": false,
+          "frames": {
+            "laser0_frame": [
+              -0.11617,
+              0.09156,
+              0.1253
+            ],
+            "laser1_frame": [
+              0.10766,
+              -0.09078,
+              0.1253
+            ],
+            "imu_frame": [
+              0.06,
+              0.0,
+              0.08
+            ]
+          },
+          "validation": {
+            "scope": "navigation_mapping",
+            "evidence": "data/factory-acceptance-20260929/lidar-motion-comparison.json",
+            "motions": [
+              "forward",
+              "backward",
+              "left",
+              "right"
+            ],
+            "max_scan_registration_residual_m": 0.005918,
+            "max_inter_lidar_translation_disagreement_m": 0.002752,
+            "reference_model": "official_rosmaster_m3_pro_description"
+          },
+          "note": "Reference-model transforms are accepted for navigation mapping: both scanners independently agreed with four observed chassis translations within 6 mm registration residual. This does not accept precision manipulation geometry or camera-to-map localization."
+        }
+      },
+      "seeds": [
+        10000,
+        10001,
+        10003,
+        10004,
+        10005,
+        10006,
+        10007,
+        10008,
+        10009,
+        10010
+      ],
+      "training_seeds": [
+        0,
+        101,
+        105,
+        107,
+        108,
+        10002
+      ],
+      "heldout_independent": true,
+      "unknown_training_seed_count": 0,
+      "model_job": "queued-visual-act-2400",
+      "model_weights_sha256": "8fa92b32dfec4f744cb37de1d876fd4baac708d1eca663962e1e18783b950e25",
+      "model_checkpoint_sha256": {
+        "model.safetensors": "8fa92b32dfec4f744cb37de1d876fd4baac708d1eca663962e1e18783b950e25",
+        "policy_preprocessor_step_3_normalizer_processor.safetensors": "d33c9c7f1ce479481704d03bdeca70cf7c0478c4f52280d62a1c16019c707585",
+        "config.json": "d557cf5d1568e7989467df64a02d2bfc643c34363ee46a0f14d67d4125e97ba5",
+        "policy_postprocessor.json": "dca3fb7ce4bbbd9e23c3b2eacc42e53e574b3893fda49a5efec0f47182a64df9",
+        "policy_preprocessor.json": "c52e93d66391495a0e77c6db5a8b41cf5c21e7d5e2b505c55e129844ce64dce0",
+        "policy_postprocessor_step_0_unnormalizer_processor.safetensors": "d540cc57f7fd8c625519c0f339060c61911fbf11c819bbcd452f758d8dbcd785",
+        "train_config.json": "62c4d40957d8ab9dc151d97083167898c800afad0d9f8705688f786ab8db4f4b"
+      }
+    },
+    "transfer_roundtrip_max_abs_difference": 0.0,
+    "transfer_roundtrip_frames": 25,
+    "simulation_task_accepted": false
+  },
+  "portable_package": {
+    "path": "/Volumes/ExplorerSim/ExplorerSim/exports/explorer-aa0f579dde82.tar.gz",
+    "archive": "/Volumes/ExplorerSim/ExplorerSim/exports/explorer-aa0f579dde82.tar.gz",
+    "sha256": "89321d65fb6b034bc0ef31c505e6afd695e8aee8979db37e2326a089920a6822",
+    "bytes": 44581110,
+    "inference_device": "cuda",
+    "training_source": "synthetic_only",
+    "physics_acceptance": false,
+    "automatic_execution_allowed": false
+  },
+  "real_hardware_accepted": false,
+  "automatic_execution_allowed": false,
+  "rollback_tag": "explorer-before-simulator-20261011",
+  "evidence": "/Volumes/ExplorerSim/ExplorerSim/runs/validation-0b81fb1e7e94",
+  "fixes": {
+    "issued_endpoint_replay": {
+      "evidence": "/Volumes/ExplorerSim/ExplorerSim/logs/trajectory-replay-fixed.json",
+      "second_motion_filter_removed": true
+    },
+    "basket_contact": {
+      "evidence": "/Volumes/ExplorerSim/ExplorerSim/logs/bin-contact-replay-fix.json",
+      "top_surface_unchanged": true,
+      "criteria_unchanged": true
+    },
+    "act_execution": "bounded one-second queue, one endpoint per 50ms tick",
+    "full_checkpoint_binding": true
+  }
+}

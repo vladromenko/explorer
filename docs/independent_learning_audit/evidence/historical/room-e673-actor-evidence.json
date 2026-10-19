@@ -1,0 +1,51 @@
+{
+  "diagnostic": "/Volumes/ExplorerSim/ExplorerSim/diagnostics/live-room-e673f4b290a6",
+  "trace_sha256": "e770a181fc7b90444a7acee82c0a8655cf619e1340e9272c2325b1f3483d9a60",
+  "model_sha256": "f0a9b5afca8a91f7d213258a1e6fccbab91f42aef671bfad9d47a0f9f5975f12",
+  "applied_commands": 760,
+  "physics_s": 37.99999999910142,
+  "actor_clock_s": 37.99999999999965,
+  "gripper_command_range_deg": [
+    30.0,
+    35.0
+  ],
+  "refusal_step": 760,
+  "refusal_cached": false,
+  "raw_delta_deg": [
+    -0.218017578125,
+    -4.771728515625,
+    20.474945068359375,
+    2.155346393585205,
+    4.835426330566406,
+    1.4418869018554688
+  ],
+  "physical_outcome": {
+    "id": "sock_basket",
+    "phase": "skill_find_destination",
+    "grasp_contact": false,
+    "finger_contacts": [
+      false,
+      false
+    ],
+    "lifted": false,
+    "placed": false,
+    "success": false,
+    "lift_hold_s": 0.0,
+    "ever_success": false,
+    "final_placement": {
+      "inside_fraction": 0.0,
+      "within_height": false,
+      "sock_speed_max_m_s": 0.00036292668869234015,
+      "sock_height_bounds_m": [
+        0.0009975399213089028,
+        0.007293298962494296
+      ]
+    },
+    "final_placement_hold_s": 0.0,
+    "checked_after_actions_stopped": true
+  },
+  "collision_free": true,
+  "full_success": false,
+  "root_cause": "cadence_repaired_but_student_did_not_close_and_lift; insufficient_recovery_state_coverage_hypothesis_not_proven",
+  "new_recovery_collection": "observed_expert_from_bounded_student_states_not_unsafe_student_labels"
+}

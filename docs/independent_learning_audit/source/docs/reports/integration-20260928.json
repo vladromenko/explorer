@@ -1,0 +1,53 @@
+{
+  "date": "2026-09-28",
+  "scope": "finite observed motion, no unattended admission",
+  "firmware_changed": false,
+  "global_commissioning_flags_promoted": false,
+  "software_tests_passed": 160,
+  "chassis": {
+    "individual_directions_and_combinations": 8,
+    "individual_command_duration_s": 2,
+    "two_routes_completed_legs": 8,
+    "route_source": "data/route-check-20260928-205830",
+    "route_odom_return_error_m": [0.007574525, 0.006052448],
+    "route_camera_return_translation_m": [0.002099114, 0.002361835],
+    "route_camera_return_rotation_rad": [0.037299589, 0.038189050],
+    "camera_lever_arm_compensated": false,
+    "complete_external_video_for_second_route": false,
+    "all_route_rgbd_pairs_saved": true,
+    "close_lidar_scans_before_wire_reposition": [8, 4],
+    "total_scan0_scans_before": [107, 90],
+    "close_lidar_scans_after_wire_reposition": [0, 0],
+    "total_scans_after_scan0_scan1": [102, 101],
+    "returns_masked": false,
+    "stop_test_displacement_m": 0.008511156,
+    "stop_test_core_reason": "OPERATOR_ESTOP",
+    "stop_test_api_phase": "interrupted",
+    "stop_status_confirmation_latency_s": 0.472315121,
+    "latency_includes_status_sampling": true,
+    "controller_link_loss_test_repeated": false,
+    "controller_link_loss_bounded_stop_verified": false
+  },
+  "arm": {
+    "current_feedback_publishers": [],
+    "joint_state_source": "commanded plus elapsed-command estimate, not measured",
+    "empty_gripper_finite_commands": [[30, 160], [160, 30]],
+    "steps_each": 65,
+    "base_arm_handoff_attempts": 2,
+    "base_arm_handoff_final_passed": true,
+    "base_arm_handoff_stages": ["backward", "normal_hold", "empty_gripper_30_40_30", "forward"],
+    "rearmed_between_stages": false,
+    "new_object_pickup_in_this_round": false
+  },
+  "vision": {
+    "source": "data/object-searches/50bcaa46afba49ffa57489a979e9cb54",
+    "label": "sock",
+    "detector_confidence": 0.707882524,
+    "foreground_pixels": 18312,
+    "median_surface_height_m": 0.029691043,
+    "surface_noise_m": 0.000712274,
+    "depth_is_object_verified": false,
+    "grasp_executed": false
+  },
+  "full_autonomous_deliveries_this_round": 0
+}
