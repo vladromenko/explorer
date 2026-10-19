@@ -119,7 +119,8 @@ def test_failed_room_manipulation_drives_data_collection_real_train_request_and_
         requests.extend(specs)
         if specs[0]['kind']=='room_correct':
             return [dict(success=True,episodes=[str(tmp_path/f'expert-{i}')],
-                student_interventions=[dict(applied_steps=spec['student_steps'])] if spec['student_steps'] else [])
+                student_interventions=[dict(applied_steps=spec['student_steps'],expert_target_frames=4,
+                    expert_motion_frames=4)] if spec['student_steps'] else [])
                 for i,spec in enumerate(specs)]
         assert len(specs)==1 and parallel==1 and specs[0]['kind']=='train'
         write_json(Path(specs[0]['output'])/'checkpoint-selection.json',{})

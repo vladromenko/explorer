@@ -50,6 +50,8 @@ def test_actual_student_state_is_retained_and_excluded_from_expert_segments(tmp_
     assert segments[0][0][1]['applied_action'][0]==109.
     assert episode['learner_intervention']['model_sha256']=='a'*64
     assert episode['learner_intervention']['student_targets_used'] is False
+    assert episode['learner_intervention']['expert_target_frames']==4
+    assert episode['learner_intervention']['expert_motion_frames']==4
 
 
 def test_rejected_fresh_action_is_saved_without_actuation_or_label(tmp_path):
@@ -81,6 +83,7 @@ def test_program_varies_correction_states_and_keeps_unperturbed_controls():
     diagnosis=dict(findings=[dict(command_refusal=dict(step=760))])
     assert [prefix_budget(diagnosis,i) for i in range(8)]==[0,100,0,200,0,300,0,400]
     assert prefix_budget(dict(findings=[]),1)==50
+    assert prefix_budget(dict(causes=['placement'],findings=[dict(last_stage='policy_place_running')]),1)==0
 
 
 def test_reacquisition_uses_new_semantic_observation_or_rejects(tmp_path):

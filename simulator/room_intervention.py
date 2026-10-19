@@ -12,6 +12,8 @@ from .environment import PERIOD
 
 def prefix_budget(diagnosis,index):
     """Keep control demonstrations and cover progressively later student states."""
+    if 'causes' in diagnosis and not any(row.get('last_stage') in
+            ('policy_pick_running','policy_pick','verify_hold') for row in diagnosis['findings']):return 0
     if index%2==0:return 0
     refusals=[r.get('command_refusal',{}).get('step') for r in diagnosis['findings']]
     observed=[n for n in refusals if type(n) is int and n>0]

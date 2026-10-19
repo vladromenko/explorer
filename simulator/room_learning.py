@@ -99,6 +99,13 @@ class PhaseRecorder:
         self.end();self.env.step=self.original
         paths=[]
         for item in self.phases:
+            rows=[json.loads(line) for line in (item['folder']/'samples.jsonl').read_text().splitlines()]
+            expert_rows=[row for row in rows if row['training_target_valid']]
+            if item.get('intervention'):
+                item['intervention']=dict(item['intervention'],expert_target_frames=len(expert_rows),
+                    expert_motion_frames=sum(1 for row in expert_rows if
+                        np.max(abs(np.asarray(row['action'][:6])-np.asarray(row['observation'][:6])))>=.25))
+                write_json(item['folder']/'intervention-outcome.json',dict(item['intervention'],full_mission_success=success))
             manifest=dict(id=item['folder'].name,source='simulation',state='complete',
                 task='Носок → корзина',task_id='sock_basket',scene_profile='sock_variants_v1',
                 seed=self.seed,sample_period_s=PERIOD,fps=round(1/PERIOD),
@@ -110,9 +117,7 @@ class PhaseRecorder:
                 teacher_inputs='RGBD_own_FK_and_observed_targets',privileged_actor_inputs=False,
                 room_scene=True,full_mission_success=success,learner_intervention=item.get('intervention'))
             write_json(item['folder']/'episode.json',manifest)
-            if success and item['index']>=3:
-                rows=[json.loads(line) for line in (item['folder']/'samples.jsonl').read_text().splitlines()]
-                if sum(row['training_target_valid'] for row in rows)>=3:paths.append(str(item['folder']))
+            if success and len(expert_rows)>=3:paths.append(str(item['folder']))
         return paths
 
 
@@ -345,14 +350,17 @@ class RoomLearning(Recovery):
                     student_steps=prefix_budget(diagnosis,index),
                     seed=row['seed'],output=str(stage/'corrections'/f'scene-{index:02d}')) for index,row in enumerate(curriculum)])
                 successful=[r for r in corrected if r.get('success') is True]
-                recovered=[r for r in successful if any(i.get('applied_steps',0)>0 for i in r.get('student_interventions',[]))]
+                recovered=[r for r in successful if any(i.get('applied_steps',0)>0 and
+                    i.get('expert_target_frames',0)>=3 and i.get('expert_motion_frames',0)>=3
+                    for i in r.get('student_interventions',[]))]
+                minimum_recovered=4 if any(prefix_budget(diagnosis,i) for i in range(len(curriculum))) else 0
                 write_json(stage/'correction-coverage.json',dict(full_successes=len(successful),
                     successful_student_state_corrections=len(recovered),minimum_full_successes=8,
-                    minimum_student_state_corrections=4,qualification=False))
-                if len(successful)<8 or len(recovered)<4:
+                    minimum_student_state_corrections=minimum_recovered,qualification=False))
+                if len(successful)<8 or len(recovered)<minimum_recovered:
                     teacher_diagnosis=diagnose(corrected);write_json(stage/'teacher-diagnosis.json',teacher_diagnosis)
                     self.save(state='needs_room_algorithm_repair',phase='teacher_diagnosis',diagnosis=teacher_diagnosis,
-                        reason=f'Полных показов {len(successful)}/8, исправлений состояний ACT {len(recovered)}/4; недостаточно подтверждённых корректирующих целей')
+                        reason=f'Полных показов {len(successful)}/8, исправлений состояний ACT {len(recovered)}/{minimum_recovered}; недостаточно подтверждённых корректирующих целей')
                     return None
                 selection_path=stage/'data-selection.json'
                 if not selection_path.exists():
