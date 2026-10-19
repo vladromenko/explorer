@@ -841,6 +841,7 @@ def train_job(job_folder, episode_folders, steps=3000, python_executable=None, d
         training_started=time.monotonic()
         starting_step=state.get('resumed_step',0)
         log_start = (folder/'train.log').stat().st_size if resume and (folder/'train.log').is_file() else 0
+        update('training',learner_started_at=time.time(),training_log_start_bytes=log_start)
         with (folder / "train.log").open("a") as log:
             check_cancelled()
             entry='simulator.train_entry'

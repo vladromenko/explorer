@@ -61,3 +61,18 @@ def test_local_model_selection_remains_separate_from_full_mission(tmp_path):
     value=local_selection_evidence(tmp_path,'aaaaaaaaaaaa')
     assert value['successes']==5 and value['scope']=='previous_local_checkpoint_selection'
     assert not value['simulation_qualified']
+
+
+def test_resume_never_calls_restored_counter_fresh_updates(tmp_path):
+    import json
+    from simulator.training_activity import activity
+    folder=tmp_path/'runs/resumed';folder.mkdir(parents=True)
+    old=b'Training: 6000/145799 [01:00:00<20:00:00]\n'
+    (folder/'train.log').write_bytes(old+b'INFO Creating dataset\n')
+    (folder/'job.json').write_text(json.dumps(dict(state='training',resumed_step=6000,
+        steps_completed=6000,steps=145799,training_log_start_bytes=len(old),learner_started_at=1)))
+    state=activity(tmp_path,'resumed')
+    assert state['stage']=='loading_data' and state['steps_completed']==6000
+    with (folder/'train.log').open('a') as stream:stream.write('Training: 20/139799 [00:10<20:00:00]\n')
+    state=activity(tmp_path,'resumed')
+    assert state['stage']=='updating_weights' and state['steps_completed']==6020

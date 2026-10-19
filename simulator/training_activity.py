@@ -11,9 +11,9 @@ _lock=threading.Lock()
 _samples={}
 
 
-def tail(path,maximum=160000):
+def tail(path,maximum=160000,start=0):
     with Path(path).open('rb') as stream:
-        stream.seek(0,2);size=stream.tell();stream.seek(max(0,size-maximum))
+        stream.seek(0,2);size=stream.tell();stream.seek(max(start,size-maximum))
         return stream.read().decode(errors='replace')
 
 
@@ -43,17 +43,17 @@ def activity(root,training,now=None):
     folder=Path(root)/'runs'/training
     try:
         job=json.loads((folder/'job.json').read_text())
-        path=folder/'train.log';text=tail(path) if path.exists() else ''
-        logged=re.findall(r'step:(\d+) ',text)
-        exact=re.findall(r'(\d+)/\d+ \[[\d:]+<',text)
-        step=max(job.get('steps_completed',0),int(logged[-1]) if logged else 0,int(exact[-1]) if exact else 0)
+        path=folder/'train.log';text=tail(path,start=job.get('training_log_start_bytes',0)) if path.exists() else ''
+        from .learning import completed_training_steps
+        restored=job.get('resumed_step',0)
+        step=max(job.get('steps_completed',0),completed_training_steps(text,job.get('steps',0),restored))
         rate=measured_rate(text)
         age=max(0.,now-path.stat().st_mtime) if path.exists() else None
         phase=job['state']
         if phase=='training':
-            phase='updating_weights' if step else 'waiting_for_first_batch' if 'Start offline training' in text else 'loading_policy' if 'Creating policy' in text else 'loading_data' if 'Creating dataset' in text else 'starting_learner'
+            phase='updating_weights' if step>restored else 'waiting_for_first_batch' if 'Start offline training' in text else 'loading_policy' if 'Creating policy' in text else 'loading_data' if 'Creating dataset' in text else 'starting_learner'
         if phase=='updating_weights' and age is not None and age>120:phase='progress_not_confirmed'
-        key=str(folder.resolve())
+        key=(str(folder.resolve()),job.get('learner_started_at'))
         with _lock:
             prior=_samples.get(key);changed=bool(prior and step>prior['step'])
             if not prior or step!=prior['step']:_samples[key]=dict(step=step,observed_at=now)
