@@ -83,8 +83,13 @@ def diagnostic_busy(value):
     if not value:return False
     import psutil
     pid=value['marker'].get('pid')
-    if not pid or not psutil.pid_exists(pid):return False
-    return value['state'].get('state') not in ('complete','failed','paused')
+    if not pid:return False
+    try:
+        process=psutil.Process(pid);args=process.cmdline()
+        return (process.status()!=psutil.STATUS_ZOMBIE and 'simulator.live_room_diagnostic' in args
+            and '--folder' in args and args[args.index('--folder')+1]==value['marker'].get('folder'))
+    except psutil.NoSuchProcess:return False
+    except psutil.AccessDenied:return True
 
 
 def failure_scope(result):
@@ -150,15 +155,20 @@ def run(root,training,owner,minimum_seconds=10800,interval=10000,max_trials=12,o
                             monitor=str(folder),previous_folder=existing['marker']['folder'] if existing else None)
                         write_json(root/'diagnostics/early-room-current.json',marker)
                     save(state='evaluating',last_step=step,last_launched_at=time.time(),child_pid=child.pid,trial=str(trial))
+                    stage_changed=False
                     while child.poll() is None and not stopping:
                         if paused(root,owner,folder,owner_kind):raise InterruptedError('Operator pause retained')
                         local=json.loads((root/owner_kind/owner/'state.json').read_text())
                         job=json.loads((training/'job.json').read_text())
                         if local.get('phase')!='train' or local.get('state')!='running' or job.get('state')!='training':
-                            stop_owned(child)
+                            stop_owned(child);stage_changed=True;break
                         time.sleep(2)
                     if stopping:
                         save(state='paused',reason='Observer stopped; diagnostic evidence retained, learner untouched')
+                        return
+                    if stage_changed:
+                        state.setdefault('interrupted_trials',[]).append(dict(path=str(trial),step=step,at=time.time()))
+                        save(state='finished',reason='Learner left training; main program owns the next evaluation',child_pid=None)
                         return
                     result_path=trial/'state.json'
                     result=json.loads(result_path.read_text()) if result_path.exists() else dict(state='no_result')

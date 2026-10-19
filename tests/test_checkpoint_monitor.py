@@ -16,11 +16,17 @@ def test_operator_pause_is_never_removed(tmp_path):
     assert marker.exists()
 
 
-def test_finished_or_dead_diagnostic_does_not_block_new_eval(monkeypatch):
-    monkeypatch.setattr('psutil.pid_exists',lambda pid:pid==123)
-    assert not diagnostic_busy(dict(marker=dict(pid=456),state=dict(state='running')))
-    assert not diagnostic_busy(dict(marker=dict(pid=123),state=dict(state='complete')))
-    assert diagnostic_busy(dict(marker=dict(pid=123),state=dict(state='starting_vision')))
+def test_terminal_diagnostic_still_owns_cleanup_until_process_exits(monkeypatch):
+    import psutil
+    from types import SimpleNamespace
+    def process(pid):
+        if pid==456:raise psutil.NoSuchProcess(pid)
+        return SimpleNamespace(status=lambda:'running',cmdline=lambda:['python','-m','simulator.live_room_diagnostic','--folder','/retained/trial'])
+    monkeypatch.setattr('psutil.Process',process)
+    assert not diagnostic_busy(dict(marker=dict(pid=456,folder='/retained/trial'),state=dict(state='running')))
+    assert diagnostic_busy(dict(marker=dict(pid=123,folder='/retained/trial'),state=dict(state='complete')))
+    assert diagnostic_busy(dict(marker=dict(pid=123,folder='/retained/trial'),state=dict(state='starting_vision')))
+    assert not diagnostic_busy(dict(marker=dict(pid=123,folder='/another/trial'),state=dict(state='running')))
 
 
 def test_failure_before_actor_or_interface_guard_is_not_a_reason_to_wait_for_more_weights():
@@ -82,3 +88,31 @@ def test_training_worker_starts_one_observer_and_retains_upgrade(tmp_path,monkey
     monkeypatch.setattr('psutil.process_iter',lambda *a:[SimpleNamespace(info=dict(cmdline=['python','-m','simulator.checkpoint_monitor']))])
     assert start_for_training(training,owner,{},'python') is None
     assert len(calls)==1
+
+
+def test_learner_phase_transition_drains_trial_without_model_failure(tmp_path,monkeypatch):
+    import json
+    from types import SimpleNamespace
+    from pathlib import Path
+    from simulator.checkpoint_monitor import run
+    root=tmp_path/'root';training=root/'runs/abcdefabcdef';owner=root/'neural-recovery/123456123456'
+    training.mkdir(parents=True);owner.mkdir(parents=True);(root/'diagnostics').mkdir()
+    job=dict(state='training',steps_completed=2000,resumed_step=0)
+    (training/'job.json').write_text(json.dumps(job))
+    (owner/'state.json').write_text(json.dumps(dict(state='running',phase='train',training_model_id=training.name)))
+    monkeypatch.setattr(Path,'is_mount',lambda _:True)
+    monkeypatch.setattr('simulator.checkpoint_monitor.source_revision',lambda:'checked')
+    monkeypatch.setattr('simulator.checkpoint_monitor.numeric_checkpoint',lambda _:training/'model/checkpoints/001000/pretrained_model')
+    monkeypatch.setattr('simulator.checkpoint_monitor.current_diagnostic',lambda _:None)
+    child=SimpleNamespace(pid=123,done=False)
+    child.poll=lambda:0 if child.done else None
+    def spawn(*a,**k):
+        (training/'job.json').write_text(json.dumps(dict(job,state='validating')));return child
+    monkeypatch.setattr('simulator.checkpoint_monitor.subprocess.Popen',spawn)
+    monkeypatch.setattr('simulator.checkpoint_monitor.stop_owned',lambda _:setattr(child,'done',True))
+    monkeypatch.setattr('simulator.checkpoint_monitor.signal.signal',lambda *a:None)
+    run(root,training.name,owner.name,minimum_seconds=0)
+    state=json.loads((root/('diagnostics/checkpoint-monitor-'+training.name)/'state.json').read_text())
+    assert state['state']=='finished' and not state['results']
+    assert len(state['interrupted_trials'])==1 and child.done
+    assert state.get('failure_scope') is None

@@ -66,23 +66,22 @@ def measured_updates(original,output,warmup=20,samples=20):
         def sync():
             if device.type=='mps':torch.mps.synchronize()
             elif device.type=='cuda':torch.cuda.synchronize(device)
-        times={};forward_start=[None]
-        def before(*_):sync();forward_start[0]=time.perf_counter()
-        def after(*_):sync();times['forward_s']=time.perf_counter()-forward_start[0]
-        pre=policy.register_forward_pre_hook(before);post=policy.register_forward_hook(after)
-        old_backward,old_step=accelerator.backward,optimizer.step
+        times={}
+        old_forward,old_backward,old_step=policy.forward,accelerator.backward,optimizer.step
         def timed(name,function):
             def call(*a,**k):
                 sync();started=time.perf_counter();result=function(*a,**k);sync()
                 times[name]=time.perf_counter()-started;return result
             return call
+        # LeRobot invokes policy.forward directly, bypassing nn.Module hooks.
+        policy.forward=timed('forward_s',old_forward)
         accelerator.backward=timed('backward_s',old_backward)
         optimizer.step=timed('optimizer_s',old_step)
         sync();started=time.perf_counter()
         try:result=original(metrics,policy,batch,optimizer,grad_clip_norm,accelerator,*args,**kwargs)
         finally:
             sync();times['update_s']=time.perf_counter()-started
-            accelerator.backward=old_backward;optimizer.step=old_step;pre.remove();post.remove()
+            policy.forward=old_forward;accelerator.backward=old_backward;optimizer.step=old_step
         tensors={key:dict(device=str(value.device),shape=list(value.shape),dtype=str(value.dtype))
             for key,value in batch.items() if isinstance(value,torch.Tensor)}
         rows.append(dict(relative_update=calls,parameter_device=str(device),batch=tensors,**times))

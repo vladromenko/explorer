@@ -46,9 +46,9 @@ def test_measurement_observes_real_updates_and_restores_hooks(tmp_path):
     from simulator.train_entry import measured_updates
     policy=torch.nn.Linear(2,1);optimizer=torch.optim.SGD(policy.parameters(),lr=.1)
     accelerator=SimpleNamespace(backward=lambda loss:loss.backward())
-    old_backward=accelerator.backward;old_step=optimizer.step
+    old_forward=policy.forward;old_backward=accelerator.backward;old_step=optimizer.step
     def update(metrics,model,batch,opt,clip,acc):
-        loss=model(batch['state']).square().mean();acc.backward(loss);opt.step();opt.zero_grad();return metrics,loss.item()
+        loss=model.forward(batch['state']).square().mean();acc.backward(loss);opt.step();opt.zero_grad();return metrics,loss.item()
     before=policy.weight.detach().clone();path=tmp_path/'measurement.json'
     measured=measured_updates(update,path,warmup=1,samples=2)
     for _ in range(4):measured({},policy,{'state':torch.ones(2,2)},optimizer,1.,accelerator)
@@ -57,4 +57,5 @@ def test_measurement_observes_real_updates_and_restores_hooks(tmp_path):
     assert all(row['forward_s']>=0 and row['backward_s']>=0 for row in proof['samples'])
     assert not torch.equal(before,policy.weight)
     assert accelerator.backward is old_backward and optimizer.step==old_step
+    assert policy.forward==old_forward
     assert not policy._forward_hooks and not policy._forward_pre_hooks
