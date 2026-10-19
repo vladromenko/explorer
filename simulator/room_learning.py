@@ -34,6 +34,10 @@ def diagnose(rows):
             last_stage=stages[-1] if stages else None,
             evidence='completed_rollout_and_independent_outcome',
             root_cause_proven=False))
+        if row.get('policy_command_refusal'):
+            findings[-1].update(command_refusal=row['policy_command_refusal'],
+                mechanism='neural_command_rejected_before_actuation',
+                unsafe_prediction_is_training_target=False)
     causes=sorted({r['cause'] for r in findings})
     # A gradient update cannot repair a blocked route, detector service or a
     # collision guard. Only observed manipulation failures request ACT data.

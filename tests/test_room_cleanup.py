@@ -181,6 +181,40 @@ def test_small_learned_deltas_are_not_lost_to_integer_degree_host_commands():
     assert reference[0]==91.
 
 
+@pytest.mark.parametrize('queued,fresh_delta,accepted',[(True,3.,True),(True,21.,False),(False,3.,False)])
+def test_cached_outlier_is_recomputed_once_but_fresh_guard_is_not_relaxed(queued,fresh_delta,accepted):
+    from simulator.room_policy import RoomActor
+    reference=np.array([90.]*5+[30.]+[0.]*3);bad=reference.copy();bad[2]+=25.
+    fresh=reference.copy();fresh[2]+=fresh_delta
+    calls=[]
+    class Actor:
+        last_action_elapsed_s=12.25;last_action_was_queued=queued
+        def __call__(self,*_):return bad
+        def replan(self,*_):calls.append('fresh');return fresh
+    actor=RoomActor.__new__(RoomActor);actor.actor=Actor();actor.replans=0
+    residual=np.zeros(6)
+    if accepted:
+        command=actor.command(reference,np.zeros((240,320,3),np.uint8),residual)
+        assert command[2]==92. and np.max(abs(command[:6]-reference[:6]))<=2.
+    else:
+        with pytest.raises(ValueError,match='Недопустимый шаг сустава 3'):
+            actor.command(reference,np.zeros((240,320,3),np.uint8),residual)
+        assert np.all(residual==0.)
+    assert calls==(['fresh'] if queued else [])
+    assert actor.command_evidence['prediction'][2]==115.
+
+
+def test_cached_replan_preserves_the_original_policy_clock(monkeypatch):
+    from simulator.learning import LoadedPolicy
+    actor=LoadedPolicy.__new__(LoadedPolicy);actor.last_action_was_queued=True
+    actor.last_action_elapsed_s=12.25;actor.elapsed_s=12.30
+    cleared=[];actor.policy=SimpleNamespace(reset=lambda:cleared.append(True));observed=[]
+    def infer(self,*_):observed.append(self.elapsed_s);self.elapsed_s+=.05;return [0.]*9
+    monkeypatch.setattr(LoadedPolicy,'__call__',infer)
+    actor.replan(None,None)
+    assert observed==[12.25] and actor.elapsed_s==pytest.approx(12.30) and cleared==[True]
+
+
 def test_placement_clock_comes_from_matching_training_geometry_not_saved_waypoints():
     profile=dict(placement_proposals=[dict(height_m=.3,half_size_m=[.125,.125],elapsed_s=42.,observed_command=[90]*9)])
     target=dict(bounds_min=[1.,1.,0.],bounds_max=[1.25,1.25,.3])

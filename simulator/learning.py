@@ -254,6 +254,16 @@ class LoadedPolicy:
     def reset(self):
         self.policy.reset()
         self.elapsed_s = 0.
+        self.last_action_was_queued=False
+        self.last_action_elapsed_s=None
+
+    def replan(self,state9,rgb):
+        """Discard a refused queued tail; recompute this same decision once."""
+        if not self.last_action_was_queued or self.last_action_elapsed_s is None:
+            raise ValueError('Only a cached action may be replanned')
+        self.policy.reset()
+        self.elapsed_s=self.last_action_elapsed_s
+        return self(state9,rgb)
 
     def __call__(self, state9, rgb):
         import numpy as np
@@ -267,6 +277,8 @@ class LoadedPolicy:
         if context:
             batch[context["feature"]] = self.torch.tensor([clock_features(context,self.elapsed_s)], dtype=self.torch.float32)
         with self.torch.no_grad():
+            self.last_action_was_queued=bool(len(getattr(self.policy,'_action_queue',())))
+            self.last_action_elapsed_s=self.elapsed_s
             action = self.post(self.policy.select_action(self.pre(batch))).cpu().numpy().reshape(-1)
         if action.shape != (9,) or not np.isfinite(action).all():
             raise ValueError("ACT produced invalid commands")
@@ -610,9 +622,83 @@ def resume_checkpoint(folder, episode_folders, skill_id):
     return state,checkpoint/'pretrained_model/train_config.json'
 
 
+def prepared_training_available(folder):
+    """A completed export, paused before the first durable gradient step."""
+    folder=Path(folder)
+    try:
+        state=json.loads((folder/'job.json').read_text())
+        required=('train-config.json','split.json','initial-policy/model.safetensors',
+            'train/explorer-provenance.json','validation/explorer-provenance.json',
+            'train/meta/info.json','validation/meta/info.json')
+        checkpoints=folder/'model/checkpoints'
+        return (state.get('state') in ('cancelled','failed','training','verifying_prepared_export') and state.get('steps_completed',0)==0
+            and not (folder/'bundle.json').exists() and not (folder/'model').exists()
+            and not (checkpoints.exists() and any(checkpoints.iterdir()))
+            and all((folder/name).is_file() for name in required))
+    except (OSError,ValueError):return False
+
+
+def resume_prepared_training(folder,episode_folders,skill_id,*,cancelled=None,progress=None):
+    """Verify and reuse existing data/initial weights, never re-export or delete.
+
+    This is not an optimizer resume: no gradient checkpoint existed yet. Every
+    exported shard is hashed, partitions checked, and source record bytes bound
+    to the original export provenance before a learner may start from step zero.
+    """
+    folder=Path(folder).resolve();folders=[Path(p).resolve() for p in episode_folders]
+    if not prepared_training_available(folder):raise ValueError('No complete prepared training export to reuse')
+    state=json.loads((folder/'job.json').read_text());config=json.loads((folder/'train-config.json').read_text())
+    def report(**values):
+        if progress:progress(dict(state,state='verifying_prepared_export',message='Проверяю сохранённый датасет и начальные веса перед продолжением',**values))
+    report(verified_files=0)
+    if state.get('skill_id')!=skill_id or sorted(state['episodes'])!=sorted(p.name for p in folders) or len({p.name for p in folders})!=len(folders):
+        raise ValueError('Prepared training requires the same skill and demonstrations')
+    if (Path(config['output_dir']).resolve()!=folder/'model' or Path(config['dataset']['root']).resolve()!=folder/'train'
+            or Path(config['policy']['pretrained_path']).resolve()!=folder/'initial-policy'
+            or config['steps']!=state['steps'] or config['batch_size']!=state['batch_size'] or config['seed']!=state['seed']):
+        raise ValueError('Prepared training configuration changed')
+    selected=json.loads((folder/'split.json').read_text());sources={p.name:p for p in folders};inputs={};seeds=[]
+    for part in ('train','validation'):
+        provenance=json.loads((folder/part/'explorer-provenance.json').read_text())
+        info=json.loads((folder/part/'meta/info.json').read_text());rows=provenance['episodes']
+        if (provenance.get('sample_contract_sha256')!=CONTRACT_SHA256 or provenance.get('action_transform') is not None
+                or sorted(selected[part])!=sorted(row['episode']['id'] for row in rows)
+                or info['total_frames']!=sum(row['samples'] for row in rows)):
+            raise ValueError('Prepared exported partition or frame count changed')
+        seeds.append({row['episode']['seed'] for row in rows})
+        for row in rows:
+            if cancelled and cancelled():raise InterruptedError('Prepared export verification paused')
+            identity=row['episode']['id']
+            if identity not in sources or identity in inputs:raise ValueError('Prepared partition overlaps or contains unknown source')
+            for name in ('episode.json','samples.jsonl'):
+                if sha256(_contained(sources[identity],name))!=row['input_sha256'][name]:
+                    raise ValueError('Prepared source recording bytes changed: '+identity+'/'+name)
+            inputs[identity]=row['input_sha256']
+    if seeds[0]&seeds[1] or set(inputs)!=set(sources):raise ValueError('Prepared training partitions are not independent/complete')
+    fingerprint=hashlib.sha256(json.dumps([inputs[p.name] for p in folders],sort_keys=True).encode()).hexdigest()
+    if fingerprint!=state['dataset_fingerprint']:raise ValueError('Prepared dataset fingerprint changed')
+    files={}
+    for part in ('train','validation','initial-policy'):
+        for path in sorted((folder/part).rglob('*')):
+            if cancelled and cancelled():raise InterruptedError('Prepared export verification paused')
+            if path.is_file():
+                files[str(path.relative_to(folder))]=sha256(path)
+                report(verified_files=len(files))
+    for name in ('split.json','train-config.json'):files[name]=sha256(folder/name)
+    receipt=folder/'prepared-export-reuse.json'
+    if receipt.exists() and json.loads(receipt.read_text())['files']!=files:
+        raise ValueError('Prepared exported data or initial weights checksum changed')
+    if not receipt.exists():write_json(receipt,dict(files=files,dataset_fingerprint=fingerprint,
+        saved_job=state,at=time.time(),optimizer_checkpoint_existed=False))
+    state.update(prepared_export_reused=True,export_reuse_receipt=str(receipt),steps_completed=0,resumed_step=0,progress=0.)
+    for name in ('error','finished'):state.pop(name,None)
+    return state,folder/'train-config.json'
+
+
 def train_job(job_folder, episode_folders, steps=3000, python_executable=None, device="auto", progress=None,
               task="pick and place", skill_id=None, cancelled=None, batch_size=16, seed=1000,
-              diagnostic_only=False, warm_start=None, minimum_epochs=0, resume=False, correction_replays=1, corrective_training_seeds=(),maximum_steps=200000):
+              diagnostic_only=False, warm_start=None, minimum_epochs=0, resume=False, correction_replays=1, corrective_training_seeds=(),maximum_steps=200000,
+              reuse_prepared=False):
     """Blocking worker; call from the simulator's background executor.
 
     The subprocess has no robot connection. A nonzero learner exit is a failed
@@ -622,7 +708,8 @@ def train_job(job_folder, episode_folders, steps=3000, python_executable=None, d
 
     folder = Path(job_folder).resolve()
     folder.mkdir(parents=True, exist_ok=True)
-    if (folder / "job.json").exists() and not resume:
+    if resume and reuse_prepared:raise ValueError('Choose checkpoint resume or prepared export reuse')
+    if (folder / "job.json").exists() and not (resume or reuse_prepared):
         raise ValueError("Training job folder already contains a job")
     folders = [Path(value).resolve() for value in episode_folders]
     state = dict(id=folder.name, created=time.time(), at=time.time(), state="queued", steps=steps,
@@ -635,6 +722,15 @@ def train_job(job_folder, episode_folders, steps=3000, python_executable=None, d
     resume_config = None
     if resume:
         state, resume_config = resume_checkpoint(folder, folders, skill_id)
+    if reuse_prepared:
+        def preparing(value):
+            write_json(folder/'job.json',value)
+            if progress:progress(value)
+        try:state,_=resume_prepared_training(folder,folders,skill_id,cancelled=cancelled,progress=preparing)
+        except Exception as error:
+            saved=json.loads((folder/'job.json').read_text())
+            saved.update(state='cancelled' if isinstance(error,InterruptedError) else 'failed',error=str(error))
+            write_json(folder/'job.json',saved);raise
     child = None
 
     def update(phase, **values):
@@ -649,7 +745,7 @@ def train_job(job_folder, episode_folders, steps=3000, python_executable=None, d
 
     try:
         check_cancelled()
-        if resume:
+        if resume or reuse_prepared:
             steps = state['steps']
             environment = configure(folder)
         else:

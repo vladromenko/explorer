@@ -125,11 +125,13 @@ def worker(request):
             read_bundle(folder);result=previous
         else:
             resume=bool(previous and (folder/'model/checkpoints/last').exists())
-            if previous and not resume:
+            from .learning import prepared_training_available
+            reuse_prepared=bool(previous and not resume and prepared_training_available(folder))
+            if previous and not (resume or reuse_prepared):
                 raise ValueError('Interrupted export retained; assign a new training identity')
             result=train_job(folder,[Path(p) for p in spec['episodes']],steps=1000,batch_size=32,
                 seed=spec['seed'],skill_id=spec['task_id'],task=spec['title'],minimum_epochs=8,
-                warm_start=spec['model'],resume=resume,correction_replays=4,
+                warm_start=spec['model'],resume=resume,reuse_prepared=reuse_prepared,correction_replays=4,
                 maximum_steps=spec.get('maximum_steps',200000),
                 corrective_training_seeds=spec.get('corrective_training_seeds',[]),progress=progress,cancelled=cancelled)
             if result['state'] not in ('trained_simulation_unvalidated','validated_simulation'):
@@ -341,7 +343,9 @@ class Recovery:
             training_path=round_folder/'training-id.json'
             if not training_path.exists():write_json(training_path,dict(id=secrets.token_hex(6)))
             training=self.root/'runs'/json.loads(training_path.read_text())['id']
-            if (training/'job.json').exists() and not (training/'model/checkpoints/last').exists() and not (training/'bundle.json').exists():
+            from .learning import prepared_training_available
+            if ((training/'job.json').exists() and not (training/'model/checkpoints/last').exists()
+                    and not (training/'bundle.json').exists() and not prepared_training_available(training)):
                 retained=round_folder/'incomplete-exports.json'
                 previous=json.loads(retained.read_text()) if retained.exists() else []
                 previous.append(dict(id=training.name,reason='Export interrupted before optimizer checkpoint; original files retained'))

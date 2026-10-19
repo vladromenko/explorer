@@ -106,6 +106,7 @@ def trial(spec):
             immutable_source_verified=revision is not None,source_revision=revision,
             actor_truth_inputs=False,teacher_fallback=False,simulation_only=True,physical_ready=False,
             mission_contract_sha256=port.contract,model_sha256=port.actor.sha)
+        if hasattr(port,'command_refusal'):result['policy_command_refusal']=port.command_refusal
         write_json(output/'result.json',result);return result
     finally:
         if port is not None:port.close()

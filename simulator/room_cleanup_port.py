@@ -371,7 +371,17 @@ class RoomCleanupPort:
             if rgb.shape!=(240,320,3):
                 import cv2
                 rgb=cv2.resize(rgb,(320,240),interpolation=cv2.INTER_AREA)
-            command=issued_command(self.env.command,np.clip(self.actor(self.env.command,rgb),LOW,HIGH),residual)
+            try:command=self.actor.command(self.env.command,rgb,residual)
+            except ValueError:
+                from .learning import write_json
+                self.command_refusal=dict(phase=phase,step=step,model_sha256=self.actor.sha,decision=self.actor.command_evidence)
+                write_json(self.folder/'policy-command-refusal.json',self.command_refusal)
+                raise
+            if self.actor.command_evidence.get('replanned'):
+                from .learning import write_json
+                if not hasattr(self,'policy_replans'):self.policy_replans=[]
+                self.policy_replans.append(dict(phase=phase,step=step,decision=self.actor.command_evidence))
+                write_json(self.folder/'policy-replans.json',self.policy_replans)
             if phase=='place' and not self.geometry.release_commanded and command[5]<self.env.command[5]-.5:
                 from .room_policy import admit_release
                 admit_release(target,self.env.jaw_center())

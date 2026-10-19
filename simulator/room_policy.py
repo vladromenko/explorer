@@ -164,6 +164,32 @@ class RoomActor:
     def begin(self,phase,target,command):
         self.actor.reset()
         self.actor.elapsed_s=self.profile['pick_elapsed_s'] if phase=='pick' else place_clock(self.profile,target,command)
+        self.replans=0;self.command_evidence=None
+
+    def command(self,state,rgb,residual):
+        """Never issue a refused command or weaken the original 20/2 deg gates."""
+        from .environment import LOW,HIGH
+        import hashlib
+        self.command_evidence=dict(reference=np.asarray(state).tolist(),
+            image_sha256=hashlib.sha256(np.asarray(rgb).tobytes()).hexdigest(),replanned=False)
+        try:prediction=np.asarray(self.actor(state,rgb),float)
+        except Exception as error:
+            self.command_evidence['inference_refusal']=str(error);raise
+        values=lambda array:[float(v) if np.isfinite(v) else str(v) for v in array]
+        self.command_evidence.update(prediction=values(prediction),
+            elapsed_s=self.actor.last_action_elapsed_s,queued=self.actor.last_action_was_queued)
+        try:return issued_command(state,np.clip(prediction,LOW,HIGH),residual)
+        except ValueError as error:
+            self.command_evidence['refusal']=str(error)
+            # Only a finite cached joint target can be stale relative
+            # to a host-limited trajectory. Invalid new predictions still stop.
+            bounded=np.clip(prediction,LOW,HIGH)
+            if (not self.actor.last_action_was_queued or self.replans>=3 or
+                    not np.isfinite(prediction).all() or not np.any(abs(bounded[:6]-np.asarray(state)[:6])>20)):
+                raise
+            fresh=np.asarray(self.actor.replan(state,rgb),float);self.replans+=1
+            self.command_evidence.update(replanned=True,fresh_prediction=values(fresh),replans=self.replans)
+            return issued_command(state,np.clip(fresh,LOW,HIGH),residual)
 
     def __call__(self,state,rgb):return self.actor(state,rgb)
 

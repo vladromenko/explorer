@@ -4,6 +4,68 @@ from pathlib import Path
 import pytest
 
 from simulator.learning import completed_training_steps, resume_checkpoint, sha256, train_job, write_json
+from simulator.learning import prepared_training_available,resume_prepared_training
+
+
+def prepared_run(root):
+    import hashlib
+    from src.mobile_policy_contract import CONTRACT_SHA256
+    folder=root/'prepared';sources=[];inputs=[]
+    for i,part in enumerate(('train','validation')):
+        source=root/('source-'+part);source.mkdir()
+        write_json(source/'episode.json',dict(id=source.name,seed=i))
+        (source/'samples.jsonl').write_text('original samples')
+        hashes={name:sha256(source/name) for name in ('episode.json','samples.jsonl')}
+        write_json(folder/part/'explorer-provenance.json',dict(sample_contract_sha256=CONTRACT_SHA256,
+            action_transform=None,episodes=[dict(episode=dict(id=source.name,seed=i),input_sha256=hashes,samples=4)]))
+        write_json(folder/part/'meta/info.json',dict(total_frames=4))
+        (folder/part/'data').mkdir();(folder/part/'data/shard.parquet').write_bytes(b'verified export')
+        sources.append(source);inputs.append(hashes)
+    (folder/'initial-policy').mkdir();(folder/'initial-policy/model.safetensors').write_bytes(b'initial model')
+    write_json(folder/'split.json',dict(train=[sources[0].name],validation=[sources[1].name]))
+    write_json(folder/'train-config.json',dict(output_dir=str(folder/'model'),dataset=dict(root=str(folder/'train')),
+        policy=dict(pretrained_path=str(folder/'initial-policy')),steps=200,batch_size=16,seed=7))
+    write_json(folder/'job.json',dict(id=folder.name,state='cancelled',skill_id='sock_basket',steps_completed=0,
+        episodes=[p.name for p in sources],steps=200,batch_size=16,seed=7,
+        dataset_fingerprint=hashlib.sha256(json.dumps(inputs,sort_keys=True).encode()).hexdigest()))
+    return folder,sources
+
+
+def test_prepared_export_reuses_same_identity_without_rewriting_data(tmp_path):
+    folder,sources=prepared_run(tmp_path);before={str(p):p.read_bytes() for p in folder.rglob('*') if p.is_file()}
+    assert prepared_training_available(folder)
+    state,config=resume_prepared_training(folder,sources,'sock_basket')
+    assert state['prepared_export_reused'] and state['steps']==200 and config==folder/'train-config.json'
+    assert all(Path(p).read_bytes()==content for p,content in before.items())
+    resume_prepared_training(folder,sources,'sock_basket')
+    (folder/'train/data/shard.parquet').write_bytes(b'tampered')
+    with pytest.raises(ValueError,match='checksum'):
+        resume_prepared_training(folder,sources,'sock_basket')
+
+
+def test_prepared_export_rejects_changed_source_or_optimizer_work(tmp_path):
+    folder,sources=prepared_run(tmp_path)
+    (sources[0]/'samples.jsonl').write_text('changed samples')
+    with pytest.raises(ValueError,match='recording bytes'):
+        resume_prepared_training(folder,sources,'sock_basket')
+    assert not (folder/'prepared-export-reuse.json').exists()
+    checkpoint=folder/'model/checkpoints/000100';checkpoint.mkdir(parents=True)
+    assert not prepared_training_available(folder)
+
+
+def test_prepared_training_path_starts_learner_without_exporting_again(tmp_path,monkeypatch):
+    from types import SimpleNamespace
+    folder,sources=prepared_run(tmp_path);calls=[]
+    monkeypatch.setattr('src.learning_environment.configure',lambda _: {})
+    monkeypatch.setattr('simulator.learning.export_dataset',lambda *a,**k:pytest.fail('must reuse export'))
+    def spawn(args,**kwargs):calls.append(args);return SimpleNamespace(poll=lambda:0,returncode=0)
+    monkeypatch.setattr('simulator.learning.subprocess.Popen',spawn)
+    monkeypatch.setattr('simulator.learning.select_checkpoint',lambda *a,**k:({'checkpoint_relative':'fake'},{'improves_hold_baseline':True}))
+    monkeypatch.setattr('simulator.learning.create_bundle',lambda *a:None)
+    result=train_job(folder,sources,skill_id='sock_basket',reuse_prepared=True)
+    assert result['prepared_export_reused'] and result['steps_completed']==200
+    assert '--config_path='+str(folder/'train-config.json') in calls[0]
+    assert '--resume=true' not in calls[0]
 
 
 def test_progress_counts_remaining_tqdm_updates_after_resume():
