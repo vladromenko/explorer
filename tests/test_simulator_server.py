@@ -83,6 +83,19 @@ def test_failed_scene_keeps_status_and_stop_available(tmp_path):
         assert connection.post('/api/stop-manual',json={},headers=auth(connection)).status_code==200
 
 
+def test_dashboard_does_not_construct_an_unused_scene(tmp_path):
+    calls=[]
+    def factory():calls.append(True);return FakeEnv()
+    with TestClient(create_app(env_factory=factory,data_root=tmp_path,defer_scene=True),
+                    base_url='http://127.0.0.1:8766') as connection:
+        assert connection.get('/api/state').json()['simulation_initialization']['state']=='deferred'
+        assert not calls
+        assert connection.post('/api/reset',json={},headers=auth(connection)).status_code==503
+        assert connection.app.state.runtime.ready.wait(2)
+        assert len(calls)==1
+        assert connection.post('/api/reset',json={},headers=auth(connection)).status_code==200
+
+
 def test_maintenance_cancel_is_owned_and_operator_cancel_takes_precedence(tmp_path):
     with client(tmp_path) as connection:
         headers=auth(connection);runtime=connection.app.state.runtime

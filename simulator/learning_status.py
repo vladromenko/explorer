@@ -3,8 +3,31 @@ from functools import lru_cache
 import json
 from pathlib import Path
 import time
+import threading
 
 from .curriculum import task_spec
+
+_count_lock=threading.Lock()
+_counts={}
+
+
+def archive_counts(root,scene_profile):
+    """Historical archive traversal must never hold the live simulation lock."""
+    key=(str(root),scene_profile)
+    with _count_lock:
+        cached=_counts.setdefault(key,dict(value={},at=None,pending=False,error=None))
+        if not cached['pending'] and (cached['at'] is None or time.time()-cached['at']>300):
+            cached['pending']=True
+            def refresh():
+                try:
+                    value=demonstration_counts(str(root),int(time.monotonic()//300),scene_profile)
+                    with _count_lock:cached.update(value=value,at=time.time(),error=None)
+                except Exception as error:
+                    with _count_lock:cached.update(error=str(error))
+                finally:
+                    with _count_lock:cached['pending']=False
+            threading.Thread(target=refresh,name='explorer-archive-counts',daemon=True).start()
+        return dict(cached)
 
 
 def compact_value(value):
@@ -56,12 +79,14 @@ def learning_status(root,snapshot):
     details=(active or {}).get('details') or {}
     saved=task.get('stages',{}).get('train') or {}
     budget=details.get('training_budget') or saved.get('training_budget')
+    archive=archive_counts(root,(plan or {}).get('options',{}).get('scene_profile','baseline'))
     output=dict(state=status,task_id=task_id,title=task_spec(task_id)['title'],cycle_id=current['id'] if current else None,
         plan_id=plan['id'] if plan else None,phase=active['kind'] if active else (current or {}).get('phase','finished'),
         message=(active or {}).get('message') or (current or {}).get('reason'),iteration=task.get('iteration',task.get('round',1)),
         progress=(active or {}).get('progress',0),steps_completed=details.get('steps_completed',saved.get('steps_completed')),
         training_budget=budget,eta_s=details.get('eta_s'),worker_progress=details if active and active['kind'] in ('audit','trials') else None,
-        demonstrations=demonstration_counts(str(root),int(time.monotonic()//5),(plan or {}).get('options',{}).get('scene_profile','baseline')).get(task_id,dict(attempts=0,successful=0)),
+        demonstrations=archive['value'].get(task_id,dict(attempts=None,successful=None)),
+        archive_count_at=archive['at'],archive_count_pending=archive['pending'],archive_count_error=archive['error'],
         successes=successes,episodes=episodes,required_successes=10,simulation_ready=bool(qualified),physical_ready=False,
         model_id=task.get('model_id') or model.get('id'),archive=task.get('archive'),
         comparison=task.get('last_comparison'),
@@ -82,6 +107,19 @@ def learning_status(root,snapshot):
             worker_progress={'active_workers':recovery.get('views',[])},
             recovery_counts={'completed':recovery.get('completed',0),'total':recovery.get('total',0)})
         if state=='pausing':output['message']='Останавливаем исполнителей и сохраняем контрольную точку; диск пока не извлекайте'
+        if recovery.get('training_model_id') and recovery.get('phase')=='train':
+            from .training_activity import activity
+            evidence=activity(root,recovery['training_model_id']);output['training_evidence']=evidence
+            labels={'loading_data':'Загрузка датасета; веса пока не обновляются',
+                'starting_learner':'Запуск learner; обновления ещё не подтверждены',
+                'loading_policy':'Загрузка модели и оптимизатора; веса пока не обновляются',
+                'waiting_for_first_batch':'Подготовка первого пакета; веса пока не обновляются',
+                'updating_weights':'Веса обновляются',
+                'progress_not_confirmed':'Свежие обновления весов не подтверждены; проверяем журнал',
+                'verifying_prepared_export':'Проверка сохранённого датасета; веса пока не обновляются'}
+            if evidence['stage'] in labels and state=='running':output['message']=labels[evidence['stage']]
+            if evidence.get('steps_completed') is not None:output['steps_completed']=evidence['steps_completed']
+            output['eta_s']=evidence.get('remaining_weight_updates_s')
     from .room_control import current as room_current
     room=room_current(root)
     if room:

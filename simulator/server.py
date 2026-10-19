@@ -370,6 +370,9 @@ class Runtime:
             self.log(f'Сцена начата заново · seed {command.seed}')
 
     def on_owner(self, callback):
+        if self.env is None and not self.thread:
+            self.start(wait=False)
+            raise HTTPException(503, 'Запускаем физическую сцену; повторите действие после загрузки')
         if self.thread and not self.ready.is_set():
             raise HTTPException(503, 'Физическая сцена ещё загружается; обучение имеет отдельный статус')
         if self.initialization_error:
@@ -580,7 +583,7 @@ class Runtime:
             snapshot['skill_trainings']=list_trainings(self.data_root)
             snapshot['learning_status']=learning_status(self.data_root,snapshot)
             snapshot['simulation_initialization']={
-                'state':'failed' if self.initialization_error else 'ready' if self.ready.is_set() or not self.thread else 'loading',
+                'state':'failed' if self.initialization_error else 'deferred' if self.env is None and not self.thread else 'ready' if self.ready.is_set() or not self.thread else 'loading',
                 'error':str(self.initialization_error) if self.initialization_error else None}
             from .neural_recovery import current as recovery_current
             recovery=recovery_current(self.data_root)
@@ -1138,16 +1141,16 @@ class Runtime:
                     sleep_guard.wait(timeout=2)
 
 
-def create_app(env_factory=None, data_root=DATA_ROOT, learning_module=None, start_loop=True):
+def create_app(env_factory=None, data_root=DATA_ROOT, learning_module=None, start_loop=True, defer_scene=False):
     def default_env():
         from simulator.environment import ExplorerEnv
         return ExplorerEnv()
 
     @asynccontextmanager
     async def lifespan(app):
-        runtime = Runtime(env_factory or default_env, Path(data_root), learning_module, initialize=not start_loop)
+        runtime = Runtime(env_factory or default_env, Path(data_root), learning_module, initialize=not start_loop and not defer_scene)
         app.state.runtime = runtime
-        if start_loop:
+        if start_loop and not defer_scene:
             runtime.start(wait=False)
         try:
             yield
@@ -1387,7 +1390,7 @@ def create_app(env_factory=None, data_root=DATA_ROOT, learning_module=None, star
     return app
 
 
-app = create_app()
+app = create_app(defer_scene=True)
 
 
 def main():
