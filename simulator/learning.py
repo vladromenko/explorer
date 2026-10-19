@@ -698,7 +698,7 @@ def resume_prepared_training(folder,episode_folders,skill_id,*,cancelled=None,pr
 def train_job(job_folder, episode_folders, steps=3000, python_executable=None, device="auto", progress=None,
               task="pick and place", skill_id=None, cancelled=None, batch_size=16, seed=1000,
               diagnostic_only=False, warm_start=None, minimum_epochs=0, resume=False, correction_replays=1, corrective_training_seeds=(),maximum_steps=200000,
-              reuse_prepared=False):
+              reuse_prepared=False,monitor_owner=None):
     """Blocking worker; call from the simulator's background executor.
 
     The subprocess has no robot connection. A nonzero learner exit is a failed
@@ -732,6 +732,7 @@ def train_job(job_folder, episode_folders, steps=3000, python_executable=None, d
             saved.update(state='cancelled' if isinstance(error,InterruptedError) else 'failed',error=str(error))
             write_json(folder/'job.json',saved);raise
     child = None
+    observer = None
 
     def update(phase, **values):
         state.update(state=phase, at=time.time(), **values)
@@ -742,6 +743,13 @@ def train_job(job_folder, episode_folders, steps=3000, python_executable=None, d
     def check_cancelled():
         if cancelled and cancelled():
             raise InterruptedError("Simulator training cancelled")
+
+    def stop_observer():
+        if observer is not None and observer.poll() is None:
+            from .live_room_diagnostic import stop_owned
+            observer.terminate()
+            try:observer.wait(timeout=10)
+            except subprocess.TimeoutExpired:stop_owned(observer)
 
     try:
         check_cancelled()
@@ -824,21 +832,29 @@ def train_job(job_folder, episode_folders, steps=3000, python_executable=None, d
         env = dict(os.environ, HF_HUB_OFFLINE="1", HF_HUB_DISABLE_TELEMETRY="1", WANDB_MODE="disabled",
                    PYTORCH_ENABLE_MPS_FALLBACK="1", OMP_NUM_THREADS="2", PYTHONUNBUFFERED="1")
         env.pop('EXPLORER_FROZEN_NORMALIZATION',None)
+        env.pop('EXPLORER_CHECKPOINT_RESUME',None)
+        env['EXPLORER_UPDATE_MEASUREMENT']=str(folder/('update-measurement-'+str(time.time_ns())+'.json'))
         if (state.get('warm_start') or {}).get('normalization')=='preserved_source_processors':
             env['EXPLORER_FROZEN_NORMALIZATION']=str(folder/'initial-policy')
+        if resume_config:env['EXPLORER_CHECKPOINT_RESUME']='1'
         update("training")
         training_started=time.monotonic()
         starting_step=state.get('resumed_step',0)
         log_start = (folder/'train.log').stat().st_size if resume and (folder/'train.log').is_file() else 0
         with (folder / "train.log").open("a") as log:
             check_cancelled()
-            entry='simulator.train_entry' if 'EXPLORER_FROZEN_NORMALIZATION' in env and not resume_config else 'lerobot.scripts.lerobot_train'
+            entry='simulator.train_entry'
             arguments = [interpreter, "-m", entry,
                          "--config_path=" + str(resume_config or folder / "train-config.json")]
             if resume_config:
                 arguments.append("--resume=true")
             child = subprocess.Popen(arguments, stdout=log, stderr=log, env=env,
                 start_new_session=(os.name == "posix"))
+            if monitor_owner is not None:
+                from .checkpoint_monitor import start_for_training
+                try:observer=start_for_training(folder,monitor_owner,env,interpreter)
+                except Exception as error:
+                    update('training',checkpoint_observer_error=str(error))
             while child.poll() is None:
                 if cancelled and cancelled():
                     raise InterruptedError("Simulator training cancelled")
@@ -861,6 +877,7 @@ def train_job(job_folder, episode_folders, steps=3000, python_executable=None, d
                 time.sleep(.5)
             if child.returncode:
                 raise RuntimeError("LeRobot training failed; see train.log (exit " + str(child.returncode) + ")")
+        stop_observer()
         update("validating", steps_completed=steps, progress=95.)
         check_cancelled()
         selection, state["validation"] = select_checkpoint(folder,state["device"],cancelled=cancelled,
@@ -876,6 +893,7 @@ def train_job(job_folder, episode_folders, steps=3000, python_executable=None, d
         update("cancelled" if isinstance(exc, (InterruptedError, KeyboardInterrupt)) else "failed",
                error=str(exc) or "Simulator training interrupted", finished=time.time())
     finally:
+        stop_observer()
         if child and child.poll() is None:
             if os.name == "posix":
                 try:

@@ -78,4 +78,9 @@ def stop_servers(root):
         try:process.terminate();processes.append(process)
         except psutil.Error:continue
     _,alive=psutil.wait_procs(processes,timeout=5)
-    return [p.pid for p in alive]
+    remaining=[]
+    for process in alive:
+        try:
+            if process.status()!=psutil.STATUS_ZOMBIE:remaining.append(process.pid)
+        except psutil.NoSuchProcess:pass
+    return remaining

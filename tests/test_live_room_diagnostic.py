@@ -72,7 +72,9 @@ def test_finished_selected_bundle_retains_actual_checkpoint_not_job_end_step(tmp
 def test_low_memory_never_admits_a_side_diagnostic():
     assert not diagnostic.can_start(dict(free_percent=24.9,available_gb=6.))
     assert not diagnostic.can_start(dict(free_percent=30.,available_gb=5.))
-    assert diagnostic.can_start(dict(free_percent=26.,available_gb=6.))
+    assert not diagnostic.can_start(dict(free_percent=26.,available_gb=6.))
+    assert diagnostic.can_start(dict(free_percent=32.,available_gb=8.))
+    assert diagnostic.can_start(dict(free_percent=32.,available_gb=8.),after_pressure=True)
     assert not diagnostic.can_start(dict(free_percent=26.,available_gb=6.),after_pressure=True)
 
 

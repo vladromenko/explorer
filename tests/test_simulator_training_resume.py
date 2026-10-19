@@ -89,7 +89,7 @@ def saved_run(root):
     write_json(checkpoint/'training_state/training_step.json',{'step':100})
     (checkpoint.parent/'last').symlink_to(checkpoint.name,target_is_directory=True)
     write_json(folder/'job.json',{'id':'run','state':'cancelled','steps':200,'batch_size':16,
-        'skill_id':'sock_basket','episodes':['one','two'],'steps_completed':110,'error':'cancelled'})
+        'skill_id':'sock_basket','episodes':['one','two'],'steps_completed':110,'error':'cancelled','device':'cpu'})
     for part in ('train','validation'):
         write_json(folder/part/'explorer-provenance.json',{})
     return folder,checkpoint
@@ -128,3 +128,51 @@ def test_resume_rejects_modified_checkpoint_and_outside_symlink(tmp_path):
     last.unlink(); last.symlink_to(tmp_path,target_is_directory=True)
     with pytest.raises(ValueError,match='outside'):
         resume_checkpoint(folder,[tmp_path/'one',tmp_path/'two'],'sock_basket')
+
+
+def test_checkpoint_resume_uses_projected_reader_without_replacing_checkpoint_processors(tmp_path,monkeypatch):
+    from types import SimpleNamespace
+    folder,checkpoint=saved_run(tmp_path);calls=[]
+    monkeypatch.setattr('src.learning_environment.configure',lambda _: {})
+    monkeypatch.setattr('simulator.learning.export_dataset',lambda *a,**k:pytest.fail('resume must not export'))
+    def spawn(args,**kwargs):calls.append((args,kwargs['env']));return SimpleNamespace(poll=lambda:0,returncode=0)
+    monkeypatch.setattr('simulator.learning.subprocess.Popen',spawn)
+    monkeypatch.setattr('simulator.learning.select_checkpoint',lambda *a,**k:({'checkpoint_relative':'fixture'},{'improves_hold_baseline':True}))
+    monkeypatch.setattr('simulator.learning.create_bundle',lambda *a:None)
+    result=train_job(folder,[tmp_path/'one',tmp_path/'two'],skill_id='sock_basket',resume=True)
+    args,environment=calls[0]
+    assert args[args.index('-m')+1]=='simulator.train_entry'
+    assert '--resume=true' in args and environment['EXPLORER_CHECKPOINT_RESUME']=='1'
+    assert result['resumed_step']==100 and result['steps']==200
+    assert result['state']=='trained_simulation_unvalidated' and not result['simulation_qualified']
+
+
+def test_checkpoint_observer_drains_before_offline_validation(tmp_path,monkeypatch):
+    from types import SimpleNamespace
+    folder,checkpoint=saved_run(tmp_path);events=[]
+    monkeypatch.setattr('src.learning_environment.configure',lambda _: {})
+    learner=SimpleNamespace(poll=lambda:0,returncode=0)
+    observer=SimpleNamespace(poll=lambda:None,terminate=lambda:events.append('stop'),wait=lambda timeout:events.append('drained'))
+    monkeypatch.setattr('simulator.learning.subprocess.Popen',lambda *a,**k:learner)
+    monkeypatch.setattr('simulator.checkpoint_monitor.start_for_training',lambda *a:observer)
+    def select(*a,**k):
+        assert events==['stop','drained'];observer.poll=lambda:0
+        return {'checkpoint_relative':'fixture'},{}
+    monkeypatch.setattr('simulator.learning.select_checkpoint',select)
+    monkeypatch.setattr('simulator.learning.create_bundle',lambda *a:None)
+    result=train_job(folder,[tmp_path/'one',tmp_path/'two'],skill_id='sock_basket',resume=True,monitor_owner=tmp_path/'owner')
+    assert result['state']=='trained_simulation_unvalidated'
+
+
+def test_auxiliary_launch_error_does_not_discard_useful_learner(tmp_path,monkeypatch):
+    from types import SimpleNamespace
+    folder,checkpoint=saved_run(tmp_path)
+    monkeypatch.setattr('src.learning_environment.configure',lambda _: {})
+    monkeypatch.setattr('simulator.learning.subprocess.Popen',lambda *a,**k:SimpleNamespace(poll=lambda:0,returncode=0))
+    def unavailable(*a):raise OSError('observer unavailable')
+    monkeypatch.setattr('simulator.checkpoint_monitor.start_for_training',unavailable)
+    monkeypatch.setattr('simulator.learning.select_checkpoint',lambda *a,**k:({'checkpoint_relative':'fixture'},{}))
+    monkeypatch.setattr('simulator.learning.create_bundle',lambda *a:None)
+    result=train_job(folder,[tmp_path/'one',tmp_path/'two'],skill_id='sock_basket',resume=True,monitor_owner=tmp_path/'owner')
+    assert result['checkpoint_observer_error']=='observer unavailable'
+    assert result['state']=='trained_simulation_unvalidated'

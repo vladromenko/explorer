@@ -37,3 +37,27 @@ def test_stale_log_and_unfinished_latest_checkpoint_are_explicit(tmp_path):
     assert value['stage']=='progress_not_confirmed'
     assert value['stable_checkpoint'].endswith('001000')
     assert not value['simulation_qualified'] and not value['robot_verified']
+
+
+def test_rate_retains_exact_updates_when_info_counter_is_abbreviated():
+    text='INFO 2026-10-19 12:00:00 step:3K \rTraining | 3010/145799 [11:10<30:00, 2step/s]\rTraining | 3030/145799 [11:20<30:00, 2step/s]\rTraining | 3050/145799 [11:30<30:00, 2step/s]'
+    assert measured_rate(text)==2.
+
+
+def test_early_room_result_cannot_claim_final_qualification(tmp_path):
+    from simulator.training_activity import room_evidence
+    folder=tmp_path/'diagnostics/live-room-example';folder.mkdir(parents=True)
+    (tmp_path/'diagnostics/early-room-current.json').write_text(json.dumps(dict(folder=str(folder))))
+    (folder/'state.json').write_text(json.dumps(dict(state='complete',checkpoint_step=29000,mission_success=True,seed=1703000014)))
+    value=room_evidence(tmp_path)
+    assert value['success'] and not value['simulation_qualified'] and not value['robot_verified']
+
+
+def test_local_model_selection_remains_separate_from_full_mission(tmp_path):
+    from simulator.training_activity import local_selection_evidence
+    folder=tmp_path/'neural-recovery'/'aaaaaaaaaaaa'/'round-01';folder.mkdir(parents=True)
+    (folder/'selection.json').write_text(json.dumps(dict(selected='/candidates/00',results=[
+        dict(model_id='00',successes=5,episodes=10,model_weights_sha256='a'*64)])))
+    value=local_selection_evidence(tmp_path,'aaaaaaaaaaaa')
+    assert value['successes']==5 and value['scope']=='previous_local_checkpoint_selection'
+    assert not value['simulation_qualified']

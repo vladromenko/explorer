@@ -147,6 +147,7 @@ def worker(request):
                 seed=spec['seed'],skill_id=spec['task_id'],task=spec['title'],minimum_epochs=8,
                 warm_start=spec['model'],resume=resume,reuse_prepared=reuse_prepared,correction_replays=4,
                 maximum_steps=spec.get('maximum_steps',200000),
+                monitor_owner=Path(spec['stop']).parent,
                 corrective_training_seeds=spec.get('corrective_training_seeds',[]),progress=progress,cancelled=cancelled)
             if result['state'] not in ('trained_simulation_unvalidated','validated_simulation'):
                 raise RuntimeError(result.get('error','Training failed'))

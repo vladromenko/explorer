@@ -95,6 +95,8 @@ def learning_status(root,snapshot):
     from .neural_recovery import current as recovery_current
     recovery=recovery_current(root)
     if recovery and (recovery.get('alive') or recovery['cycle_id']==output['cycle_id']):
+        from .training_activity import local_selection_evidence
+        output['last_local_evaluation']=local_selection_evidence(root,recovery['id'])
         state=recovery['state']
         if state in ('running','queued') and not recovery['alive']:state='interrupted'
         details=recovery.get('details',{})
@@ -140,4 +142,9 @@ def learning_status(root,snapshot):
                 successes=room.get('qualification_successes',20) if room['state']=='ready_for_observed_transfer' else 0,
                 recovery_counts={'completed':room.get('completed',0),'total':room.get('total',0)},
                 worker_progress={'active_workers':room.get('views',[])})
+        output['local_skill_ready']=bool(recovery and recovery.get('simulation_ready'))
+        output['full_room_ready']=room['state']=='ready_for_observed_transfer'
+        output['simulation_ready']=output['full_room_ready']
+    from .training_activity import room_evidence
+    output['room_diagnostic']=room_evidence(root)
     return output

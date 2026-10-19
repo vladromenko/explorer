@@ -102,9 +102,26 @@ function renderLearning(info) {
   $('cycle-phase').textContent=(stages[info.phase] || info.phase)+' · итерация '+info.iteration+teacher+(info.message?' · '+info.message:'');
   $('cycle-attempts').textContent=info.demonstrations.attempts?.toLocaleString('ru-RU') ?? 'Считаются…';
   $('cycle-examples').textContent=info.demonstrations.successful?.toLocaleString('ru-RU') ?? 'Считаются…';
-  $('cycle-check').textContent=info.episodes?`${info.successes} / ${info.episodes}`:'Ещё не выполнена';
+  $('cycle-check').textContent=info.room_followup && !info.full_room_ready?'Полный сценарий ещё не проверен':info.episodes?`${info.successes} / ${info.episodes}`:'Ещё не выполнена';
   $('cycle-steps').textContent=info.training_budget?`${Number(info.steps_completed || 0).toLocaleString('ru-RU')} / ${info.training_budget.effective_steps.toLocaleString('ru-RU')}`:'—';
-  const eta=info.eta_s?` До завершения обучения ориентировочно ${Math.floor(info.eta_s/3600)} ч ${Math.ceil((info.eta_s%3600)/60)} мин; затем проверка.`:'';
+  const eta=info.eta_s?` До завершения обновлений текущих весов ориентировочно ${Math.floor(info.eta_s/3600)} ч ${Math.ceil((info.eta_s%3600)/60)} мин; затем проверка.`:'';
+  const evidence=info.training_evidence, diagnostic=info.room_diagnostic;
+  const details=[];
+  if(evidence){
+    if(evidence.host)details.push('Компьютер: '+evidence.host);
+    if(evidence.log_age_s!=null)details.push('Журнал обновлён '+Math.floor(evidence.log_age_s)+' с назад');
+    if(evidence.updates_per_second)details.push(evidence.updates_per_second.toFixed(2)+' обновления/с');
+    if(evidence.stable_checkpoint)details.push('Стабильное сохранение: '+evidence.stable_checkpoint.split('/').at(-1));
+  }
+  if(diagnostic){
+    const stateLabels={preparing:'подготовка сохранённых весов',starting_vision:'загрузка зрения',resource_wait:'ожидание памяти',paused:'приостановлена',failed:'ошибка диагностики'};
+    const label=diagnostic.state==='complete'?(diagnostic.success?'успешна на одной сцене':'не завершила уборку'):diagnostic.state==='running'?'выполняется':stateLabels[diagnostic.state] || diagnostic.state;
+    details.push('Ранняя полная проверка, шаг '+(diagnostic.checkpoint_step ?? '—')+': '+label+(diagnostic.state==='complete' && diagnostic.reason?' · '+diagnostic.reason:''));
+  }
+  if(info.last_local_evaluation)details.push('Предыдущая локальная проверка: '+info.last_local_evaluation.successes+' / '+info.last_local_evaluation.episodes+' · это не полный сценарий');
+  details.push('Полный сценарий: '+(info.simulation_ready?'проверен в симуляции':'квалификация не пройдена'));
+  details.push('Реальный робот: не проверен');
+  $('cycle-evidence').textContent=details.join(' · ');
   $('cycle-progress').value=info.phase==='train' && info.training_budget?100*(info.steps_completed || 0)/info.training_budget.effective_steps:info.progress || 0;
   const next=info.simulation_ready?'Модель прошла две отдельные проверки. Подключите Jetson для загрузки и физической проверки.':(info.external_recovery_id || info.external_room_id) && info.state==='running'?'Корректирующие показы → датасет с прежними успехами → дообучение ACT → выбор весов по физическим доставкам → две отдельные проверки → пакет Jetson. Этап: '+(info.recovery_counts?.completed || 0)+' / '+(info.recovery_counts?.total || 0):info.state==='running'?'После обучения цикл сравнит новую модель с прежней. Повтор допускается при подтверждённом улучшении или один раз после проверенного исправления показов.':info.state==='paused' || info.state==='interrupted'?'Нажмите «Продолжить сохранённое обучение». Записи и готовые этапы сохраняются.':'Готовность ещё не подтверждена. «Довести выбранный навык до готовности» запускает автоматическую доработку с сохранением результатов.';
   $('cycle-next').textContent=['needs_diagnosis','needs_room_algorithm_repair'].includes(info.state)?(info.message || 'Новая модель не улучшила результат. Автоматический повтор остановлен для диагностики.')+(info.comparison?` Опорная модель: ${info.comparison.reference_successes}/${info.comparison.episodes}; новая: ${info.comparison.candidate_successes}/${info.comparison.episodes} на тех же сценах.`:''):next+eta;

@@ -58,6 +58,8 @@ def _control(root,action):
     # earlier Pause stopped it. A waiting background owner never does this.
     from .neural_recovery import current as local_current
     local=local_current(root)
+    from .checkpoint_monitor import resume_auxiliary
+    resume_auxiliary(root)
     if local and local['state']=='paused' and not local['alive']:
         prior=Path(local.get('runtime_source') or '')
         if (not prior.resolve().is_relative_to(support.resolve())
@@ -65,8 +67,8 @@ def _control(root,action):
             raise ValueError('Нет сохранённой версии предыдущего ACT для продолжения')
         for pid in local.get('active_pids',[]):
             try:process=psutil.Process(pid)
-            except psutil.NoSuchProcess:continue
-            if any(str(root/'runs') in a for a in process.cmdline()):raise ValueError('ACT ещё сохраняет контрольную точку')
+            except psutil.NoSuchProcess:process=None
+            if process and any(str(root/'runs') in a for a in process.cmdline()):raise ValueError('ACT ещё сохраняет контрольную точку')
         local_folder=root/'neural-recovery'/local['id'];(local_folder/'pause.request').unlink(missing_ok=True)
         with (local_folder/'owner.log').open('ab') as log:
             child=subprocess.Popen([sys.executable,'-m','simulator.neural_recovery','--root',str(root),'--id',local['id']],

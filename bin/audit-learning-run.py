@@ -46,8 +46,8 @@ def partition(path):
 def log_metrics(path):
     with Path(path).open('rb') as stream:
         stream.seek(0,2);size=stream.tell();stream.seek(max(0,size-200000));tail=stream.read().decode(errors='replace')
-    pattern=r'step:(\d+).*?loss:([\d.e+-]+).*?grdn:([\d.e+-]+).*?updt_s:([\d.e+-]+).*?data_s:([\d.e+-]+)'
-    rows=[dict(step=int(m[0]),loss=float(m[1]),gradient_norm=float(m[2]),update_s=float(m[3]),data_s=float(m[4]))
+    pattern=r'step:(\S+).*?loss:([\d.e+-]+).*?grdn:([\d.e+-]+).*?updt_s:([\d.e+-]+).*?data_s:([\d.e+-]+)'
+    rows=[dict(step=int(m[0]) if m[0].isdigit() else None,step_label=m[0],loss=float(m[1]),gradient_norm=float(m[2]),update_s=float(m[3]),data_s=float(m[4]))
           for m in re.findall(pattern,tail)]
     return dict(size_bytes=size,modified_at=Path(path).stat().st_mtime,recent_windows=rows[-12:])
 

@@ -33,7 +33,7 @@ def main():
     if not local or not room:raise ValueError('Existing saved local and room cycles are required')
     validate_states(local,room)
     modules={'simulator.neural_recovery','simulator.train_entry','lerobot.scripts.lerobot_train',
-             'simulator.room_validation','simulator.live_room_diagnostic'}
+             'simulator.room_validation','simulator.live_room_diagnostic','simulator.checkpoint_monitor'}
     for process in psutil.process_iter(['cmdline']):
         command=process.info['cmdline'] or []
         if '-m' in command and command[command.index('-m')+1] in modules:

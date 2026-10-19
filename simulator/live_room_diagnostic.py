@@ -87,7 +87,9 @@ def memory():
 
 
 def can_start(value,after_pressure=False):
-    return value['free_percent']>=(30 if after_pressure else 25) and value['available_gb']>=5.5
+    # Measured private vision + actor/render warm-up needs more than 5.5 GiB
+    # alongside the learner. Admission must cover the transient peak too.
+    return value['free_percent']>=(32 if after_pressure else 30) and value['available_gb']>=7.5
 
 
 def private_vision_root(root,folder):
@@ -191,7 +193,12 @@ def run(root,folder,training,snapshot_copy=None,model_source=None,scene_seed=Non
                     if stopping or (folder/'pause.request').exists():raise InterruptedError('Early diagnostic paused')
                     budget.check()
                     if available['free_percent']<15:
-                        stop_owned(child);budget.pause();exhausted=True;save(state='resource_wait',memory=available,active_seconds=budget.elapsed(),
+                        write_json(folder/('pressure-'+str(time.time_ns())+'.json'),dict(memory=available,
+                            child_pid=child.pid,vision_root=str(vision),active_seconds=budget.elapsed()))
+                        stop_owned(child)
+                        from .semantic_cache import stop_servers
+                        if stop_servers(vision):raise RuntimeError('Private vision did not drain after diagnostic memory pressure')
+                        budget.pause();exhausted=True;save(state='resource_wait',child_pid=None,memory=available,active_seconds=budget.elapsed(),
                             reason='Only diagnostic processes stopped to preserve the active learner');break
                     time.sleep(.5)
                 budget.pause()

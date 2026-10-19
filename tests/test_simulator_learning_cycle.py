@@ -98,3 +98,12 @@ def test_progress_api_compacts_large_persisted_results_and_blocks_unqualified_do
         assert 'summaries' not in compact['night_batches'][0]['tasks'][0]['stages']['trials']
         assert connection.get('/api/state').json()['night_batches'][0]['tasks'][0]['stages']['trials']['summaries']
         assert connection.get('/api/cycles/'+plan['id']+'/package').status_code==404
+
+
+def test_local_acceptance_cannot_light_up_full_room_readiness(tmp_path,monkeypatch):
+    monkeypatch.setattr('simulator.neural_recovery.current',lambda _:dict(id='a'*12,cycle_id='b'*12,
+        state='ready_for_transfer',alive=True,phase='ready',model='/models/local',details={},simulation_ready=True))
+    monkeypatch.setattr('simulator.room_control.current',lambda _:dict(id='c'*12,state='waiting_for_local_learning',alive=True))
+    value=learning_status(tmp_path,dict(jobs=[],learning_cycles=[],night_batches=[]))
+    assert value['local_skill_ready']
+    assert not value['full_room_ready'] and not value['simulation_ready'] and not value['physical_ready']
