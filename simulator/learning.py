@@ -869,7 +869,9 @@ def train_job(job_folder, episode_folders, steps=3000, python_executable=None, d
         state['checkpoint_relative']=selection['checkpoint_relative']
         check_cancelled()
         create_bundle(folder, state)
-        update("validated_simulation" if state["validation"]["improves_hold_baseline"] else "trained_simulation_unvalidated", bundle="bundle.json", finished=time.time(), progress=100.)
+        update("trained_simulation_unvalidated", bundle="bundle.json", finished=time.time(), progress=100.,
+               weight_updates_complete=True,offline_prediction_checked=True,
+               simulation_qualified=False,robot_verified=False)
     except (Exception, KeyboardInterrupt) as exc:
         update("cancelled" if isinstance(exc, (InterruptedError, KeyboardInterrupt)) else "failed",
                error=str(exc) or "Simulator training interrupted", finished=time.time())

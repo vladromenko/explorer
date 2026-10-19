@@ -25,6 +25,19 @@ def paused(root,owner,folder):
     return any(p.exists() for p in [Path(folder)/'pause.request',Path(root)/'neural-recovery'/owner/'pause.request'])
 
 
+def pause_auxiliary(root):
+    """An operator pause covers diagnostic children, not just gradient jobs."""
+    root=Path(root).resolve();folders=[]
+    value=current_diagnostic(root)
+    if value:
+        folder=Path(value['marker']['folder']).resolve()
+        if not folder.is_relative_to(root/'diagnostics'):raise ValueError('Diagnostic marker escapes storage')
+        folders.append(folder)
+    folders.extend(path.parent for path in (root/'diagnostics').glob('checkpoint-monitor-*/state.json'))
+    for folder in folders:(folder/'pause.request').touch()
+    return [str(folder) for folder in folders]
+
+
 def current_diagnostic(root):
     marker=Path(root)/'diagnostics/early-room-current.json'
     if not marker.exists():return None
@@ -107,6 +120,9 @@ def run(root,training,owner,minimum_seconds=10800,interval=10000,max_trials=12):
                         if local.get('phase')!='train' or local.get('state')!='running':
                             stop_owned(child)
                         time.sleep(2)
+                    if stopping:
+                        save(state='paused',reason='Observer stopped; diagnostic evidence retained, learner untouched')
+                        return
                     result_path=trial/'state.json'
                     result=json.loads(result_path.read_text()) if result_path.exists() else dict(state='no_result')
                     state['results'].append(dict(step=result.get('checkpoint_step',step),path=str(trial),

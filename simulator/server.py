@@ -1233,6 +1233,8 @@ def create_app(env_factory=None, data_root=DATA_ROOT, learning_module=None, star
     @app.post('/api/cancel')
     def cancel(request: Request):
         runtime=request.app.state.runtime
+        from .checkpoint_monitor import pause_auxiliary
+        pause_auxiliary(runtime.data_root)
         with runtime.lock:
             from .room_control import current as room_current,control as room_control
             room=room_current(runtime.data_root)

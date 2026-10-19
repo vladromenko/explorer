@@ -129,3 +129,23 @@ def test_only_frozen_unchanged_source_can_supply_acceptance_evidence(tmp_path,mo
     assert validation.frozen_source()=='a'*40
     module.write_text('changed implementation')
     with pytest.raises(ValueError,match='source changed'):validation.frozen_source()
+
+
+def test_hundred_scene_protocol_preserves_all_physical_gates(room_fixture):
+    import copy
+    from simulator.room_transfer import qualification
+    model,handoff,paths=room_fixture
+    bundle=json.loads((model/'bundle.json').read_text());profile=json.loads(handoff.read_text())
+    groups=[json.loads(path.read_text()) for path in paths]
+    for index,group in enumerate(groups):
+        originals=group['results'];expanded=[]
+        for repeat in range(5):
+            for original in originals:
+                row=copy.deepcopy(original);row['seed']+=repeat*1000+index*10000
+                row['physical_outcome']['checked_after_actions_stopped']=True
+                expanded.append(row)
+        group.update(results=expanded,episodes=50,successes=50)
+    seeds,_=qualification(groups,profile,bundle)
+    assert len(seeds)==100
+    groups[1]['results'][-1]['collision_free']=False
+    with pytest.raises(ValueError,match='physical and observed success'):qualification(groups,profile,bundle)

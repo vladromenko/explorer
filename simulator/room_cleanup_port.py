@@ -139,7 +139,8 @@ class RoomCleanupPort:
         return out
 
     def _stop_base(self):
-        for _ in range(12):self.geometry.tick(self.env.command[:6],ctx=self._ctx())
+        arm=self.env.command[:6].copy()
+        for _ in range(12):self.geometry.tick(arm,ctx=self._ctx())
 
     def lidar_clearance(self,known_box=None):
         # Only a target whose full occupied volume has already passed the CAD
@@ -363,6 +364,9 @@ class RoomCleanupPort:
             self.geometry.release_xyz=self.geometry.release_jaw.copy()
             self.geometry.release_commanded=False
         self.actor.begin(phase,target,self.env.command);base=np.asarray(self.pose())
+        first_execution_step=self.env.steps
+        from .policy_trace import PolicyTrace
+        trace=PolicyTrace(self.folder,phase,self.actor.sha)
         residual=np.zeros(6)
         for step in range(1600):
             check()
@@ -371,12 +375,16 @@ class RoomCleanupPort:
             if rgb.shape!=(240,320,3):
                 import cv2
                 rgb=cv2.resize(rgb,(320,240),interpolation=cv2.INTER_AREA)
-            try:command=self.actor.command(self.env.command,rgb,residual)
+            execution_step=int(self.env.steps-first_execution_step)
+            trace.observation(step,self.env.command,rgb,float(self.env.data.time),execution_step)
+            try:command=self.actor.command(self.env.command,rgb,residual,execution_step=execution_step)
             except ValueError:
                 from .learning import write_json
                 self.command_refusal=dict(phase=phase,step=step,model_sha256=self.actor.sha,decision=self.actor.command_evidence)
                 write_json(self.folder/'policy-command-refusal.json',self.command_refusal)
+                trace.result(step,'refused',decision=self.actor.command_evidence)
                 raise
+            trace.result(step,'proposed',issued_command=command.tolist(),decision=self.actor.command_evidence)
             if self.actor.command_evidence.get('replanned'):
                 from .learning import write_json
                 if not hasattr(self,'policy_replans'):self.policy_replans=[]
@@ -394,9 +402,15 @@ class RoomCleanupPort:
                 try:self.env.step(command)
                 finally:self.env.transport.action_kind='view'
             else:self.env.step(command,applied=True)
+            trace.result(step,'applied',issued_command=command.tolist(),applied_command=self.env.command.tolist(),
+                simulation_time=float(self.env.data.time),decision=self.actor.command_evidence)
             if step%10==0:
                 self.progress(dict(phase='policy_'+phase,steps=step,command=command.tolist()))
-                self._stop_base()
+                # Every ACT command already carries zero base velocity. Running
+                # twelve manual-profile ticks here changed the trajectory and
+                # advanced physics .6 s without advancing the ACT clock.
+                if np.max(abs(self.env.command[6:]))>1e-9:
+                    raise ValueError('Nonzero base command during arm-only ACT')
                 if phase=='place' and not self.geometry.release_commanded:
                     if self.geometry.verify_hold(ctx,probe=False).get('outcome')!='success':
                         raise ValueError('Observed hold lost before neural release')
@@ -432,7 +446,8 @@ class RoomCleanupPort:
         from .placement_evidence import verify_released_target
         if self.geometry.before_hold is None or not self.geometry.release_commanded:return dict(outcome='unknown')
         first=self.geometry.scene(ctx)
-        for _ in range(10):self.geometry.tick(self.env.command[:6],ctx=ctx)
+        arm=self.env.command[:6].copy()
+        for _ in range(10):self.geometry.tick(arm,ctx=ctx)
         return verify_released_target(first,self.geometry.scene(ctx),destination=self.geometry.destination,
             held_reference=self.geometry.before_hold,release_xyz=self.geometry.release_xyz,jaw_xyz=self.env.jaw_center(),
             before_release=self.geometry.before_release,release_jaw_xyz=self.geometry.release_jaw)

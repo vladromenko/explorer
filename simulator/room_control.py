@@ -39,6 +39,8 @@ def _control(root,action):
     if value is None:raise ValueError('Нет сохранённого полного сценария')
     folder=root/'room-learning'/value['id']
     if action=='pause':
+        from .checkpoint_monitor import pause_auxiliary
+        pause_auxiliary(root)
         (folder/'pause.request').touch();return dict(id=value['id'],pause_requested=True)
     if action!='resume':raise ValueError('Unknown room control')
     if value['alive']:return value

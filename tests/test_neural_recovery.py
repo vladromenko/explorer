@@ -91,7 +91,8 @@ def test_completed_stage_rejects_changed_model_or_scene_on_resume(tmp_path):
     with pytest.raises(ValueError,match='contract changed'):runner.jobs([dict(spec,seeds=[2])])
 
 
-def test_pause_and_status_use_external_owner_and_block_duplicate_jobs(tmp_path):
+def test_pause_and_status_use_external_owner_and_block_duplicate_jobs(tmp_path,monkeypatch):
+    monkeypatch.setattr("simulator.neural_recovery.owner_alive",lambda pid,identifier:True)
     from test_simulator_server import client,auth
     identifier='a'*12;folder=tmp_path/'neural-recovery'/identifier
     write_json(tmp_path/'neural-recovery/current.json',{'id':identifier})
@@ -189,3 +190,8 @@ def test_recovery_orchestration_reaches_only_verified_inactive_package(tmp_path,
         assert not (root/'exports').exists()
         assert len(list((root/'runs').glob('*/checkpoint-selection.json')))==3
     assert json.loads((source/'job.json').read_text())==state
+
+
+def test_reused_live_pid_is_not_a_learner_owner():
+    from simulator.neural_recovery import owner_alive
+    assert not owner_alive(os.getpid(),'a'*12)

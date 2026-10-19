@@ -87,10 +87,26 @@ def reserved_scene_seeds(root):
     for pattern in ('learning-cycles/*.json','night-batches/*.json','checkpoint-experiments/*/state.json',
                     'feedback-audits/*/result.json','diagnostics/*/comparison.json',
                     'diagnostics/live-room-*/request.json','diagnostics/live-room-*/trial*/result.json',
+                    'diagnostics/checkpoint-monitor-*/live-room-*/request.json',
+                    'room-learning/**/result.json',
                     'neural-recovery/*/round-*/selection/*/result.json',
                     'neural-recovery/*/round-*/qualification-*/*/result.json'):
         for path in root.glob(pattern):found.update(persisted_seeds(json.loads(path.read_text())))
+    for path in root.glob('room-learning/*/round-*/acceptance*-seeds.json'):
+        seeds=json.loads(path.read_text())
+        if not isinstance(seeds,list) or any(type(seed) is not int for seed in seeds):
+            raise ValueError('Invalid reserved final scene ledger: '+str(path))
+        found.update(seeds)
     return found
+
+
+def owner_alive(pid,identifier):
+    import psutil
+    try:
+        args=psutil.Process(pid).cmdline()
+        return ('-m' in args and args[args.index('-m')+1]=='simulator.neural_recovery'
+            and '--id' in args and args[args.index('--id')+1]==identifier)
+    except (psutil.Error,IndexError,TypeError):return False
 
 
 def current(root):
@@ -99,9 +115,7 @@ def current(root):
         identifier=marker['id']
         if len(identifier)!=12 or any(c not in '0123456789abcdef' for c in identifier):return None
         state=json.loads((Path(root)/'neural-recovery'/identifier/'state.json').read_text())
-        try:os.kill(state['pid'],0);alive=True
-        except (OSError,KeyError):alive=False
-        state['alive']=alive
+        state['alive']=owner_alive(state.get('pid'),identifier)
         return state
     except (OSError,ValueError,KeyError):return None
 

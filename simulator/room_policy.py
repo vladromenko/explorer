@@ -19,7 +19,7 @@ RUNTIME_FILES=('src/room_cleanup.py','src/room_cleanup_rpc.py','src/room_cleanup
     'src/observed_skill_execution.py','src/mobile_policy_contract.py','src/simulation_task_contract.py','src/delivery_robot.py',
     'src/delivery_vision.py','src/factory_delivery.py','src/arm_commissioning.py','src/learning_environment.py',
     'src/task_executor.py','src/missions.py','src/map_tools.py','bin/room-cleanup-worker.py',
-    'simulator/room_policy.py','simulator/room_cleanup_port.py','simulator/observed_robot.py',
+    'simulator/room_policy.py','simulator/policy_trace.py','simulator/room_cleanup_port.py','simulator/observed_robot.py',
     'simulator/grounded_skill_port.py','simulator/skill_port.py','simulator/inspection_planning.py',
     'simulator/skill_parameters.py','simulator/failure_repair.py','simulator/observed_free_space.py','simulator/resource_budget.py',
     'simulator/scan_navigation.py','simulator/observed_navigation.py','simulator/semantic_vision.py',
@@ -32,6 +32,7 @@ RUNTIME_FILES=('src/room_cleanup.py','src/room_cleanup_rpc.py','src/room_cleanup
     'simulator/room_archive.py','simulator/room_learning.py','simulator/room_control.py','simulator/executor_recovery.py','simulator/neural_recovery.py','simulator/episode_lineage.py',
     'simulator/server.py','simulator/training_activity.py','simulator/learning_status.py','simulator/static/app.js','simulator/worker_views.py',
     'simulator/checkpoint_experiment.py','simulator/parallel_trials.py',
+    'simulator/checkpoint_monitor.py','simulator/live_room_diagnostic.py',
     'src/frontiers.py','config/arm_model.json','config/arm-motion.json',
     'config/explorer.urdf','config/explorer.srdf','config/grounding-model.json')
 
@@ -156,6 +157,8 @@ class RoomActor:
         from .learning import load_policy
         validate_profile(profile)
         bundle,_=read_bundle(model)
+        if bundle.get('dataset_fps')!=20 or abs((bundle.get('actor_context') or {}).get('period_s',.05)-.05)>1e-9:
+            raise ValueError('Room executor requires the recorded 20 Hz actor timebase')
         if profile['model_checkpoint_sha256']!=bundle.get('validation_checkpoint_sha256',bundle['checkpoint_sha256']):
             raise ValueError('Handoff belongs to a different neural checkpoint')
         self.actor=load_policy(model,device=device);self.profile=profile
@@ -164,14 +167,23 @@ class RoomActor:
     def begin(self,phase,target,command):
         self.actor.reset()
         self.actor.elapsed_s=self.profile['pick_elapsed_s'] if phase=='pick' else place_clock(self.profile,target,command)
+        self.start_clock=self.actor.elapsed_s;self.expected_execution_step=0
         self.replans=0;self.command_evidence=None
 
-    def command(self,state,rgb,residual):
+    def command(self,state,rgb,residual,*,execution_step=None):
         """Never issue a refused command or weaken the original 20/2 deg gates."""
-        from .environment import LOW,HIGH
+        from .environment import LOW,HIGH,PERIOD
         import hashlib
+        synchronized=False
+        if execution_step is not None:
+            if type(execution_step) is not int or execution_step<self.expected_execution_step:
+                raise ValueError('Policy execution clock moved backwards')
+            if execution_step!=self.expected_execution_step:
+                self.actor.reset();self.actor.elapsed_s=self.start_clock+execution_step*PERIOD;synchronized=True
+            self.expected_execution_step=execution_step+1
         self.command_evidence=dict(reference=np.asarray(state).tolist(),
-            image_sha256=hashlib.sha256(np.asarray(rgb).tobytes()).hexdigest(),replanned=False)
+            image_sha256=hashlib.sha256(np.asarray(rgb).tobytes()).hexdigest(),replanned=False,
+            execution_step=execution_step,resynchronized_after_passive_steps=synchronized)
         try:prediction=np.asarray(self.actor(state,rgb),float)
         except Exception as error:
             self.command_evidence['inference_refusal']=str(error);raise

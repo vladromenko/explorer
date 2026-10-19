@@ -116,7 +116,7 @@ def demonstrate(spec):
     import torch
     from .environment import ExplorerEnv
     from .room_cleanup_port import RoomCleanupPort
-    from .room_validation import room_scene,CollisionAudit
+    from .room_validation import room_scene,CollisionAudit,independent_outcome
     from src.room_cleanup import RoomCleanup
     torch.set_num_threads(1)
     folder=Path(spec['output']);folder.mkdir(parents=True,exist_ok=True)
@@ -182,7 +182,7 @@ def demonstrate(spec):
                 self.event('expert_'+phase,dict(training_only=True))
         result=TrainingMission(port,lambda v:write_json(folder/'mission-progress.json',v),cancelled=cancelled,
             limits=mission_limits(profile)).run()
-        truth=env.state()['task']  # evaluator only, after the complete mission stopped
+        truth=independent_outcome(env)  # evaluator only, after the complete mission stopped
         success=result['state']=='succeeded' and truth['success'] is True and not audit.contacts
         episodes=recorder.finish(success,truth)
         result.update(success=success,physical_outcome=truth,seed=spec['seed'],
@@ -228,7 +228,7 @@ class RoomLearning(Recovery):
         from .executor_recovery import program
         saved=self.folder/'executor-program.json'
         self.executor_program=program(json.loads(saved.read_text())['operators']) if saved.exists() else []
-        for p in self.folder.glob('round-*/acceptance-seeds.json'):
+        for p in self.folder.glob('round-*/acceptance*-seeds.json'):
             self.excluded.update(json.loads(p.read_text()))
 
     def evaluate_room(self,model,profile,seeds,stage):
@@ -371,16 +371,25 @@ class RoomLearning(Recovery):
                 if report['successes']!=10:
                     # Next round diagnoses this winner on NEW independent scenes.
                     model=candidate;continue
-            self.save(phase='room_validation',model=str(candidate),message='Две отдельные группы по десять независимых полных уборок')
-            acceptance=stage/'acceptance-seeds.json'
+            self.save(phase='room_validation',model=str(candidate),qualification_required=100,
+                message='Итоговая проверка: две отдельные группы по 50 независимых полных уборок')
+            protocol=stage/'acceptance100-protocol.json'
+            expected=dict(schema='explorer_room_acceptance100_v1',groups=2,episodes_per_group=50,
+                required_successes=100,allowed_collisions=0,task_timeout_s=1200,
+                tuning_on_final_scenes=False,teacher_fallback=False,physical_ready=False)
+            if protocol.exists() and json.loads(protocol.read_text())!=expected:
+                raise ValueError('Final evaluation protocol changed; retain prior experiment')
+            if not protocol.exists():write_json(protocol,expected)
+            acceptance=stage/'acceptance100-seeds.json'
             if not acceptance.exists():write_json(acceptance,fresh_seeds(self.used_seeds()|training_seeds(candidate),
-                1601008000+iteration*100000,20))
+                1601008000+iteration*100000,100))
             seeds=json.loads(acceptance.read_text());groups=[]
+            if len(seeds)!=100 or len(set(seeds))!=100:raise ValueError('Final evaluation needs 100 distinct scenes')
             for index in (0,1):
-                report_path=stage/f'qualification-{index+1}.json'
-                report=self.evaluate_room(candidate,candidate_profile,seeds[index*10:(index+1)*10],stage/f'qualification-{index+1}')
+                report_path=stage/f'qualification100-{index+1}.json'
+                report=self.evaluate_room(candidate,candidate_profile,seeds[index*50:(index+1)*50],stage/f'qualification100-{index+1}')
                 write_json(report_path,report);groups.append(report_path)
-            if all(json.loads(p.read_text())['successes']==10 for p in groups):
+            if all(json.loads(p.read_text())['successes']==50 for p in groups):
                 return dict(model=candidate,profile=candidate_profile,groups=groups,
                     excluded=self.used_seeds()-set(seeds))
             # These failed acceptance scenes stay excluded from future training.

@@ -19,12 +19,16 @@ def qualification(groups,profile,bundle):
     if not isinstance(groups,list) or len(groups)!=2:raise ValueError('Two independent room groups required')
     expected=bundle.get('validation_checkpoint_sha256',bundle['checkpoint_sha256'])
     if profile.get('model_checkpoint_sha256')!=expected:raise ValueError('Phase handoff is bound to different weights/processors')
-    seen=set();contracts=set()
+    seen=set();contracts=set();counts=set()
     for group in groups:
         rows=group.get('results',[])
-        if len(rows)!=10 or group.get('episodes')!=10 or group.get('successes')!=10:raise ValueError('Ten successful full-room scenes per group required')
+        if len(rows)<10 or group.get('episodes')!=len(rows) or group.get('successes')!=len(rows):
+            raise ValueError('At least ten successful full-room scenes per group required')
+        counts.add(len(rows))
         user_basket=False;heights=set()
         for row in rows:
+            if len(rows)>=50 and row.get('physical_outcome',{}).get('checked_after_actions_stopped') is not True:
+                raise ValueError('Fresh final placement outcome required for the 100-scene protocol')
             seed=row.get('seed')
             if type(seed) is not int or seed in seen:raise ValueError('Room acceptance scenes overlap')
             seen.add(seed)
@@ -51,6 +55,7 @@ def qualification(groups,profile,bundle):
                 and all(abs(x-.125)<1e-6 for x in bin_spec['inner_half_size_m']))
         if not user_basket:raise ValueError('Each room group must include the 25 cm by 30 cm user basket')
         if heights!={.08,.12,.16,.20,.30}:raise ValueError('Room validation lacks a required basket height')
+    if len(counts)!=1:raise ValueError('Room final groups must have equal sizes')
     if len(contracts)!=1 or not next(iter(contracts)):raise ValueError('Room execution contract differs between trials')
     return seen,next(iter(contracts))
 
@@ -131,6 +136,7 @@ def export_room_package(model,profile_path,group_paths,destination,*,excluded_se
         files={str(p.relative_to(package)):sha256(p) for p in package.rglob('*') if p.is_file()}
         write_json(package/'room-transfer.json',dict(format='explorer_room_cleanup_v1',created=time.time(),
             simulation_qualified=True,physical_ready=False,automatic_execution_allowed=False,
+            qualification_episodes=len(seeds),qualification_successes=len(seeds),
             mission_contract_sha256=contract,runtime_files=runtime,files=files,excluded_seeds=sorted(excluded)))
         validate_room_folder(package,check_runtime=True)
         archive=stage/'room.tar.gz'

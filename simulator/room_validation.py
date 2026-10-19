@@ -63,6 +63,18 @@ class CollisionAudit:
                 if len(self.contacts)<100:self.contacts.append(dict(time=float(self.env.data.time),geoms=[a,b],distance=float(contact.dist)))
 
 
+def independent_outcome(env):
+    """Called only after mission actions stop; an ever-success flag is insufficient."""
+    truth=dict(env.state()['task']);diagnostics=dict(getattr(env,'placement_diagnostics',{}))
+    current=(truth.get('success') is True and getattr(env,'placement_hold_s',0.)>=1.
+        and diagnostics.get('inside_fraction',0.)>=.9 and diagnostics.get('within_height') is True
+        and diagnostics.get('sock_speed_max_m_s',float('inf'))<.12 and not any(env.contacts))
+    truth.update(ever_success=truth.get('success'),success=bool(current),placed=bool(current),
+        final_placement=diagnostics,final_placement_hold_s=getattr(env,'placement_hold_s',0.),
+        checked_after_actions_stopped=True)
+    return truth
+
+
 def trial(spec):
     from .environment import ExplorerEnv
     from .room_cleanup_port import RoomCleanupPort
@@ -97,7 +109,7 @@ def trial(spec):
         port=RoomCleanupPort(env,output/'observed',spec['model'],profile,spec['root'],cancelled=cancelled,progress=motion)
         result=RoomCleanup(port,record,cancelled=cancelled,limits=mission_limits(profile)).run()
         # Only AFTER action termination is truth used to score the run.
-        truth=env.state()['task']
+        truth=independent_outcome(env)
         if frozen_source()!=revision:raise ValueError('Qualification source changed during room execution')
         result.update(seed=spec['seed'],physical_outcome=truth,domain_variation=scene,
             success=result['state']=='succeeded' and truth['success'] is True and not audit.contacts,
@@ -107,6 +119,12 @@ def trial(spec):
             actor_truth_inputs=False,teacher_fallback=False,simulation_only=True,physical_ready=False,
             mission_contract_sha256=port.contract,model_sha256=port.actor.sha)
         if hasattr(port,'command_refusal'):result['policy_command_refusal']=port.command_refusal
+        from .policy_trace import encode_trace
+        result['policy_videos']=[]
+        for trace_folder in sorted(p for p in (output/'observed').glob('policy-*') if p.is_dir()):
+            try:result['policy_videos'].append(encode_trace(trace_folder))
+            except (OSError,RuntimeError,ValueError,subprocess.SubprocessError) as error:
+                result['policy_videos'].append(dict(trace=str(trace_folder),encoding_error=str(error),raw_frames_retained=True))
         write_json(output/'result.json',result);return result
     finally:
         if port is not None:port.close()
@@ -210,7 +228,9 @@ def wait_and_run(root,identifier):
                 save(phase='archive',archive=archive)
                 evidence=archive_cycle(folder,archive,root/'exports'/('room-cycle-'+identifier+'.tar.gz'),
                     cancelled=lambda:(folder/'pause.request').exists())
-                save(state='ready_for_observed_transfer',phase='ready',archive=archive,evidence_archive=evidence,physical_ready=False)
+                count=sum(json.loads(Path(group).read_text())['episodes'] for group in qualified['groups'])
+                save(state='ready_for_observed_transfer',phase='ready',archive=archive,evidence_archive=evidence,
+                    qualification_episodes=count,qualification_successes=count,physical_ready=False)
             except Exception as error:
                 if not root.parent.is_mount():return
                 save(state='operator_paused' if (folder/'pause.request').exists() else 'failed',reason=str(error))

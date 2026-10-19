@@ -118,3 +118,25 @@ def test_repaired_retry_cannot_relaunch_same_code_pause_or_accepted_scene():
     for bad in (dict(state,state='running'),dict(state,state='paused'),dict(state,state='complete',mission_success=True)):
         with pytest.raises(ValueError):module.validate_repair_retry(old,bad,'checked-new-revision','aaaaaaaaaaaa')
     with pytest.raises(ValueError):module.validate_repair_retry(old,state,'previous','aaaaaaaaaaaa')
+
+
+def test_planned_final_scene_ledgers_are_reserved_before_first_trial(tmp_path):
+    from simulator.neural_recovery import reserved_scene_seeds
+    path=tmp_path/'room-learning'/'aaaaaaaaaaaa'/'round-00'/'acceptance100-seeds.json'
+    write_json(path,[1700000000,1700000001])
+    assert {1700000000,1700000001}<=reserved_scene_seeds(tmp_path)
+
+
+def test_repair_baseline_cannot_bypass_operator_pause(tmp_path):
+    import importlib.util
+    from pathlib import Path
+    path=Path(__file__).resolve().parents[1]/'bin/diagnose-live-room.py'
+    spec=importlib.util.spec_from_file_location('baseline_pause_test',path)
+    module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+    previous=dict(folder=str(tmp_path/'diagnostics'/'previous'))
+    module.require_unpaused_repair(tmp_path,previous,dict(id='a'*12,state='running'),None)
+    with pytest.raises(ValueError,match='operator pause'):
+        module.require_unpaused_repair(tmp_path,previous,dict(id='a'*12,state='paused'),None)
+    folder=Path(previous['folder']);folder.mkdir(parents=True);(folder/'pause.request').touch()
+    with pytest.raises(ValueError,match='operator pause'):
+        module.require_unpaused_repair(tmp_path,previous,None,None)

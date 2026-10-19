@@ -93,12 +93,14 @@ def test_room_loop_requires_both_fresh_groups_before_export(tmp_path,monkeypatch
     evaluated=[]
     def evaluate(model,profile,seeds,path):
         evaluated.append(seeds)
-        return dict(successes=10,episodes=10,results=[dict(seed=s,success=True) for s in seeds])
+        return dict(successes=len(seeds),episodes=len(seeds),results=[dict(seed=s,success=True) for s in seeds])
     monkeypatch.setattr(runner,'evaluate_room',evaluate)
     result=runner.run_learning(tmp_path/'model')
     assert len(evaluated)==3 and len(result['groups'])==2
-    assert all(len(s)==10 for s in evaluated)
-    assert len(set().union(*map(set,evaluated)))==30
+    assert [len(s) for s in evaluated]==[10,50,50]
+    assert len(set().union(*map(set,evaluated)))==110
+    protocol=json.loads((folder/'round-00/acceptance100-protocol.json').read_text())
+    assert protocol['required_successes']==100 and protocol['allowed_collisions']==0
     assert not {1,2,1601008001}&set().union(*map(set,evaluated))
 
 
@@ -122,7 +124,7 @@ def test_failed_room_manipulation_drives_data_collection_real_train_request_and_
     def evaluate(model,profile,seeds,path):
         evaluations.append(list(seeds))
         if len(evaluations)==1:return dict(episodes=10,successes=0,results=[failed(s,'policy_pick_running') for s in seeds])
-        return dict(episodes=10,successes=10,results=[dict(seed=s,success=True) for s in seeds])
+        return dict(episodes=len(seeds),successes=len(seeds),results=[dict(seed=s,success=True) for s in seeds])
     monkeypatch.setattr(runner,'jobs',jobs);monkeypatch.setattr(runner,'evaluate_room',evaluate)
     result=runner.run_learning(tmp_path/'model')
     assert result is not None and len(requests)==25
@@ -198,3 +200,16 @@ def test_expanded_room_dataset_does_not_silently_reduce_eight_full_passes():
     assert budget['effective_steps']==275000 and budget['expected_dataset_passes']==8
     assert not budget['step_cap_reached']
     training_config(Path('/unused'),275000,'cpu',32,1,maximum_steps=1000000)
+
+
+def test_final_truth_rejects_transient_ever_success_after_object_has_left():
+    from types import SimpleNamespace
+    from simulator.room_validation import independent_outcome
+    env=SimpleNamespace(state=lambda:dict(task=dict(success=True,placed=True)),placement_hold_s=0.,
+        placement_diagnostics=dict(inside_fraction=.5,within_height=True,sock_speed_max_m_s=.01),contacts=[False,False])
+    result=independent_outcome(env)
+    assert result['ever_success'] and not result['success'] and not result['placed']
+    env.placement_hold_s=1.1;env.placement_diagnostics['inside_fraction']=1.
+    assert independent_outcome(env)['success']
+    env.contacts=[True,False]
+    assert not independent_outcome(env)['success']

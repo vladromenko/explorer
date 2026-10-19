@@ -29,3 +29,16 @@ def test_failure_before_actor_or_interface_guard_is_not_a_reason_to_wait_for_mor
     assert failure_scope(dict(success=False,events=[dict(stage='policy_pick_running')],reason='Недопустимый шаг сустава 3'))=='policy_interface_or_guard'
     assert failure_scope(dict(success=False,events=[dict(stage='policy_pick_running')],reason='not held'))=='policy_outcome'
     assert failure_scope(dict(success=True)) is None
+
+
+def test_operator_pause_covers_early_evaluation_and_its_monitor(tmp_path):
+    import json
+    from simulator.checkpoint_monitor import pause_auxiliary
+    diagnostics=tmp_path/'diagnostics';diagnostics.mkdir()
+    trial=diagnostics/'live-room-example';trial.mkdir()
+    monitor=diagnostics/'checkpoint-monitor-example';monitor.mkdir()
+    (monitor/'state.json').write_text('{}')
+    (trial/'state.json').write_text('{}')
+    (diagnostics/'early-room-current.json').write_text(json.dumps(dict(folder=str(trial),pid=0)))
+    assert set(pause_auxiliary(tmp_path))=={str(trial),str(monitor)}
+    assert (trial/'pause.request').exists() and (monitor/'pause.request').exists()

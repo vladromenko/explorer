@@ -136,8 +136,8 @@ def learning_status(root,snapshot):
                 steps_completed=details.get('steps_completed'),training_budget=details.get('training_budget'),
                 eta_s=details.get('eta_s'),simulation_ready=room['state']=='ready_for_observed_transfer',
                 archive=room.get('archive'),physical_ready=False,
-                episodes=20 if room['state']=='ready_for_observed_transfer' else 0,
-                successes=20 if room['state']=='ready_for_observed_transfer' else 0,
+                episodes=room.get('qualification_episodes',20) if room['state']=='ready_for_observed_transfer' else 0,
+                successes=room.get('qualification_successes',20) if room['state']=='ready_for_observed_transfer' else 0,
                 recovery_counts={'completed':room.get('completed',0),'total':room.get('total',0)},
                 worker_progress={'active_workers':room.get('views',[])})
     return output
