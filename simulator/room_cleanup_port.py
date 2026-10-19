@@ -242,8 +242,13 @@ class RoomCleanupPort:
                 # into the occupied-volume checks for a subsequent drive.
                 if target.get('usable_for')=='camera_aim_only':self.geometry.destination=previous
             return
+        # A fixed 34 cm optical range is feasible at the global approach but
+        # impossible after entering the 20 cm manipulation workspace. Solve
+        # bounded alternative ranges before any arm motion, preserving the
+        # height/aim gates and sweeping the complete observed occupied box.
+        options={} if held else dict(distance_candidates_m=(.34,.24,.20),observed_box=target,height_reserve_m=.02)
         try:self.geometry.look_at(target['center'],self._ctx(check),distance_m=.34,
-                min_camera_height_m=.18,transport_required=held)
+                min_camera_height_m=.18,transport_required=held,**options)
         except ObservedMotionViolation:raise
         except CameraViewUnavailable as error:raise ViewUnavailable(str(error)) from error
 

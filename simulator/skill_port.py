@@ -89,9 +89,10 @@ class SimulatorSkillPort:
             if motion_check is not None:motion_check()
         return goal
 
-    def look_at(self,point,ctx,*,gripper=None,distance_m=.24,min_camera_height_m=.12,transport_required=True,height_reserve_m=0.):
+    def look_at(self,point,ctx,*,gripper=None,distance_m=.24,min_camera_height_m=.12,transport_required=True,height_reserve_m=0.,
+                distance_candidates_m=None,observed_box=None):
         """Aim the calibrated wrist camera at an already observed location."""
-        from .inspection_planning import plan_camera_view,CameraViewUnavailable,ObservedMotionViolation,CameraViewTrackingFailure
+        from .inspection_planning import plan_camera_view,check_observed_box_path,CameraViewUnavailable,ObservedMotionViolation,CameraViewTrackingFailure
         from .manipulation_planning import hand_rotation
         if self.before_hold is not None and not hasattr(self,'hold_rotation'):
             raise CameraViewUnavailable('Нет исходной ориентации подтверждённого захвата')
@@ -100,11 +101,23 @@ class SimulatorSkillPort:
         minimum_jaw=(float(self.destination['bounds_max'][2])+.10
             if held_reference is not None and self.destination is not None and transport_required else None)
         if not np.isfinite(height_reserve_m) or not 0<=height_reserve_m<=.06:raise ValueError('Invalid camera tracking reserve')
-        plan=plan_camera_view(self.env,point,
-            gripper=float(self.env.command[5] if gripper is None else gripper),distance_m=distance_m,
-            min_camera_height_m=min_camera_height_m+height_reserve_m,check=lambda:self.check(ctx),
-            maximum_hand_tilt_deg=2. if held_reference is not None else None,
-            reference_hand_gravity=held_reference,minimum_jaw_height_m=minimum_jaw)
+        distances=(distance_m,) if distance_candidates_m is None else tuple(distance_candidates_m)
+        if not 1<=len(distances)<=4 or not all(np.isfinite(d) and .08<=d<=1. for d in distances):
+            raise ValueError('Invalid finite camera distance proposals')
+        errors=[];plan=None
+        for distance in distances:
+            try:
+                candidate=plan_camera_view(self.env,point,
+                    gripper=float(self.env.command[5] if gripper is None else gripper),distance_m=distance,
+                    min_camera_height_m=min_camera_height_m+height_reserve_m,check=lambda:self.check(ctx),
+                    maximum_hand_tilt_deg=2. if held_reference is not None else None,
+                    reference_hand_gravity=held_reference,minimum_jaw_height_m=minimum_jaw)
+                if observed_box is not None:
+                    check_observed_box_path(self.env,candidate.command,observed_box,check=lambda:self.check(ctx))
+                plan=candidate;break
+            except ObservedMotionViolation:raise
+            except CameraViewUnavailable as error:errors.append(str(error))
+        if plan is None:raise CameraViewUnavailable('; '.join(errors))
         def check_tilt():
             gravity=hand_rotation(self.env).T@np.array([0.,0.,1.])
             tilt=float(np.arccos(np.clip(held_reference@gravity,-1.,1.)))

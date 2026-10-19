@@ -155,3 +155,19 @@ def test_recorded_sock_approach_does_not_collide_with_empty_chassis_aabb_corner(
             check_observed_box_path(env,command,raised,base_target=goal)
         np.testing.assert_array_equal(env.data.qpos,before)
     finally:env.close()
+
+
+def test_camera_distance_proposals_never_retry_a_motion_guard(tmp_path,monkeypatch):
+    from simulator.skill_port import SimulatorSkillPort
+    from simulator.inspection_planning import ObservedMotionViolation
+    env=ExplorerEnv(render=False);port=SimulatorSkillPort(env,tmp_path/'guard-view');calls=[]
+    before=env.data.qpos.copy()
+    def refuse(*args,**kwargs):
+        calls.append(kwargs['distance_m']);raise ObservedMotionViolation('executed guard')
+    monkeypatch.setattr('simulator.inspection_planning.plan_camera_view',refuse)
+    try:
+        with pytest.raises(ObservedMotionViolation,match='executed guard'):
+            port.look_at([.2,0.,.01],None,distance_candidates_m=(.34,.24,.20))
+        assert calls==[.34]
+        np.testing.assert_array_equal(env.data.qpos,before)
+    finally:port.close();env.close()

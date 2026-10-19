@@ -130,3 +130,34 @@ def test_user_basket_alignment_does_not_accept_a_chassis_intersection():
                 bounds_max=[distance+.125,.125,.30],uncertainty_m=.012)
             assert port.local_admission('basket',target)['inside_envelope'] is expected
     finally:env.close()
+
+
+def test_close_sock_reobservation_selects_reachable_range_before_arm_motion(tmp_path):
+    import mujoco
+    from simulator.explorer_model import servo_to_joint
+    from simulator.inspection_planning import plan_camera_view
+    from simulator.skill_port import SimulatorSkillPort
+    env=ExplorerEnv(render=False)
+    port=RoomCleanupPort.__new__(RoomCleanupPort);port.env=env;port.check=lambda:None;port.revision=0
+    # Recorded observed target and robot FK from b3b879bcdeee, after the
+    # finite local translation. No simulator object state guides the view.
+    target=dict(kind='sock',center=[-1.02609771,.14756971,.00627312],
+        bounds_min=[-1.05107174,.04842443,.00439005],
+        bounds_max=[-1.00208827,.20100435,.00758521],uncertainty_m=.006)
+    yaw=-1.87563789
+    env.data.qpos[:2]=np.asarray(target['center'])[:2]-.20*np.array([np.cos(yaw),np.sin(yaw)])
+    env.data.qpos[3:7]=[np.cos(yaw/2),0.,0.,np.sin(yaw/2)]
+    env.command[:6]=[88.53229353,12.48848799,83.36919330,43.90165436,81.13744653,30.]
+    env.data.qpos[env.joint_q]=servo_to_joint(env.command[:6]);mujoco.mj_forward(env.model,env.data)
+    port.geometry=SimulatorSkillPort(env,tmp_path/'near-view')
+    audit=CollisionAudit(env);env._outcome_observer=audit.sample
+    try:
+        with pytest.raises(CameraViewUnavailable,match='расстояния'):
+            plan_camera_view(env,target['center'],gripper=30.,distance_m=.34,min_camera_height_m=.20)
+        port.look_at(target,check=lambda:None)
+        camera=env.model.camera('wrist_depth').id
+        optical=env.data.cam_xmat[camera].reshape(3,3).T@(np.asarray(target['center'])-env.data.cam_xpos[camera])
+        assert env.data.cam_xpos[camera,2]>=.18-.008
+        assert np.linalg.norm(optical[:2])<=.04 and abs(-optical[2]-.24)<=.04
+        assert env.command[5]==30. and not audit.contacts
+    finally:port.close();env.close()
