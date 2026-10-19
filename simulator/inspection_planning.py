@@ -43,11 +43,43 @@ def observed_rim_aims(target):
     return [(framing.copy(),distance) for distance in (.45,.50,.40)]+[(center.copy(),.45)]
 
 
+def _mesh_box_separated(env,scratch,geom,lo,hi):
+    """Prove separation using an actual CAD convex-hull supporting plane.
+
+    A world AABB is only a broad phase: its empty corners can cover a floor
+    item under an inclined chassis surface. The mesh hull still encloses the
+    complete CAD surface; no cavity, physical contact or object label is used.
+    Absence of a separating face remains a conservative collision refusal.
+    """
+    import mujoco
+    from scipy.spatial import ConvexHull
+    if env.model.geom_type[geom]!=mujoco.mjtGeom.mjGEOM_MESH:return False
+    cache=getattr(env,'_observed_cad_hulls',None)
+    if cache is None or cache[0] is not env.model:
+        cache=(env.model,{})
+        env._observed_cad_hulls=cache
+    mesh=int(env.model.geom_dataid[geom])
+    if mesh not in cache[1]:
+        start=int(env.model.mesh_vertadr[mesh]);count=int(env.model.mesh_vertnum[mesh])
+        vertices=np.asarray(env.model.mesh_vert[start:start+count],dtype=float)
+        if not np.isfinite(vertices).all():raise CameraViewUnavailable('Некорректная CAD-геометрия')
+        cache[1][mesh]=ConvexHull(vertices).equations.copy()
+    planes=cache[1][mesh]
+    rotation=np.asarray(scratch.geom_xmat[geom]).reshape(3,3)
+    normals=np.einsum('nj,ij->ni',planes[:,:3],rotation)
+    center=(lo+hi)/2-scratch.geom_xpos[geom];half=(hi-lo)/2
+    # Minimum signed distance of the entire padded observed box to each
+    # outward hull plane. A positive gap proves disjoint volumes. Use an
+    # additional numerical reserve, never an optimisation success flag.
+    gap=np.einsum('ij,j->i',normals,center)+planes[:,3]-np.einsum('ij,j->i',abs(normals),half)
+    return bool(np.any(gap>1e-6))
+
+
 def check_observed_box_path(env,command,obstacle,*,check=lambda:None,base_target=None):
     """Conservative own-geometry sweep outside one measured occupied extent.
 
     No free cavity is assumed: even empty interior is treated as occupied.
-    This checks the known basket extent only, not an unobserved whole room.
+    This checks the known occupied extent only, not an unobserved whole room.
     """
     import mujoco
     from itertools import product
@@ -88,7 +120,9 @@ def check_observed_box_path(env,command,obstacle,*,check=lambda:None,base_target
         world=np.einsum('nvj,nij->nvi',corners,rotation)+scratch.geom_xpos[own,None,:]
         if not np.isfinite(world).all():raise CameraViewUnavailable('Некорректная геометрия пути обзора')
         intersects=np.all(world.max(1)>=lo,axis=1)&np.all(world.min(1)<=hi,axis=1)
-        if intersects.any():raise CameraViewUnavailable('Путь обзора пересекает измеренную границу корзины')
+        for geom in own[intersects]:
+            if not _mesh_box_separated(env,scratch,int(geom),lo,hi):
+                raise CameraViewUnavailable('Путь обзора пересекает измеренную границу препятствия')
 
 
 def plan_camera_view(env,point,*,gripper,distance_m,min_camera_height_m,check=lambda:None,

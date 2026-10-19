@@ -123,7 +123,9 @@ def test_user_basket_alignment_does_not_accept_a_chassis_intersection():
     env=ExplorerEnv(render=False)
     port=RoomCleanupPort.__new__(RoomCleanupPort);port.env=env;port.check=lambda:None
     try:
-        for distance,expected in ((.259,False),(.325,False),(.35,True)):
+        # Actual CAD hulls exclude empty AABB corners. A measured basket at
+        # .27 m still intersects the chassis, while .325 m is CAD-clear.
+        for distance,expected in ((.259,False),(.27,False),(.325,True),(.35,True)):
             target=dict(center=[distance,0.,.15],bounds_min=[distance-.125,-.125,0.],
                 bounds_max=[distance+.125,.125,.30],uncertainty_m=.012)
             assert port.local_admission('basket',target)['inside_envelope'] is expected
