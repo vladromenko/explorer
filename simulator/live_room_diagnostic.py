@@ -81,9 +81,11 @@ def snapshot(training,destination,previous=None):
 
 
 def memory():
-    import psutil
-    value=psutil.virtual_memory()
-    return dict(free_percent=100*value.available/value.total,available_gb=value.available/2**30)
+    from .resource_budget import memory_budget
+    value=memory_budget()
+    return dict(free_percent=100*value['available_bytes']/value['total_bytes'],
+        available_gb=value['available_bytes']/2**30,
+        psutil_available_gb=value['psutil_available_bytes']/2**30,source=value['source'])
 
 
 def can_start(value,after_pressure=False):
@@ -135,6 +137,37 @@ def diagnostic_seed(root,model,snapshot_copy=None):
     return seed
 
 
+def prepare_profile(root,folder):
+    """Reuse only an identical retained model/data derivation after a repair.
+
+    No trajectory actions are replayed. The phase proposal has the same verified
+    weights, training provenance and exact derivation source files.
+    """
+    from .room_policy import build_profile,validate_profile
+    root,folder=Path(root).resolve(),Path(folder).resolve();source=Path(__file__).resolve().parents[1]
+    marker=root/'diagnostics/early-room-current.json';prior=None
+    if marker.exists():prior=json.loads(marker.read_text()).get('superseded_diagnostic')
+    if prior and prior.get('source'):
+        previous=Path(prior['folder']).resolve();old_source=Path(prior['source']).resolve()
+        support=Path.home()/'Library/Application Support/ExplorerSimulator'
+        if previous.is_relative_to(root/'diagnostics') and old_source.is_relative_to(support):
+            files=('simulator/room_policy.py','simulator/learning.py','simulator/episode_lineage.py')
+            same_code=all((old_source/name).is_file() and sha256(old_source/name)==sha256(source/name) for name in files)
+            profile=previous/'handoff.json';provenance='train/explorer-provenance.json'
+            same_data=((previous/'model'/provenance).is_file() and
+                sha256(previous/'model'/provenance)==sha256(folder/'model'/provenance))
+            if same_code and same_data and profile.is_file():
+                value=json.loads(profile.read_text());bundle,_=read_bundle(folder/'model')
+                if value.get('model_checkpoint_sha256')==bundle['checkpoint_sha256']:
+                    validate_profile(value);write_json(folder/'handoff.json',value)
+                    write_json(folder/'handoff-reuse.json',dict(previous=str(previous),profile_sha256=sha256(profile),
+                        provenance_sha256=sha256(folder/'model'/provenance),
+                        derivation_source_sha256={name:sha256(source/name) for name in files},
+                        same_weights=True,recorded_actions_replayed=False))
+                    return
+    build_profile(folder/'model',root,folder/'handoff.json')
+
+
 def run(root,folder,training,snapshot_copy=None,model_source=None,scene_seed=None):
     root,folder,training=Path(root),Path(folder),Path(training)
     if not root.parent.is_mount():raise ValueError('ExplorerSim disk is not mounted')
@@ -154,8 +187,7 @@ def run(root,folder,training,snapshot_copy=None,model_source=None,scene_seed=Non
             save(state='preparing')
             # Data copy and proposal construction are read-only on live inputs.
             step=snapshot(training,folder/'model',model_source or snapshot_copy)
-            from .room_policy import build_profile
-            build_profile(folder/'model',root,folder/'handoff.json')
+            prepare_profile(root,folder)
             seed=diagnostic_seed(root,folder/'model',snapshot_copy) if scene_seed is None else scene_seed
             from .neural_recovery import training_seeds
             if type(seed) is not int or seed in training_seeds(folder/'model'):

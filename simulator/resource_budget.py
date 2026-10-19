@@ -10,7 +10,7 @@ import psutil
 def _mac_available(total):
     if sys.platform!='darwin':return None
     try:
-        result=subprocess.run(['/usr/bin/memory_pressure'],capture_output=True,text=True,
+        result=subprocess.run(['/usr/bin/memory_pressure','-Q'],capture_output=True,text=True,
             timeout=2,check=True,env=dict(os.environ,LC_ALL='C'))
         match=re.search(r'^System-wide memory free percentage:\s*(\d+)%\s*$',result.stdout,re.M)
         percent=int(match[1]) if match else -1

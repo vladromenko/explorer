@@ -142,3 +142,43 @@ def test_repair_baseline_cannot_bypass_operator_pause(tmp_path):
     folder=Path(previous['folder']);folder.mkdir(parents=True);(folder/'pause.request').touch()
     with pytest.raises(ValueError,match='operator pause'):
         module.require_unpaused_repair(tmp_path,previous,None,None)
+
+
+def test_diagnostic_uses_same_native_budget_as_other_workers(monkeypatch):
+    from simulator.live_room_diagnostic import memory,can_start
+    monkeypatch.setattr('simulator.resource_budget.memory_budget',lambda:dict(total_bytes=24*2**30,
+        available_bytes=12*2**30,psutil_available_bytes=6*2**30,source='macos_memory_pressure'))
+    measured=memory()
+    assert measured==dict(free_percent=50.,available_gb=12.,psutil_available_gb=6.,source='macos_memory_pressure')
+    assert can_start(measured)
+
+
+def test_repair_reuses_profile_only_for_identical_data_weights_and_derivation(tmp_path,monkeypatch):
+    import json
+    from pathlib import Path
+    from simulator.live_room_diagnostic import prepare_profile
+    root=tmp_path/'root';diagnostics=root/'diagnostics';old=diagnostics/'old';new=diagnostics/'new'
+    source=tmp_path/'Library/Application Support/ExplorerSimulator/room-source-example'
+    source.mkdir(parents=True)
+    monkeypatch.setattr('pathlib.Path.home',lambda:tmp_path)
+    canonical=Path(__import__('simulator.live_room_diagnostic',fromlist=['x']).__file__).resolve().parents[1]
+    for name in ['simulator/room_policy.py','simulator/learning.py','simulator/episode_lineage.py']:
+        target=source/name;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes((canonical/name).read_bytes())
+    for folder in [old,new]:
+        (folder/'model/train').mkdir(parents=True);(folder/'model/train/explorer-provenance.json').write_text('same verified provenance')
+    profile=dict(model_checkpoint_sha256={'model':'same'})
+    (old/'handoff.json').write_text(json.dumps(profile))
+    (diagnostics/'early-room-current.json').write_text(json.dumps(dict(superseded_diagnostic=dict(folder=str(old),source=str(source)))))
+    monkeypatch.setattr('simulator.live_room_diagnostic.read_bundle',lambda _:({'checkpoint_sha256':{'model':'same'}},None))
+    monkeypatch.setattr('simulator.room_policy.validate_profile',lambda value:None)
+    calls=[]
+    monkeypatch.setattr('simulator.room_policy.build_profile',lambda *a:calls.append(a))
+    prepare_profile(root,new)
+    assert not calls and json.loads((new/'handoff.json').read_text())==profile
+    assert json.loads((new/'handoff-reuse.json').read_text())['recorded_actions_replayed'] is False
+    (source/'simulator/room_policy.py').write_text('changed derivation')
+    prepare_profile(root,new)
+    assert len(calls)==1
+    (new/'model/train/explorer-provenance.json').write_text('different data')
+    prepare_profile(root,new)
+    assert len(calls)==2

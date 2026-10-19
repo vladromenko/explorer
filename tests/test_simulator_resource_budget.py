@@ -12,7 +12,7 @@ def test_macos_budget_records_kernel_estimate_without_lowering_reserve(monkeypat
         return SimpleNamespace(stdout='Stats: 12\nSystem-wide memory free percentage: 34%\n')
     monkeypatch.setattr(budget.subprocess,'run',run)
     result=budget.memory_budget()
-    assert calls==[['/usr/bin/memory_pressure']]
+    assert calls==[['/usr/bin/memory_pressure','-Q']]
     assert result['available_bytes']==340 and result['psutil_available_bytes']==170
     assert result['source']=='macos_memory_pressure' and result['minimum_available_fraction']==.15
 

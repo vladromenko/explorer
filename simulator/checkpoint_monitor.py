@@ -153,7 +153,8 @@ def run(root,training,owner,minimum_seconds=10800,interval=10000,max_trials=12,o
                     while child.poll() is None and not stopping:
                         if paused(root,owner,folder,owner_kind):raise InterruptedError('Operator pause retained')
                         local=json.loads((root/owner_kind/owner/'state.json').read_text())
-                        if local.get('phase')!='train' or local.get('state')!='running':
+                        job=json.loads((training/'job.json').read_text())
+                        if local.get('phase')!='train' or local.get('state')!='running' or job.get('state')!='training':
                             stop_owned(child)
                         time.sleep(2)
                     if stopping:
