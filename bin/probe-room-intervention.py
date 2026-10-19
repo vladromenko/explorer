@@ -3,6 +3,7 @@
 import argparse
 import fcntl
 import json
+import os
 from pathlib import Path
 import signal
 import sys
@@ -46,7 +47,7 @@ def main():
             except BlockingIOError:pass
             if not args.wait or time.monotonic()-waiting>1800:
                 raise InterruptedError('Existing diagnostic or resource reserve retained')
-            write_json(args.output/'state.json',dict(state='waiting',training_untouched=True))
+            write_json(args.output/'state.json',dict(state='waiting',pid=os.getpid(),at=time.time(),training_untouched=True))
             time.sleep(5)
         import numpy as np
         import torch
@@ -79,10 +80,18 @@ def main():
                 forbidden_contacts=audit.contacts,video=encode_trace(receipt['trace']),
                 full_task_test=False,teacher_correction_verified=False,training_untouched=True,
                 simulation_qualified=False,physical_ready=False)
+            valid=(bool(rows) and value['all_student_targets_masked'] and abs(elapsed-value['expected_physics_s'])<=1e-6
+                and value['finite'] and not any(value['warnings']) and not audit.contacts)
+            value['state']='complete' if valid else 'failed'
             write_json(args.output/'result.json',value)
-            if (not rows or not value['all_student_targets_masked'] or abs(elapsed-value['expected_physics_s'])>1e-6
-                    or not value['finite'] or any(value['warnings']) or audit.contacts):
+            write_json(args.output/'state.json',dict(state=value['state'],pid=os.getpid(),at=time.time(),
+                result=str(args.output/'result.json'),training_untouched=True))
+            if not valid:
                 raise ValueError('Intervention physics/mask preflight did not pass; evidence retained')
+        except Exception as error:
+            write_json(args.output/'state.json',dict(state='paused' if isinstance(error,InterruptedError) else 'failed',
+                pid=os.getpid(),at=time.time(),reason=str(error),training_untouched=True))
+            raise
         finally:
             if recorder is not None and env.step!=recorder.original:recorder.finish(False,{})
             if port is not None:port.close()
