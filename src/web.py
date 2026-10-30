@@ -152,7 +152,7 @@ gamepad_panel.bind_arm(manual_arm, reference_arm)
 
 @app.middleware("http")
 async def auth(request: Request, call_next):
-    if request.url.path != "/":
+    if request.url.path not in ("/", "/assets/gamepad-ps-style.png"):
         supplied = request.headers.get("authorization", "").removeprefix("Bearer ")
         if not secrets.compare_digest(supplied, TOKEN):
             return JSONResponse({"error": "Authentication required"}, 401)
@@ -165,6 +165,12 @@ async def auth(request: Request, call_next):
 @app.get("/")
 def index():
     return HTMLResponse((ROOT / "src/index.html").read_text(), headers={"Cache-Control": "no-store"})
+
+
+@app.get("/assets/gamepad-ps-style.png")
+def gamepad_image():
+    return Response((ROOT / "src/assets/gamepad-ps-style.png").read_bytes(), media_type="image/png",
+                    headers={"Cache-Control": "public, max-age=86400"})
 
 
 @app.get("/api/status")
