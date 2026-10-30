@@ -3,7 +3,6 @@ import json
 import math
 import os
 from pathlib import Path
-import secrets
 import shutil
 import subprocess
 import threading
@@ -22,7 +21,6 @@ from std_msgs.msg import String
 import uvicorn
 
 ROOT = Path(os.environ.get("EXPLORER_ROOT", "/home/vlad/Explorer"))
-TOKEN = (ROOT / "config/access_token").read_text().strip()
 app = FastAPI(docs_url=None, redoc_url=None)
 rclpy.init()
 node = Node("explorer_web")
@@ -152,13 +150,9 @@ gamepad_panel.bind_arm(manual_arm, reference_arm)
 
 @app.middleware("http")
 async def auth(request: Request, call_next):
-    if request.url.path not in ("/", "/assets/gamepad-ps-style.png"):
-        supplied = request.headers.get("authorization", "").removeprefix("Bearer ")
-        if not secrets.compare_digest(supplied, TOKEN):
-            return JSONResponse({"error": "Authentication required"}, 401)
-        origin = request.headers.get("origin")
-        if origin and urlparse(origin).netloc != request.headers.get("host"):
-            return JSONResponse({"error": "Cross-origin control blocked"}, 403)
+    origin = request.headers.get("origin")
+    if origin and urlparse(origin).netloc != request.headers.get("host"):
+        return JSONResponse({"error": "Cross-origin control blocked"}, 403)
     return await call_next(request)
 
 
