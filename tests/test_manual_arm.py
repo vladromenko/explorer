@@ -50,9 +50,8 @@ class ManualArmTests(unittest.TestCase):
         with self.assertRaises(ValueError):self.arm.move(self.start,self.goal,expected_stop_revision=revision)
         self.pub.publish.assert_not_called()
 
-    def test_policy_hold_expiring_during_geometry_check_never_moves(self):
-        def expired():raise ValueError('hold expired')
-        with self.assertRaises(ValueError):self.arm.move(self.start,self.goal,execution_permit=expired,source='supervised_policy')
+    def test_non_operator_source_never_moves(self):
+        with self.assertRaises(ValueError):self.arm.move(self.start,self.goal,source='automatic')
         self.pub.publish.assert_not_called()
 
     def test_prior_boot_never_moves(self):

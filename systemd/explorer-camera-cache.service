@@ -1,0 +1,19 @@
+[Unit]
+Description=Explorer lightweight camera cache
+PartOf=explorer.target
+After=explorer-camera.service
+Requires=explorer-camera.service
+Conflicts=explorer-nano-camera-cache.service explorer-perception.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/vlad/Explorer
+ExecStart=/bin/bash /home/vlad/Explorer/bin/run.sh camera-cache
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=8
+KillMode=control-group
+UMask=0077
+
+[Install]
+WantedBy=explorer.target

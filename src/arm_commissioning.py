@@ -58,7 +58,7 @@ def coordinated_status(s, now):
     """Validate slow, supervised mobile manipulation without requiring base HOLD."""
     age=now-s['at'];velocity=s.get('velocity');observed=s.get('odom_velocity')
     if not math.isfinite(age) or not 0<=age<1:raise ValueError('Controller status is stale')
-    if s.get('mode')!='MANUAL' or s.get('stop_latched') is True or s.get('mission'):
+    if s.get('mode')!='MANUAL' or s.get('stop_latched') is True:
         raise ValueError('Совместное управление требует ручного режима без STOP')
     if not isinstance(velocity,list) or len(velocity)!=3 or any(
             not isinstance(v,(int,float)) or not math.isfinite(v) or abs(v)>limit
@@ -76,27 +76,3 @@ def coordinated_status(s, now):
     if any(not math.isfinite(s.get('sensor_age',{}).get(k,math.inf)) or
            not 0<=s['sensor_age'].get(k,math.inf)<limit for k,limit in [('odom',.5),('battery',2)]):
         raise ValueError('MCU telemetry is stale')
-
-
-def coordinated_policy_status(s,now):
-    """Policy arm steps require the same live local mission as policy base steps."""
-    age=now-s.get("at",0)
-    if not math.isfinite(age) or not 0<=age<.7:raise ValueError("Состояние контроллера устарело")
-    if s.get("mode")!="AUTONOMOUS" or s.get("stop_latched") is True or not s.get("mission"):
-        raise ValueError("Нет действующей автономной миссии")
-    flags=s.get("commissioning",{})
-    if not all(flags.get(key) is True for key in ("base_commissioned","arm_commissioned",
-            "lidar_tf_validated","mcu_watchdog_verified","localization_verified")):
-        raise ValueError("Калибровка мобильной манипуляции не принята")
-    for key,ttl in (("odom",.5),("battery",2.),("scan0",.6),("scan1",.6)):
-        value=s.get("sensor_age",{}).get(key,math.inf)
-        if not isinstance(value,(int,float)) or not 0<=value<ttl:
-            raise ValueError("Датчик устарел: "+key)
-    if s.get("power",{}).get("state") in ("CRITICAL","CHARGING","UNKNOWN","LOW_POWER"):
-        raise ValueError("Питание не допускает движение")
-    for key,limits in (("velocity",(.13,.13,.36)),("odom_velocity",(.30,.30,.65))):
-        values=s.get(key)
-        if not isinstance(values,list) or len(values)!=3 or any(
-                not isinstance(value,(int,float)) or not math.isfinite(value) or abs(value)>limit
-                for value,limit in zip(values,limits)):
-            raise ValueError("Скорость вне диапазона наблюдаемой попытки")

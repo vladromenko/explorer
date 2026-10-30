@@ -1,4 +1,4 @@
-"""Pure deterministic velocity gate, independent of the language model."""
+"""Pure deterministic velocity gate for local manual control."""
 import math
 
 
@@ -34,13 +34,10 @@ class SafetyGate:
             self.stop()
 
     def submit(self, values, source, now):
-        if source not in ("manual","autonomy"):raise ValueError("Invalid command source")
+        if source != "manual":raise ValueError("Only manual control is enabled")
         if len(values) != 3 or not all(math.isfinite(x) for x in values):
             raise ValueError("Three finite velocities required")
-        if source == "autonomy" and self.mode != "AUTONOMOUS":
-            return False
-        if source == "manual":
-            self.mode = "MANUAL"
+        self.mode = "MANUAL"
         self.command = [max(-m, min(m, x)) for x, m in zip(values, self.config["max_velocity"])]
         self.command_at = now
         self.source = source

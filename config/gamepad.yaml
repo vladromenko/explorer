@@ -32,7 +32,7 @@ profiles:
 radio_loss_verified: false
 continuous_motion_enabled: true
 operator_chassis_accepted: true
-operator_acceptance_scope: manual_and_local_autonomy_without_radio_loss_claim
+operator_acceptance_scope: manual_control_only
 arm_step_deg: 5
 gripper_step_deg: 5
 notes: Physical Linux event mapping recorded with the operator. Chassis axes use a 50 percent cubic expo for a softer center response. SELECT toggles Cartesian and joint arm control; L1/R1 always turn the base. Right-stick click toggles normal/fast arm speed; X temporarily selects precision. MODE produced no event.

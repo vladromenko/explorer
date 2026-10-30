@@ -77,7 +77,7 @@ class ReferenceArmMixin:
     def move(self,start,goal,deadline=None,expected_stop_revision=None,execution_permit=None,source='operator',trajectory=None):
         if not self._is_manual_reference():
             return super().move(start,goal,deadline,expected_stop_revision,execution_permit,source,trajectory)
-        if source not in ('operator','supervised_policy','supervised_trajectory','local_mission'):
+        if source not in ('operator','supervised_trajectory'):
             raise ValueError('Неверный источник команды')
         if not self.ready: raise ValueError('Подготовьте существующую геометрию руки')
         if not self.lock.acquire(blocking=False): raise ValueError('Рука уже выполняет команду')

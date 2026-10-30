@@ -18,7 +18,7 @@ from sensor_msgs.msg import BatteryState
 from std_msgs.msg import String
 
 ROOT = Path(os.environ.get('EXPLORER_ROOT', '/home/vlad/Explorer'))
-OPTIONAL = ('llm', 'learning', 'train', 'speech', 'preview-*', 'grounding-*', 'policy-*', 'perception', 'camera', 'planning', 'navigation')
+OPTIONAL = ('camera-cache', 'camera')
 
 
 def read_json(path):
@@ -61,8 +61,6 @@ class PowerManager(Node):
         self.previous_state = None
         self.last_log = 0.
         self.previous_cpu = None
-        self.last_llm_request = time.monotonic()
-        self.last_llm_check = 0.
         self.last_mode_check = 0.
         self.mode = 'unknown'
         self.started = time.monotonic()
@@ -121,8 +119,6 @@ class PowerManager(Node):
         if state != self.previous_state:
             self.get_logger().info(f'Power state {self.previous_state} -> {state}')
             self.previous_state = state
-            if state in ('LOW_POWER', 'CHARGING', 'UNKNOWN'):
-                self.optional_stop(('llm','train','speech','preview-*','grounding-*','policy-*'))
             if state == 'CRITICAL':
                 self.critical_at = now
                 self.optional_stop(OPTIONAL)
@@ -152,22 +148,14 @@ class PowerManager(Node):
                 self.shutdown_available=(helper.is_file() and helper.stat().st_uid==0 and
                     subprocess.run(['sudo','-n','-l','--',str(helper)],capture_output=True,timeout=2).returncode==0)
             except (OSError,subprocess.TimeoutExpired):self.shutdown_available=False
-        demand = read_json(ROOT/'data/llm-demand.json')
-        if 0 <= now-demand.get('monotonic', -1e9) < self.config['workloads']['llm_idle_timeout_s']:
-            self.last_llm_request = now
-        if now-self.last_llm_check > 15:
-            self.last_llm_check = now
-            if now-self.last_llm_request > self.config['workloads']['llm_idle_timeout_s']:self.optional_stop(('llm',))
         resources = self.resources()
         policy=read_json(ROOT/'data/power-policy.json');velocity=status.get('velocity') or [0,0,0]
         arm=status.get('arm_command_state',{});activity='IDLE'
-        if any(abs(float(value))>.001 for value in velocity):activity='NAVIGATION' if status.get('mode')=='AUTONOMOUS' else 'BASE'
+        if any(abs(float(value))>.001 for value in velocity):activity='BASE'
         elif arm.get('phase')=='command_in_progress':activity='ARM'
-        elif read_json(ROOT/'data/perception.json').get('image_stamp',0)>time.time()-3:activity='OBSERVE'
         record = dict(at=time.time(), state=state, battery_voltage_v=voltage, battery_current_a=None,
                       soc=None, runtime_minutes=None, charging=power.get('charging'), resources=resources,
                       commanded_velocity=status.get('velocity'), arm_activity=status.get('arm_command_state',{}),
-                      perception=read_json(ROOT/'data/perception.json').get('inference_ms'),
                       robot_mode=status.get('mode'),activity=activity,power_profile=policy.get('profile','AUTO'),
                       shutdown=read_json(ROOT/'data/critical-shutdown.json'))
         atomic_json(ROOT/'data/runtime.json',dict(at=time.time(),uptime_s=time.monotonic()-self.started))

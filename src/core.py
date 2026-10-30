@@ -11,8 +11,8 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data, QoSProfile
 from rclpy.duration import Duration
 from rclpy.signals import SignalHandlerOptions
-from geometry_msgs.msg import Twist, TwistStamped
-from sensor_msgs.msg import Imu, LaserScan, Joy
+from geometry_msgs.msg import Twist
+from sensor_msgs.msg import Imu, LaserScan
 from nav_msgs.msg import Odometry
 from std_msgs.msg import Float32, String, UInt64, ColorRGBA
 from arm_msgs.msg import ArmJoints
@@ -22,9 +22,6 @@ from battery_gauge import battery_summary
 from power_policy import PowerPolicy
 import secrets
 import hashlib
-from navigation_scope import scope_blockers, bound_mapping_velocity
-from navigation_obstacles import project_scan,swept_obstacle
-from motion_session import MotionSession
 from transition_log import TransitionLog
 from source_freshness import SourceFreshness
 from lidar_observation import summarize as summarize_scan
@@ -44,7 +41,7 @@ def publish_stop(node):
 
 
 def publish_hold(node):
-    """Stop base motion immediately while preserving an active mission session."""
+    """Stop base motion immediately without changing the STOP latch."""
     native = getattr(node, 'native', None)
     if native:
         now_ns = time.monotonic_ns()
@@ -59,15 +56,7 @@ class Core(Node):
         self.config = json.loads((ROOT/'config/commissioning.json').read_text())
         self.gate = SafetyGate(self.config)
         self.config_sha256=hashlib.sha256((ROOT/'config/commissioning.json').read_bytes()).hexdigest()
-        self.create_timer(2.,self.refresh_graduated_capabilities)
         self.events=TransitionLog(ROOT/'data/motion-transitions.jsonl')
-        self.session=MotionSession()
-        self.navigation_scope="localized"
-        self.navigation_polygon=json.loads((ROOT/"config/navigation-footprint.json").read_text())["polygon"]
-        self.lidar_geometry=json.loads((ROOT/"config/lidar_geometry.json").read_text())
-        self.scan_points={}
-        self.nav_not_before=0.
-        self.nav_last_stamp=0.
         self.hold_requested=False
         self.stationary_since=None
         self.power_policy = PowerPolicy(yaml.safe_load((ROOT/'config/power.yaml').read_text()))
@@ -99,7 +88,6 @@ class Core(Node):
         self.probe_id=None
         self.last_probe_result=None
         self.probe_token = None
-        self.autonomy_lease = -1e9
         self.pub = self.create_publisher(Twist, '/cmd_vel', QoSProfile(depth=1,lifespan=Duration(seconds=.15)))
         self.native = None
         self.factory_zero_cadence = None
@@ -125,9 +113,6 @@ class Core(Node):
         self.create_subscription(ArmJoints, '/arm6_feedback', self.arm_cb, qos_profile_sensor_data)
         self.create_subscription(String, '/explorer/arm_measurements', self.arm_measurement_cb, 10)
         self.create_subscription(String, '/explorer/request', self.request, 10)
-        self.create_subscription(TwistStamped, '/explorer/nav_cmd_vel', self.nav_cb, 1)
-        self.joy_held = False
-        self.create_subscription(Joy, '/joy', self.joy_cb, qos_profile_sensor_data)
         self.last_tick = time.monotonic()
         self.create_timer(.02, self.tick)
         self.create_timer(.5, self.write_status)
@@ -136,35 +121,15 @@ class Core(Node):
         self.last_light_key=None;self.last_light_refresh=-1e9
         self.create_timer(.25,self.refresh_lights)
 
-    def refresh_graduated_capabilities(self):
-        """Hot-apply only evidence-derived capability flags.
-
-        All motion limits and hardware commissioning fields remain immutable for
-        this process.  This prevents the curriculum service from becoming a
-        general configuration bypass.
-        """
-        keys=('localization_verified','gripper_calibrated','visual_closed_loop_arm_verified',
-              'learned_policy_verified','autonomous_delivery_verified')
-        try:
-            raw=(ROOT/'config/commissioning.json').read_bytes();candidate=json.loads(raw)
-            old_other={k:v for k,v in self.config.items() if k not in keys}
-            new_other={k:v for k,v in candidate.items() if k not in keys}
-            if old_other!=new_other:return
-            for key in keys:self.config[key]=candidate.get(key,False) is True
-            self.config_sha256=hashlib.sha256(raw).hexdigest()
-        except (OSError,ValueError,TypeError):pass
-
     def snapshot(self):
         return dict(mode=self.gate.mode,stop_latched=self.gate.estop,
-                    mission=self.session.mission,held=self.session.held,velocity=list(self.gate.output),
-                    command_source=self.gate.source,command_at=self.gate.command_at,
-                    lease_at=self.session.lease_at)
+                    velocity=list(self.gate.output),command_source=self.gate.source,
+                    command_at=self.gate.command_at)
 
     def event(self, initiator, reason, before):
         now=time.monotonic()
         self.events.emit(initiator,reason,before,self.snapshot(),
             command_source=self.gate.source,command_age_s=now-self.gate.command_at,
-            lease_age_s=now-self.session.lease_at,mission_id=self.session.mission,
             sensor_age={k:now-v for k,v in self.seen.items()},observed_velocity=self.odom_velocity,
             power=self.power_state,obstacle=self.scans,config_sha256=self.config_sha256)
 
@@ -173,7 +138,7 @@ class Core(Node):
         native = getattr(self, 'native', None)
         if native and not self.gate.estop:
             native.stop(time.monotonic_ns())
-        self.gate.stop();self.session.end();self.autonomy_lease=-1e9;self.joy_held=False
+        self.gate.stop()
         self.hold_requested=False
         if self.probe:self.probe.cancel(reason)
         if before!=self.snapshot():self.event(initiator,reason,before)
@@ -181,7 +146,7 @@ class Core(Node):
     def refresh_lights(self):
         now=time.monotonic();config=read_appearance(ROOT)
         status=dict(power_state=self.power_state.get('state','UNKNOWN'),velocity=self.gate.output,
-                    mission=self.session.mission,arm_active=now<self.arm_active_until)
+                    arm_active=now<self.arm_active_until)
         mode,frames=appearance_messages(config,status,now)
         key=(mode,tuple(tuple(sorted(frame.items())) for frame in frames))
         if key==self.last_light_key and now-self.last_light_refresh<8:return
@@ -220,8 +185,6 @@ class Core(Node):
     def scan_cb(self, name, msg):
         if not self.accept_sensor(name,msg,.6):return
         self.scans[name] = summarize_scan(msg)
-        try:self.scan_points[name]=project_scan(msg,self.lidar_geometry["frames"])
-        except (ValueError,KeyError):self.scan_points.pop(name,None)
 
     def arm_cb(self, msg):
         self.touch('arm')
@@ -241,39 +204,6 @@ class Core(Node):
             self.touch('arm')
         # Preserve signed measurements and raw evidence separately from the
         # legacy command-angle array; never make old callers infer calibration.
-
-    def joy_cb(self, msg):
-        self.touch('gamepad')
-        if not self.config.get('gamepad_commissioned',False):return
-        if len(msg.buttons)<10 or len(msg.axes)<3:return
-        if msg.buttons[1]:
-            self.emergency('gamepad','OPERATOR_ESTOP')
-            return
-        # SDL game_controller_node standard mapping; ROS axes are positive left/forward.
-        if msg.buttons[9]:
-            if self.session.mission:
-                before=self.snapshot();self.session.end();self.event('gamepad','MANUAL_TAKEOVER',before)
-            if self.probe:self.probe.cancel('MANUAL_TAKEOVER')
-            self.joy_held=True
-            limits=self.config['max_velocity']
-            self.gate.submit([msg.axes[1]*limits[0],msg.axes[0]*limits[1],msg.axes[2]*limits[2]],'manual',time.monotonic())
-        elif self.joy_held:
-            self.joy_held=False
-            self.gate.submit([0.,0.,0.],'manual',time.monotonic())
-
-    def nav_cb(self,msg):
-        now=time.monotonic()
-        if getattr(self,"policy_mission",None)==self.session.mission and self.session.mission is not None:return
-        stamp=msg.header.stamp.sec+msg.header.stamp.nanosec/1e9
-        age=self.get_clock().now().nanoseconds/1e9-stamp
-        if stamp<self.nav_not_before or stamp<=self.nav_last_stamp or not -.02<=age<.25:return
-        self.nav_last_stamp=stamp
-        if self.gate.mode=='AUTONOMOUS' and not self.gate.estop and self.session.permits(now):
-            try:
-                velocity=[msg.twist.linear.x,msg.twist.linear.y,msg.twist.angular.z]
-                if getattr(self,"navigation_scope","localized")=="mapping":velocity=bound_mapping_velocity(velocity)
-                self.gate.submit(velocity,"autonomy",now-max(0.,age))
-            except ValueError:self.emergency('nav2','INVALID_VELOCITY')
 
     def request(self, msg):
         req = {}
@@ -297,8 +227,8 @@ class Core(Node):
                     self.gate.command_at = -1e9
                     self.gate.estop = False
                 elif op == 'commission_pulse':
-                    if self.gate.mode!='MANUAL' or self.session.mission:
-                        raise ValueError('Observed finite motion requires manual mode without a mission')
+                    if self.gate.mode!='MANUAL':
+                        raise ValueError('Observed finite motion requires manual mode')
                     permit_path=ROOT/'data/commissioning-permit.json'
                     permit=json.loads(permit_path.read_text())
                     if time.monotonic()>permit['expires'] or not secrets.compare_digest(req['token'],permit['token']):
@@ -313,79 +243,36 @@ class Core(Node):
                     if not self.probe or not secrets.compare_digest(req['token'],self.probe_token):
                         raise ValueError('No matching probe')
                     self.probe.last_lease=float(req['at'])
-                elif op in ('begin_mission','autonomy_lease','resume_base'):
-                    scope=("mapping" if req.get("kind")=="mapping" else "localized") if op=="begin_mission" else self.navigation_scope
-                    health={}
-                    if scope=="mapping":
-                        for component in ("navigation","planning"):
-                            try:health[component]=json.loads((ROOT/"data"/(component+"-health.json")).read_text())
-                            except (OSError,ValueError):health[component]={}
-                    blockers=scope_blockers(self.config,scope,health,time.time())
-                    if self.gate.estop or self.gate.mode!="AUTONOMOUS" or blockers:
-                        raise ValueError("Autonomy prerequisites not met: "+", ".join(blockers))
-                    if op=="begin_mission":
-                        self.session.begin(req["mission"],time.monotonic())
-                        self.navigation_scope=scope
-                        self.policy_mission=req['mission'] if req.get('kind')=='mobile_policy' else None
-                    elif op=='resume_base':
-                        self.session.resume(req['mission'],time.monotonic());self.hold_requested=False
-                        self.nav_not_before=self.get_clock().now().nanoseconds/1e9
-                    else:self.session.renew(req['mission'],time.monotonic())
-                    self.autonomy_lease=time.monotonic()
-                elif op in ('hold_base','cancel_mission','finish_mission'):
-                    mission=req.get('mission')
-                    if mission is not None:
-                        if op=='hold_base':self.session.hold(mission)
-                        else:self.session.end(mission)
-                    elif self.session.mission:
-                        raise ValueError('Mission identity required')
+                elif op == 'hold_base':
                     self.gate.hold()
                     if not self.hold_requested:self.stationary_since=None
                     self.hold_requested=True
                     if self.probe:self.probe.cancel('HOLD_REQUESTED')
                     publish_hold(self)
                 elif op=='manual_release':
-                    # A disconnected/idle panel cannot cancel local autonomy.
-                    if self.gate.mode=='MANUAL' and not self.session.mission:
-                        self.gate.hold();self.joy_held=False
+                    if self.gate.mode=='MANUAL':
+                        self.gate.hold()
                         # Manual base/arm operation is sequential: releasing the
                         # chassis establishes the stationary hold needed by the arm.
                         self.hold_requested=True;self.stationary_since=None
                         publish_hold(self)
                 elif op == 'mode':
-                    if req['mode'] not in ('MANUAL','ASSISTED','AUTONOMOUS'):
-                        raise ValueError('Invalid mode')
-                    self.session.end();self.gate.hold();self.hold_requested=False
-                    self.joy_held=False
+                    if req['mode'] != 'MANUAL':
+                        raise ValueError('Only manual mode is enabled')
+                    self.gate.hold();self.hold_requested=False
                     if self.probe:self.probe.cancel('MODE_CHANGED')
                     self.gate.mode = req['mode']
                 elif op == 'drive':
                     if req.get('source','manual')!='manual':
-                        raise ValueError('Autonomy velocity must come from the local navigator')
-                    self.session.end();self.hold_requested=False
+                        raise ValueError('Only manual commands are enabled')
+                    self.hold_requested=False
                     if self.probe:self.probe.cancel('MANUAL_TAKEOVER')
-                    if not self.gate.submit(req['velocity'], req.get('source','manual'), float(req['at'])):
-                        raise ValueError('Autonomy not selected')
-                elif op == 'policy_drive':
-                    now=time.monotonic()
-                    if self.gate.mode!="AUTONOMOUS" or self.gate.estop or not self.config.get("localization_verified"):
-                        raise ValueError("Автономная локализация не принята")
-                    if req.get("mission")!=getattr(self,"policy_mission",None) or not self.session.permits(now):
-                        raise ValueError("Нет действующей миссии обученной политики")
-                    values=req.get("velocity")
-                    if not isinstance(values,list) or len(values)!=3 or any(
-                            not isinstance(value,(float,int)) or not math.isfinite(value) or abs(value)>limit
-                            for value,limit in zip(values,(.12,.12,.35))):
-                        raise ValueError("Скорость политики вне проверяемого диапазона")
-                    self.session.renew(req["mission"],now)
-                    if not self.gate.submit(values,"autonomy",float(req["at"])):
-                        raise ValueError("Миссия не допущена")
-                    self.autonomy_lease=now
+                    self.gate.submit(req['velocity'], 'manual', float(req['at']))
                 elif op == 'arm':
-                    raise ValueError('General arm execution is not commissioned. Supervised near-home probes use bin/commission-arm.py; servo feedback is unavailable.')
+                    raise ValueError('Arm motion is handled by the manual-control service')
                 else:
                     raise ValueError('Unknown operation')
-                if op not in ('drive','autonomy_lease','commission_lease') and (before!=self.snapshot() or op in ('hold_base','cancel_mission','finish_mission','clear_stop')):
+                if op not in ('drive','commission_lease') and (before!=self.snapshot() or op in ('hold_base','clear_stop')):
                     self.event(req.get('initiator','request'),op.upper(),before)
             self.last_result = dict(id=req.get('id'), ok=True, op=op)
         except (ValueError, TypeError, KeyError, OSError) as exc:
@@ -416,15 +303,6 @@ class Core(Node):
         healthy = all(now-self.seen.get(k,-1e9) < ttl for k,ttl in [('odom',.5),('imu',.5),('scan0',.6),('scan1',.6),('battery',3.)])
         healthy = healthy and self.power_state['motion_allowed'] and self.battery is not None and self.battery > self.config['battery_stop_voltage']
         collision=False
-        if self.gate.mode=="AUTONOMOUS":
-            if getattr(self,"navigation_scope","localized")=="mapping":
-                collision=(len(self.scan_points)!=2 or self.lidar_geometry.get("navigation_validated") is not True or
-                    any(swept_obstacle(points,self.gate.command,self.navigation_polygon) for points in self.scan_points.values()))
-            else:
-                collision=any(s["nearest"] is None or s["nearest"]<.30 for s in self.scans.values())
-        if self.session.mission and now-self.session.lease_at>.25:
-            before=self.snapshot();self.session.end();self.gate.hold();self.hold_requested=True
-            self.event('mission','MISSION_LEASE_EXPIRED',before)
         before=self.snapshot()
         source_at = self.gate.command_at
         if self.probe:
@@ -450,7 +328,7 @@ class Core(Node):
         elif arm_execution_pending and command_arm and velocity is not None:
             velocity=[max(-limit,min(limit,value)) for value,limit in zip(velocity,[.05,.05,.15])]
             self.gate.output=list(velocity)
-        signature=(self.reason,self.gate.mode,self.gate.estop,self.session.mission)
+        signature=(self.reason,self.gate.mode,self.gate.estop)
         if signature!=getattr(self,'last_signature',None):
             self.event('velocity_gate',self.reason,before);self.last_signature=signature
         observed=self.odom_velocity
@@ -492,7 +370,6 @@ class Core(Node):
             self.critical_saved=True
         status = dict(at=time.time(), mode=self.gate.mode, stop_latched=self.gate.estop,
                       monotonic=now,boot_id=self.boot_id,config_sha256=self.config_sha256,
-                      mission=self.session.mission,mission_held=self.session.held,
                       base_hold_confirmed=bool(self.hold_requested and self.stationary_since and now-self.stationary_since>=.25),
                       last_motion_event=self.events.last,motion_log_dropped=self.events.dropped,
                       last_probe_result=self.last_probe_result,

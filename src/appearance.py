@@ -35,7 +35,7 @@ def automatic(status):
     power=status.get('power_state','UNKNOWN')
     if power in ('CRITICAL','UNKNOWN'):return 'error'
     velocity=status.get('velocity') or (0,0,0)
-    if status.get('mission') or status.get('arm_active') or any(abs(float(v))>.001 for v in velocity):return 'work'
+    if status.get('arm_active') or any(abs(float(v))>.001 for v in velocity):return 'work'
     return 'off'
 
 def messages(config,status,now):

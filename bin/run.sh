@@ -3,7 +3,7 @@ set -e
 source /home/vlad/Explorer/bin/env.sh
 cd "$EXPLORER_ROOT"
 case "$1" in
- camera|perception) # Avoid UDP fragment loss for local RGB-D image messages.
+ camera|camera-cache) # Avoid UDP fragment loss for local camera image messages.
    export FASTRTPS_DEFAULT_PROFILES_FILE="$EXPLORER_ROOT/config/fastdds-rgbd.xml";;
 esac
 case "$1" in
@@ -12,7 +12,7 @@ case "$1" in
       if [ ! -f "$EXPLORER_ROOT/config/controller-profile.json" ]; then
         python3 bin/wait-clock.py --network-grace 60
       fi;;
- state|ekf|geometry|slam|navigation|planning|camera|perception|mapview)
+ camera|camera-cache)
    python3 bin/wait-clock.py;;
 esac
 case "$1" in
@@ -25,21 +25,9 @@ case "$1" in
          exec ros2 launch "$EXPLORER_ROOT/bin/camera-rgbd.launch.py" enable_point_cloud:=false enable_ir:=false depth_registration:=true color_fps:=15 depth_fps:=15 enable_frame_sync:=false frame_aggregate_mode:=disable;;
  control) exec python3 src/core.py;;
  power) exec python3 src/power_manager.py;;
- learning) exec python3 src/learning_worker.py;;
  watchdog) exec python3 src/watchdog.py;;
  oled) exec python3 src/oled.py;;
- perception) exec python3 src/perception.py;;
+ camera-cache) exec python3 src/camera_cache.py;;
  web) exec python3 src/web.py;;
- state) exec python3 src/state_estimation.py;;
- geometry) exec python3 src/lidar_geometry.py;;
- mapview) exec python3 src/map_view.py;;
- slam) python3 -c 'import json,time,uuid,os; from pathlib import Path; p=Path(os.environ["EXPLORER_ROOT"])/"data/map_session.json"; t=p.with_suffix(".tmp"); t.write_text(json.dumps(dict(id=uuid.uuid4().hex,at=time.time()))); t.replace(p)'
-       exec ros2 launch slam_toolbox online_async_launch.py use_sim_time:=false slam_params_file:="$EXPLORER_ROOT/config/slam.yaml";;
- navigation) exec python3 src/navigation_service.py navigation;;
- planning) exec python3 src/navigation_service.py planning;;
- ekf) exec ros2 run robot_localization ekf_node --ros-args -r __node:=explorer_ekf --params-file "$EXPLORER_ROOT/config/ekf.yaml";;
- gamepad) exec ros2 run joy game_controller_node --ros-args -p deadzone:=0.15 -p autorepeat_rate:=20.0 -p sticky_buttons:=false;;
- llm) export LD_LIBRARY_PATH="$EXPLORER_ROOT/vendor/llama:$LD_LIBRARY_PATH"
-      exec "$EXPLORER_ROOT/vendor/llama/llama-server" -m "$EXPLORER_ROOT/models/Qwen3.5-2B-Q4_K_M.gguf" --mmproj "$EXPLORER_ROOT/models/Qwen3.5-2B-mmproj-F16.gguf" --image-max-tokens 512 --host 127.0.0.1 --port 8081 --alias explorer -c 3072 -ngl 99 -t 2 -tb 2 --jinja --parallel 1;;
  *) echo 'Unknown Explorer component' >&2; exit 2;;
 esac

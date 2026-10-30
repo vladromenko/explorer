@@ -282,10 +282,8 @@ class LegacyNativeManualArm:
 
     def move(self, start, goal, deadline=None, expected_stop_revision=None, execution_permit=None, source='operator', trajectory=None,speed='normal'):
         from timed_trajectory import Execution
-        if source not in ('operator', 'supervised_policy', 'supervised_trajectory', 'local_mission'):
+        if source not in ('operator', 'supervised_trajectory'):
             raise ValueError('Неверный источник команды')
-        if source == 'local_mission' and not callable(execution_permit):
-            raise ValueError('Нет разрешения локальной миссии')
         if not self.ready:
             raise ValueError('Сначала подготовьте геометрию руки')
         if not self.lock.acquire(blocking=False):
@@ -320,8 +318,6 @@ class LegacyNativeManualArm:
                     self._transport()
                     base_status=json.loads((self.root/'data/status.json').read_text())
                     stationary_status(base_status, time.time())
-                    if source!='local_mission' and base_status.get('mission'):
-                        raise ValueError('Сначала отмените автономную миссию для ручного управления рукой')
                     self.reference(boot, session)
                 permit()
                 # A stale gamepad decision must not begin after geometry checks.

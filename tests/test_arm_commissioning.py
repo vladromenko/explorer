@@ -19,11 +19,11 @@ class ArmCommissioningTests(unittest.TestCase):
 
 
     def test_coordinated_status_allows_bounded_manual_motion(self):
-        s=dict(at=100,mode='MANUAL',stop_latched=False,mission=None,
+        s=dict(at=100,mode='MANUAL',stop_latched=False,
                velocity=[.8,-.72,1.67],odom_velocity=[.9,-.8,1.9],battery=12.0,
                power={'state':'NORMAL'},sensor_age={'odom':.1,'battery':.2})
         coordinated_status(s,100.1)
-        for key,value in [('mode','AUTONOMOUS'),('stop_latched',True),('mission',{'id':'x'}),
+        for key,value in [('mode','REMOTE'),('stop_latched',True),
                           ('velocity',[.82,0,0]),('odom_velocity',[.96,0,0]),('battery',10.9)]:
             changed=copy.deepcopy(s);changed[key]=value
             with self.assertRaises(ValueError):coordinated_status(changed,100.1)

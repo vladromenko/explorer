@@ -15,7 +15,6 @@
   "command_gap_stop_test_passed": true,
   "link_recovery_test_passed": false,
   "evidence": "data/factory-acceptance-20260929",
-  "auto_agent_restart_enabled": false,
   "known_issues": [
     "watchdog_1_0_starves_battery_sampling",
     "link_recovery_not_accepted"

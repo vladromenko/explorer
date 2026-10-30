@@ -1,6 +1,6 @@
 import time
+from unittest import TestCase
 from unittest.mock import Mock
-import pytest
 from manual_resume import resume_confirmed
 
 
@@ -15,7 +15,7 @@ def test_waits_for_real_core_confirmation():
 
 def test_no_ack_times_out_and_reasserts_stop():
     emit = Mock(return_value={"id":"manual"})
-    with pytest.raises(ValueError, match="не подтвердил"):
+    with TestCase().assertRaisesRegex(ValueError, "не подтвердил"):
         resume_confirmed(emit, lambda:{"at":time.time(),"mode":"MANUAL","stop_latched":False},
             clock=Mock(side_effect=[0, .1, 2.]), wait=Mock())
     assert emit.call_args.args == ("stop",)

@@ -11,7 +11,7 @@ import threading
 import time
 from arm_msgs.msg import ArmJoints
 from rclpy.duration import Duration
-from arm_commissioning import HARD_LIMITS,stationary_status,coordinated_status,coordinated_policy_status
+from arm_commissioning import HARD_LIMITS,stationary_status,coordinated_status
 
 class StreamCancelled(ValueError):
     """Expected local cancellation, distinct from a planner/transport fault."""
@@ -343,8 +343,7 @@ class ManualArm:
                     hardware_emergency_stop=False)
 
     def move(self,start,goal,deadline=None,expected_stop_revision=None,execution_permit=None,source="operator",speed='normal'):
-        if source not in ('operator','coordinated_operator','supervised_policy','supervised_mobile_policy','supervised_trajectory','local_mission'):raise ValueError('Неверный источник команды')
-        if source=='local_mission' and not callable(execution_permit):raise ValueError('Нет разрешения локальной миссии')
+        if source not in ('operator','coordinated_operator','supervised_trajectory'):raise ValueError('Неверный источник команды')
         if speed not in ('precision','normal','teleop','teleop_fast','fast'):raise ValueError('Неизвестная скорость руки')
         if not self.ready:raise ValueError('Сначала дождитесь подготовки геометрии руки')
         if len(start)!=6 or len(goal)!=6 or any(type(v) is not int for v in start+goal):raise ValueError('Нужны шесть целых углов')
@@ -354,7 +353,7 @@ class ManualArm:
             if not lo<=a<=hi or not lo<=b<=hi or abs(a-b)>max_step:raise ValueError('Шаг превышает допустимый размер или предел сустава')
         if not self.lock.acquire(blocking=False):raise ValueError('Предыдущий шаг ещё выполняется')
         sent=0;record=None;last_end=0.
-        status_check=coordinated_status if source=='coordinated_operator' else coordinated_policy_status if source=='supervised_mobile_policy' else stationary_status
+        status_check=coordinated_status if source=='coordinated_operator' else stationary_status
         try:
             if expected_stop_revision is not None and expected_stop_revision!=self.stop_revision:
                 raise ValueError('Команда отменена во время планирования')

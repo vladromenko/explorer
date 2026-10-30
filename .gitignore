@@ -25,6 +25,7 @@ releases/*/sessions/
 .DS_Store
 # Local release/recovery images remain on this Mac, outside the source repository.
 /releases/
+/firmware/original-controller-backup/
 
 # MuJoCo numerical diagnostics are local runtime output.
 /MUJOCO_LOG.TXT
