@@ -59,6 +59,12 @@ class GamepadBindingTests(unittest.TestCase):
         self.panel.axes['1']=128;self.panel.keys.clear();self.panel.teleop.update('gamepad',{},True)
         self.press('start');self.assertFalse(self.panel.teleop.stop_latched)
 
+    def test_start_cannot_resume_without_live_panel_lease(self):
+        self.panel.select('TELEOP');self.press('b');self.press('b',0)
+        self.panel.lease=0.;self.panel.teleop.update('gamepad',{},True)
+        self.press('start')
+        self.assertTrue(self.panel.teleop.stop_latched)
+
     def test_right_stick_click_changes_only_arm_speed_and_y_a_buttons_remain_live(self):
         self.panel.select('TELEOP');base=self.panel.teleop._drive_vector({'forward':1.},False)
         self.press('right_stick')

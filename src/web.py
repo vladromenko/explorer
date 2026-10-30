@@ -117,7 +117,22 @@ def stop_all():
         manual_arm.stop()
     except Exception:
         pass
-    return emit("stop")
+    last = None
+    # DDS publication is asynchronous. Confirm the core latched STOP before
+    # reporting success, and republish if a depth-1 queue was briefly busy.
+    for _ in range(3):
+        last = emit("stop", initiator="manual_control")
+        deadline = time.monotonic() + .4
+        while time.monotonic() < deadline:
+            try:
+                state = json.loads((ROOT / "data/status.json").read_text())
+                if (state.get("stop_latched") is True
+                        and state.get("last_request", {}).get("id") == last["id"]):
+                    return {"core_confirmed": True, "request_id": last["id"]}
+            except (OSError, ValueError, TypeError):
+                pass
+            time.sleep(.01)
+    raise ValueError("Controller did not confirm STOP")
 
 
 def resume_manual():
@@ -294,7 +309,9 @@ def teleop_input(command: TeleopInput):
 
 
 @app.post("/api/teleop/stop")
-def teleop_stop(): return gamepad_panel.teleop.stop()
+def teleop_stop():
+    gamepad_panel.heartbeat(False)
+    return gamepad_panel.teleop.stop()
 
 
 @app.post("/api/teleop/resume")

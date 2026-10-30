@@ -173,7 +173,10 @@ class GamepadPanel:
                 self.mode = 'DISARMED'
                 self.pending_arm_taps.clear()
                 self.teleop.stop()
-            if value == 1 and code == b['start'] and b['b'] not in self.keys:
+            # START may clear STOP only while the browser is actively keeping
+            # the gamepad panel lease alive. A connected controller by itself
+            # must never re-arm motion after an API or keyboard STOP.
+            if value == 1 and code == b['start'] and b['b'] not in self.keys and now < self.lease:
                 if self.teleop.owner != 'gamepad':
                     if self._moving():
                         raise ValueError('Сначала отпустите все органы движения')
